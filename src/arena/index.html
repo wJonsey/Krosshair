@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sniper Shootout // Multiplayer Arena</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="arena.css" />
+  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.171.0/build/three.module.js"}}</script>
+</head>
+<body>
+  <main id="arena-shell">
+    <div id="game-root"></div>
+    <div class="vignette"></div>
+    <div id="scope-overlay" class="scope-overlay hidden" aria-hidden="true"><span class="scope-crosshair"></span><span class="scope-hit-marker">×</span><span class="scope-range">M-44 // 4X OPTIC</span></div>
+    <header class="arena-header"><a href="../../index.html" class="back-link">← Sniper Shootout</a><div class="arena-title"><span class="live-dot"></span> SNIPER SHOOTOUT <small>// MULTIPLAYER ARENA</small></div><div class="round-readout">DUEL <b id="round">01</b></div></header>
+    <section class="hud hud-top"><div class="score-box"><span>ELIMINATIONS</span><b id="eliminations">00</b></div><div class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="score-box right"><span>OPEN MATCH</span><b>∞</b></div></section>
+    <section class="hud hud-bottom"><div class="health-wrap"><span>SHIELD / HEALTH</span><div class="meter"><i id="health-meter"></i></div><b id="health">100</b></div><div class="weapon-readout"><span id="weapon-name">M-44 // LONG SIGHT</span><b><strong id="ammo">5</strong> / 48</b><small>SNIPER PLATFORM // 4X OPTIC</small></div></section>
+    <div id="ammo-alert" class="ammo-alert hidden" aria-live="assertive">OUT OF AMMO <span>Press R to reload</span></div>
+    <div id="event-feed" class="event-feed" aria-live="polite"></div>
+    <div id="start-card" class="start-card"><p class="eyebrow">Private 1v1 arena</p><h1>Drop in.<br /><em>Track.</em><br />Win.</h1><p>Invite your friend with the same room code. You spawn on opposite sides of a living arena. Move with WASD, aim with your mouse, click to fire, and press R to reload.</p><div class="profile-row"><label>Callsign<input id="name-input" value="Pilot" maxlength="16" aria-label="Your player name" /></label><label>Room code<input id="room-input" value="night-shift" maxlength="24" aria-label="Room code" /></label></div><div class="room-row"><button id="connect-button" type="button">Connect <span>↗</span></button><button id="settings-button" class="secondary-button" type="button">Settings</button></div><div class="network-status" id="network-status">Waiting for room connection</div><button id="start-button" type="button">Enter 1v1 <span>→</span></button><small>Mouse lock is required for aim</small></div>
+    <div id="pause-card" class="pause-card hidden"><p class="eyebrow">Arena paused</p><h2>Take a breath.</h2><p>Click resume to return to the fight.</p><button id="resume-button" type="button">Resume fight</button></div>
+    <div id="respawn-card" class="pause-card respawn-card hidden"><p class="eyebrow">Pilot down</p><h2>Eliminated.</h2><p>Press <strong>SPACE</strong> to respawn</p></div>
+    <div id="settings-card" class="pause-card settings-card hidden"><p class="eyebrow">Combat settings</p><h2>Fine tune.</h2><label>Mouse sensitivity <output id="sensitivity-value">1.0</output><input id="sensitivity-input" type="range" min="0.3" max="2.5" step="0.1" value="1" /></label><label>Scoped sensitivity <output id="scope-sensitivity-value">0.6</output><input id="scope-sensitivity-input" type="range" min="0.2" max="1.2" step="0.1" value="0.6" /></label><label>Field of view <output id="fov-value">72°</output><input id="fov-input" type="range" min="60" max="110" step="1" value="72" /></label><label>Resolution <select id="resolution-input"><option value="1920x1080">1920 × 1080 // HD</option><option value="1600x900">1600 × 900 // balanced</option><option value="1280x720">1280 × 720 // performance</option><option value="1080x1080">1080 × 1080 // square</option></select></label><button id="close-settings" type="button">Done</button></div>
+    <div id="end-card" class="pause-card hidden"><p class="eyebrow">Match report</p><h2 id="end-title">Arena clear.</h2><p id="end-copy">You held the line.</p><button id="restart-button" type="button">Run it back</button></div>
+    <div id="scoreboard" class="scoreboard hidden" aria-live="polite"><div class="scoreboard-head"><span>ROOM SCOREBOARD</span><b> TAB TO CLOSE</b></div><div class="scoreboard-columns"><span>PILOT</span><span>K</span><span>D</span><span>K/D</span></div><div id="scoreboard-rows"></div></div>
+    <aside class="controls"><span><b>W A S D</b> move</span><span><b>LMB</b> fire / <b>RMB</b> scope</span><span><b>R</b> reload</span><span><b>TAB</b> scoreboard</span></aside>
+  </main>
+  <script type="module" src="arena.js"></script>
+</body>
+</html>
