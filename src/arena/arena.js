@@ -35,11 +35,29 @@ const scopeSensitivityValue = document.querySelector('#scope-sensitivity-value')
 const fovInput = document.querySelector('#fov-input');
 const fovValue = document.querySelector('#fov-value');
 const resolutionInput = document.querySelector('#resolution-input');
+const colorSwatches = [...document.querySelectorAll('[data-color]')];
+const accentSwatches = [...document.querySelectorAll('[data-accent]')];
+const arenaSubtitle = document.querySelector('.arena-title small');
+document.querySelector('.character-picker')?.remove();
+document.querySelector('.back-link')?.remove();
+startCard.classList.add('lobby-card');
+arenaSubtitle.textContent = '// MATCH LOBBY';
+document.querySelector('.entry-step').textContent = 'READY ROOM';
+connectButton.innerHTML = 'Join lobby <span>↗</span>';
+startButton.innerHTML = 'Deploy to arena <span>→</span>';
+document.querySelector('.start-card h1').innerHTML = 'Choose your<br /><em>colours.</em>';
+startCard.querySelector('small').textContent = 'Mouse aim enabled // lock is optional';
+pauseCard.querySelector('h2').textContent = 'Capture your mouse.';
+pauseCard.querySelector('p:not(.eyebrow)').textContent = 'Click Resume fight or the arena to lock your cursor and continue.';
+const colorPreview = document.createElement('div');
+colorPreview.className = 'color-preview';
+colorPreview.innerHTML = '<span class="preview-operator"><i class="preview-helmet"></i><i class="preview-visor"></i><i class="preview-body"></i></span><span><b>LIVE LOADOUT PREVIEW</b><small>Your colours appear to other pilots</small></span>';
+document.querySelector('.customize-row')?.before(colorPreview);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#8db5ca');
-scene.fog = new THREE.Fog('#a8b3ad', 45, 150);
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .1, 180);
+scene.fog = new THREE.Fog('#a8b3ad', 55, 220);
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, .1, 260);
 camera.position.set(0, 1.7, 14);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -66,7 +84,7 @@ const colliders = [];
 const bots = [];
 const remotePlayers = new Map();
 const keys = {};
-const player = { health: 100, eliminations: 0, ammo: 12, reserve: 48, round: 1, active: false, paused: false, respawning: false, respawnCount: 0, velocityY: 0, onGround: true, shotCooldown: 0, networkId: null, opponentReady: false, name: localStorage.getItem('neon-arena-name') || 'Pilot' };
+const player = { health: 100, eliminations: 0, ammo: 12, reserve: 48, round: 1, active: false, paused: false, respawning: false, respawnCount: 0, velocityY: 0, onGround: true, shotCooldown: 0, networkId: null, opponentReady: false, name: localStorage.getItem('neon-arena-name') || '', character: localStorage.getItem('neon-arena-character') || 'vanguard', color: localStorage.getItem('neon-arena-color') || '#ec6a9e', accent: localStorage.getItem('neon-arena-accent') || '#6ce6d1' };
 const weapons = { marksman: { name: 'M-44 // LONG SIGHT', magazine: 5, damage: 85, cooldown: .9 } };
 let activeWeapon = 'marksman';
 const spawnPoints = [[-12, -14], [12, -13], [-15, 4], [15, 5], [-2, -21]];
@@ -107,12 +125,12 @@ function addBox(size, position, color, options = {}) {
   return mesh;
 }
 
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshStandardMaterial({ color: '#315d3e', roughness: 1, metalness: 0 }));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({ color: '#315d3e', roughness: 1, metalness: 0 }));
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 const soilMaterial = new THREE.MeshStandardMaterial({ color: '#6a5941', roughness: 1, metalness: 0 });
-const trail = new THREE.Mesh(new THREE.PlaneGeometry(8, 105), soilMaterial);
+const trail = new THREE.Mesh(new THREE.PlaneGeometry(8, 145), soilMaterial);
 trail.rotation.x = -Math.PI / 2;
 trail.position.y = .012;
 trail.position.x = -1;
@@ -123,15 +141,15 @@ for (let index = 0; index < 18; index += 1) {
   patch.position.set(Math.sin(index * 4.2) * 38, .018, Math.cos(index * 2.7) * 42);
   scene.add(patch);
 }
-const grid = new THREE.GridHelper(120, 60, '#35545b', '#1c3036');
+const grid = new THREE.GridHelper(160, 80, '#35545b', '#1c3036');
 grid.position.y = .015;
 grid.material.transparent = true;
 grid.material.opacity = .12;
 scene.add(grid);
-addBox([120, 4, 1], [0, 2, -55], '#182933', { emissive: '#10242a' });
-addBox([120, 4, 1], [0, 2, 55], '#182933', { emissive: '#10242a' });
-addBox([1, 4, 110], [-55, 2, 0], '#182933', { emissive: '#10242a' });
-addBox([1, 4, 110], [55, 2, 0], '#182933', { emissive: '#10242a' });
+addBox([140, 4, 1], [0, 2, -75], '#182933', { emissive: '#10242a' });
+addBox([140, 4, 1], [0, 2, 75], '#182933', { emissive: '#10242a' });
+addBox([1, 4, 150], [-75, 2, 0], '#182933', { emissive: '#10242a' });
+addBox([1, 4, 150], [75, 2, 0], '#182933', { emissive: '#10242a' });
 for (let index = -4; index <= 4; index += 1) {
   addBox([.2, 5, .2], [index * 6, 2.5, -53], '#6ce6d1', { emissive: '#6ce6d1' });
 }
@@ -141,6 +159,22 @@ addBox([12, 1.4, 3], [-22, .7, -18], '#263c4b', { emissive: '#1b3040' });
 addBox([12, 1.4, 3], [22, .7, 18], '#443044', { emissive: '#332038' });
 addBox([3, 5, 3], [-28, 2.5, -2], '#1e3440', { emissive: '#17303a' });
 addBox([3, 5, 3], [28, 2.5, 2], '#3a2841', { emissive: '#2b1d34' });
+addBox([11, .7, 9], [0, .35, 0], '#243b43', { emissive: '#17343a' });
+addBox([4, 2.4, 1.2], [-8, 1.2, 9], '#2d4851', { emissive: '#1d4047' });
+addBox([4, 2.4, 1.2], [8, 1.2, -9], '#493443', { emissive: '#352239' });
+addBox([1.2, 3.4, 4], [-7, 1.7, -11], '#304b50', { emissive: '#204047' });
+addBox([1.2, 3.4, 4], [7, 1.7, 11], '#4a3544', { emissive: '#38243a' });
+function addBeacon(x, z, color) {
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(.18, .28, 3.8, 8), material(color, .35, color));
+  beacon.position.set(x, 1.9, z);
+  beacon.castShadow = true;
+  scene.add(beacon);
+  const light = new THREE.PointLight(color, 5, 10);
+  light.position.set(x, 3.8, z);
+  scene.add(light);
+}
+addBeacon(-4.2, -4.2, '#6ce6d1');
+addBeacon(4.2, 4.2, '#ff7148');
 function addTree(x, z, scale = 1) {
   const tree = new THREE.Group();
   tree.position.set(x, 0, z);
@@ -289,6 +323,12 @@ function createCharacterVisual(color, accent) {
   otherLeg.position.x = -.24;
   const vest = new THREE.Mesh(new THREE.BoxGeometry(.72, .7, .48), material('#2a3540', .6, accent));
   vest.position.set(0, 1.38, -.04);
+  torso.userData.suitPart = true;
+  arm.userData.suitPart = true;
+  otherArm.userData.suitPart = true;
+  vest.userData.suitPart = true;
+  helmet.userData.accentPart = true;
+  visor.userData.accentPart = true;
   character.add(torso, head, helmet, visor, vest, arm, otherArm, leg, otherLeg);
   character.traverse((part) => { part.castShadow = true; part.receiveShadow = true; });
   return character;
@@ -298,6 +338,7 @@ function createRemotePlayer(id) {
   remote.add(createCharacterVisual('#6ce6d1', '#ffc857'));
   remote.userData.id = id;
   remote.userData.name = id;
+  remote.userData.character = 'vanguard';
   remote.userData.hitboxes = [
     { center: new THREE.Vector3(0, 2.45, 0), radius: .68, zone: 'head' },
     { center: new THREE.Vector3(0, 1.3, 0), radius: 1.05, zone: 'body' },
@@ -306,6 +347,18 @@ function createRemotePlayer(id) {
   remote.add(createNameTag(remote.userData.name));
   remotePlayers.set(id, remote);
   return remote;
+}
+function applyRemoteStyle(remote, message) {
+  if (!message.color && !message.accent) return;
+  const visual = remote.children.find((child) => child.type === 'Group');
+  if (!visual) return;
+  const color = message.color || '#6ce6d1';
+  const accent = message.accent || '#ffc857';
+  visual.traverse((part) => {
+    if (!part.isMesh) return;
+    if (part.userData.suitPart) part.material.color.set(color);
+    if (part.userData.accentPart) { part.material.color.set(accent); part.material.emissive.set(accent); }
+  });
 }
 function createNameTag(name) {
   const canvas = document.createElement('canvas');
@@ -381,6 +434,7 @@ function handleNetworkMessage(message) {
   if (message.type === 'state') {
     const remote = remotePlayers.get(message.id) || createRemotePlayer(message.id);
     updateNameTag(remote, message.name);
+    applyRemoteStyle(remote, message);
     remote.position.set(message.x, message.y - 1.7, message.z);
     remote.rotation.y = message.yaw;
   }
@@ -405,8 +459,16 @@ function handleNetworkMessage(message) {
   }
 }
 function connectMultiplayer() {
-  player.name = (nameInput.value.trim() || 'Pilot').slice(0, 16);
+  const callsign = nameInput.value.trim();
+  if (callsign.length < 2 || callsign.toLowerCase() === 'pilot') {
+    networkStatus.textContent = 'Choose a callsign with at least 2 characters';
+    networkStatus.classList.add('error');
+    nameInput.focus();
+    return;
+  }
+  player.name = callsign.slice(0, 16);
   nameInput.value = player.name;
+  startButton.disabled = false;
   localStorage.setItem('neon-arena-name', player.name);
   if (networkSocket && networkSocket.readyState === WebSocket.OPEN) return;
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -414,7 +476,7 @@ function connectMultiplayer() {
   networkStatus.classList.remove('error');
   try {
     networkSocket = new WebSocket(`${protocol}://${location.host}/arena`);
-    networkSocket.addEventListener('open', () => networkSocket.send(JSON.stringify({ type: 'join', room: roomInput.value.trim() || 'night-shift', name: player.name })));
+    networkSocket.addEventListener('open', () => networkSocket.send(JSON.stringify({ type: 'join', room: roomInput.value.trim() || 'night-shift', name: player.name, character: player.character, color: player.color, accent: player.accent })));
     networkSocket.addEventListener('message', (event) => handleNetworkMessage(JSON.parse(event.data)));
     networkSocket.addEventListener('error', () => { networkStatus.textContent = 'Solo mode // start relay to connect'; networkStatus.classList.add('error'); });
     networkSocket.addEventListener('close', () => { networkStatus.textContent = 'Solo mode // relay offline'; networkStatus.classList.remove('connected'); });
@@ -422,6 +484,14 @@ function connectMultiplayer() {
 }
 function sendNetwork(message) {
   if (networkSocket && networkSocket.readyState === WebSocket.OPEN) networkSocket.send(JSON.stringify(message));
+}
+function requestArenaPointerLock() {
+  if (!player.active) return;
+  if (document.pointerLockElement === renderer.domElement) return;
+  const request = renderer.domElement.requestPointerLock();
+  if (request && typeof request.catch === 'function') request.catch(() => {
+    announce('Mouse lock unavailable // using free aim');
+  });
 }
 function spawnWave() {
   roundLabel.textContent = String(player.round).padStart(2, '0');
@@ -443,6 +513,12 @@ function updateHud() {
   weaponNameLabel.textContent = weapons[activeWeapon].name;
 }
 function resetMatch() {
+  if (nameInput.value.trim().length < 2 || nameInput.value.trim().toLowerCase() === 'pilot') {
+    networkStatus.textContent = 'Choose your callsign before entering';
+    networkStatus.classList.add('error');
+    nameInput.focus();
+    return;
+  }
   bots.splice(0).forEach((bot) => scene.remove(bot));
   player.health = 100;
   player.eliminations = 0;
@@ -460,10 +536,11 @@ function resetMatch() {
   respawnCard.classList.add('hidden');
   pauseCard.classList.add('hidden');
   startCard.classList.add('hidden');
+  arenaSubtitle.textContent = '// MULTIPLAYER ARENA';
   spawnWave();
   updateHud();
   connectMultiplayer();
-  renderer.domElement.requestPointerLock();
+  requestArenaPointerLock();
 }
 function showRespawn() {
   if (player.respawning) return;
@@ -488,7 +565,7 @@ function respawnPlayer() {
   respawnCard.classList.add('hidden');
   updateHud();
   announce('Back in the fight');
-  renderer.domElement.requestPointerLock();
+  requestArenaPointerLock();
 }
 function endMatch(title, copy) {
   player.active = false;
@@ -647,8 +724,8 @@ function movePlayer(delta) {
   const nextZ = camera.position.z + direction.z * delta * 8;
   if (canOccupy(nextX, camera.position.z)) camera.position.x = nextX;
   if (canOccupy(camera.position.x, nextZ)) camera.position.z = nextZ;
-  camera.position.x = THREE.MathUtils.clamp(camera.position.x, -50, 50);
-  camera.position.z = THREE.MathUtils.clamp(camera.position.z, -50, 50);
+  camera.position.x = THREE.MathUtils.clamp(camera.position.x, -70, 70);
+  camera.position.z = THREE.MathUtils.clamp(camera.position.z, -70, 70);
   if (keys.Space && player.onGround) { player.velocityY = 5.6; player.onGround = false; }
   player.velocityY -= 14 * delta;
   camera.position.y += player.velocityY * delta;
@@ -680,7 +757,7 @@ function update(delta) {
   networkStateAccumulator += delta;
   if (networkStateAccumulator > .06) {
     networkStateAccumulator = 0;
-    sendNetwork({ type: 'state', name: player.name, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw, pitch });
+    sendNetwork({ type: 'state', name: player.name, character: player.character, color: player.color, accent: player.accent, x: camera.position.x, y: camera.position.y, z: camera.position.z, yaw, pitch });
   }
   updateHud();
 }
@@ -689,7 +766,7 @@ function frame() { requestAnimationFrame(frame); const delta = Math.min(clock.ge
 startButton.addEventListener('click', resetMatch);
 connectButton.addEventListener('click', connectMultiplayer);
 restartButton.addEventListener('click', resetMatch);
-resumeButton.addEventListener('click', () => { player.paused = false; pauseCard.classList.add('hidden'); renderer.domElement.requestPointerLock(); });
+resumeButton.addEventListener('click', () => { player.paused = false; pauseCard.classList.add('hidden'); requestArenaPointerLock(); });
 window.addEventListener('keydown', (event) => {
   if (event.code === 'Space' && player.respawning) { event.preventDefault(); respawnPlayer(); return; }
   keys[event.code] = true;
@@ -697,12 +774,14 @@ window.addEventListener('keydown', (event) => {
   if (event.code === 'Tab') { event.preventDefault(); scoreboard.classList.remove('hidden'); }
 });
 window.addEventListener('keyup', (event) => { keys[event.code] = false; if (event.code === 'Tab') scoreboard.classList.add('hidden'); });
-window.addEventListener('mousedown', (event) => { if (event.button === 0) shoot(); if (event.button === 2) setScoped(true); });
+window.addEventListener('mousedown', (event) => { if (player.active && document.pointerLockElement !== renderer.domElement) { requestArenaPointerLock(); return; } if (event.button === 0) shoot(); if (event.button === 2) setScoped(true); });
 window.addEventListener('mouseup', (event) => { if (event.button === 2) setScoped(false); });
 window.addEventListener('contextmenu', (event) => event.preventDefault());
-window.addEventListener('mousemove', (event) => { if (document.pointerLockElement !== renderer.domElement || !player.active) return; const multiplier = sensitivity * (scoped ? scopeSensitivity : 1); yaw -= event.movementX * .0022 * multiplier; pitch -= event.movementY * .0022 * multiplier; pitch = THREE.MathUtils.clamp(pitch, -1.35, 1.35); });
+window.addEventListener('mousemove', (event) => { if (!player.active) return; if (document.pointerLockElement !== renderer.domElement && event.target !== renderer.domElement) return; const multiplier = sensitivity * (scoped ? scopeSensitivity : 1); yaw -= event.movementX * .0022 * multiplier; pitch -= event.movementY * .0022 * multiplier; pitch = THREE.MathUtils.clamp(pitch, -1.35, 1.35); });
 window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); applyResolution(); });
-document.addEventListener('pointerlockchange', () => { if (!player.active) return; if (document.pointerLockElement !== renderer.domElement) { player.paused = true; pauseCard.classList.remove('hidden'); } });
+renderer.domElement.addEventListener('click', () => { if (player.active) requestArenaPointerLock(); });
+document.addEventListener('pointerlockerror', () => { if (player.active) announce('Mouse lock unavailable // using free aim'); });
+document.addEventListener('pointerlockchange', () => { if (player.active && document.pointerLockElement === renderer.domElement) announce('Mouse locked // click to release'); });
 settingsButton.addEventListener('click', () => { settingsCard.classList.remove('hidden'); document.exitPointerLock(); });
 closeSettings.addEventListener('click', () => settingsCard.classList.add('hidden'));
 sensitivityInput.value = sensitivity;
@@ -714,6 +793,36 @@ scopeSensitivityInput.addEventListener('input', updateSettings);
 fovInput.addEventListener('input', updateSettings);
 resolutionInput.addEventListener('change', updateSettings);
 nameInput.value = player.name;
+startButton.disabled = false;
+function selectCustomization(collection, selected, attribute) {
+  collection.forEach((option) => {
+    const isSelected = option === selected;
+    option.classList.toggle('selected', isSelected);
+    option.setAttribute('aria-pressed', String(isSelected));
+  });
+}
+function updateColorPreview() {
+  colorPreview.style.setProperty('--suit-color', player.color);
+  colorPreview.style.setProperty('--visor-color', player.accent);
+}
+colorSwatches.forEach((option) => option.addEventListener('click', () => {
+  player.color = option.dataset.color;
+  localStorage.setItem('neon-arena-color', player.color);
+  selectCustomization(colorSwatches, option);
+  updateColorPreview();
+}));
+accentSwatches.forEach((option) => option.addEventListener('click', () => {
+  player.accent = option.dataset.accent;
+  localStorage.setItem('neon-arena-accent', player.accent);
+  selectCustomization(accentSwatches, option);
+  updateColorPreview();
+}));
+updateColorPreview();
+nameInput.addEventListener('input', () => {
+  const valid = nameInput.value.trim().length >= 2 && nameInput.value.trim().toLowerCase() !== 'pilot';
+  startButton.disabled = !valid;
+  if (valid) networkStatus.textContent = 'Ready to connect // profile incomplete until confirmed';
+});
 updateSettings();
 updateHud();
 frame();

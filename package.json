@@ -1,11 +1,10 @@
 {
   "name": "game-website",
   "version": "1.0.0",
-  "description": "",
-  "main": "script.js",
+  "description": "Sniper Shootout multiplayer arena",
   "scripts": {
     "arena": "node src/arena/multiplayer-server.mjs",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --check src/arena/arena.js && node --check src/arena/multiplayer-server.mjs"
   },
   "repository": {
     "type": "git",

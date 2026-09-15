@@ -52,6 +52,9 @@ wss.on('connection', (socket) => {
     if (message.type === 'join') {
       socket.roomName = String(message.room || 'night-shift').slice(0, 24);
       socket.name = String(message.name || 'Pilot').slice(0, 16);
+      socket.character = String(message.character || 'vanguard').slice(0, 16);
+      socket.color = String(message.color || '#6ce6d1').slice(0, 16);
+      socket.accent = String(message.accent || '#ffc857').slice(0, 16);
       const room = roomFor(socket.roomName);
       if (room.size >= 8) return send(socket, { type: 'error', message: 'Room is full. Try another room code.' });
       socket.kills = 0;
@@ -65,7 +68,7 @@ wss.on('connection', (socket) => {
     const room = roomFor(socket.roomName);
     if (message.type === 'state') {
       if (typeof message.name === 'string') socket.name = message.name.slice(0, 16);
-      broadcast(room, { ...message, id: socket.playerId, name: socket.name }, socket);
+      broadcast(room, { ...message, id: socket.playerId, name: socket.name, character: socket.character, color: socket.color, accent: socket.accent }, socket);
     }
     if (message.type === 'shot' || message.type === 'hit') broadcast(room, { ...message, id: socket.playerId }, socket);
     if (message.type === 'eliminated') {

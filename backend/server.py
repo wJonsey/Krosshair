@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlparse
 
 
 ROOT = Path(__file__).parent
+PACKAGE_ROOT = ROOT / "codwrapper"
 sys.path[:] = [entry for entry in sys.path if Path(entry or ".").resolve() != ROOT.resolve()]
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
@@ -15,8 +16,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 PACKAGE_NAME = "codwrapper"
 spec = importlib.util.spec_from_file_location(
     PACKAGE_NAME,
-    ROOT / "__init__.py",
-    submodule_search_locations=[str(ROOT)],
+    PACKAGE_ROOT / "__init__.py",
+    submodule_search_locations=[str(PACKAGE_ROOT)],
 )
 codwrapper = importlib.util.module_from_spec(spec)
 sys.modules[PACKAGE_NAME] = codwrapper
