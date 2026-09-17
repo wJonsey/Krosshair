@@ -4,22 +4,21 @@ import { performance } from 'node:perf_hooks';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
   HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE,
-  VARIANTS, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
+  VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { getMap, zoneAt } from '../shared/map.js';
+import { mapFingerprint } from '../shared/version.js';
+import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
 import { World, makeBody } from '../shared/physics.js';
 import { SpreadTracker, applySpread, damageFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
-import { NavGrid } from './nav.js';
 import { createBot, createDummy, updateBot, resetBot, botBuy, botOnHurt, botOnSound } from './bots.js';
 
 export const now = () => performance.now() / 1000;
-const navCache = new Map();
 const round2 = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
-let variantCursor = Math.floor(Math.random() * VARIANTS.length);
 
 function freshMatchStats() {
-  return { kills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, weaponKills: {} };
+  return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, weaponKills: {} };
 }
 
 export class Room {
@@ -33,13 +32,13 @@ export class Room {
     this.map = getMap(this.mode === 'range' ? 'range' : 'yard');
     this.world = new World(this.map.boxes);
     if (this.mode === 'match') {
-      if (!navCache.has(this.map.id)) navCache.set(this.map.id, new NavGrid(new World(this.map.boxes), this.map));
-      this.nav = navCache.get(this.map.id);
+      this.nav = navFor(this.map);
     }
     this.players = new Map();
     this.nextPlayer = 1;
     this.nextEntity = 1;
     this.rules = { ...DEFAULT_RULES };
+    initMapFlow(this);
     if (queue === 'arcade') this.rules.modifier = dailyModifier(dateKey());
     if (queue === 'bots') this.rules.botDifficulty = 'veteran';
     this.phase = this.mode === 'range' ? 'range' : 'lobby';
@@ -101,18 +100,18 @@ export class Room {
   roomState() {
     return {
       type: 'room', name: this.name, queue: this.queue, mode: this.mode, isPublic: this.isPublic, phase: this.phase, phaseEnds: this.phaseEnds,
-      round: this.round, scores: this.scores, rules: this.rules, variant: this.variant, swapped: this.swapped, map: this.map.id,
+      round: this.round, scores: this.scores, rules: this.rules, variant: this.variant, swapped: this.swapped, map: this.map.id, ...mapState(this),
       autoStartAt: this.autoStartAt, rematch: [...this.rematch],
       players: [...this.players.values()].filter((player) => !player.dummy).map((player) => ({
         id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, connected: player.connected, ready: player.ready,
-        host: player.host, alive: player.alive, kills: player.match.kills, deaths: player.match.deaths, assists: player.match.assists,
+        host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
         title: player.title, level: player.level, rating: player.rating, primary: player.weapons.primary, armor: player.armor > 0,
       })),
     };
   }
   pushRoom() { this.broadcast(this.roomState()); }
-  scoreOf(player) { return player.match.kills * 100 + player.match.assists * 40 + Math.round(player.match.damage / 5) + player.match.roundsWon * 20; }
+  scoreOf(player) { return player.match.playerKills * 100 + player.match.botKills * 50 + player.match.assists * 40 + Math.round(player.match.damage / 5) + player.match.roundsWon * 20; }
 
   youState(player) {
     return {
@@ -185,8 +184,8 @@ export class Room {
 
   welcome(player, reconnected) {
     this.send(player, {
-      type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id,
-      broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
+      type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
+      weapons: Object.keys(WEAPONS), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
     });
     this.send(player, this.roomState());
     this.pushYou(player);
@@ -269,14 +268,14 @@ export class Room {
     this.autoStartAt = 0;
     this.lastKill = null;
     this.roundKill = null;
-    if (this.rules.variant === 'auto') { variantCursor = (variantCursor + 1) % VARIANTS.length; this.variant = VARIANTS[variantCursor]; } else this.variant = this.rules.variant;
+    this.variant = pickVariant(this);
     for (const player of this.players.values()) {
       player.match = freshMatchStats();
       player.credits = this.rules.startCredits;
       player.weapons = { ...DEFAULT_LOADOUT };
       player.armor = 0; player.helmet = false; player.gadgets = []; player.diedThisRound = false; player.pendingJoin = false; player.ready = false;
     }
-    this.broadcast({ type: 'match-start', variant: this.variant, rules: this.rules });
+    this.broadcast({ type: 'match-start', variant: this.variant, rules: this.rules, map: this.map.id, mapTitle: this.map.title, mapPrint: mapFingerprint(this.map) });
     this.startRound();
   }
 
@@ -459,7 +458,7 @@ export class Room {
     const pool = winner ? this.team(winner) : everyone;
     const mvp = [...pool].sort((m, n) => this.scoreOf(n) - this.scoreOf(m))[0];
     const table = everyone.map((p) => ({
-      id: p.id, name: p.name, team: p.team, bot: p.bot, score: this.scoreOf(p), kills: p.match.kills, deaths: p.match.deaths, assists: p.match.assists,
+      id: p.id, name: p.name, team: p.team, bot: p.bot, score: this.scoreOf(p), kills: p.match.kills, playerKills: p.match.playerKills, botKills: p.match.botKills, deaths: p.match.deaths, assists: p.match.assists,
       damage: Math.round(p.match.damage), headshots: p.match.headshots, accuracy: p.match.shots ? Math.round((p.match.hits / p.match.shots) * 100) : 0,
       longest: Math.round(p.match.longest), mvp: mvp && p.id === mvp.id, color: p.color, title: p.title,
     })).sort((m, n) => n.score - m.score);
@@ -509,8 +508,9 @@ export class Room {
     if (this.emptySince && t - this.emptySince > (this.phase === 'lobby' || this.mode === 'range' ? 5 : RECONNECT_GRACE + 5)) { this.onEmpty(this); return; }
 
     if (this.phase === 'lobby' && this.autoStartAt && t >= this.autoStartAt) {
-      if (this.queue === 'ranked' && this.connectedHumans().length < 2) this.autoStartAt = 0; else this.startMatch();
-    } else if (this.phase === 'buy' && t >= this.phaseEnds) this.goLive();
+      if (this.queue === 'ranked' && this.connectedHumans().length < 2) this.autoStartAt = 0; else beginMatch(this);
+    } else if (this.phase === 'mapvote') tickMapVote(this, t);
+    else if (this.phase === 'buy' && t >= this.phaseEnds) this.goLive();
     else if (this.phase === 'live' && t >= this.phaseEnds) { if (this.rules.overtime > 0) this.startOvertime(); else this.resolveTimeout(); }
     else if (this.phase === 'overtime' && t >= this.phaseEnds) this.resolveTimeout();
     else if (this.phase === 'roundEnd' && t >= this.phaseEnds) {
@@ -518,7 +518,7 @@ export class Room {
     } else if (this.phase === 'matchEnd') {
       const voters = this.connectedHumans();
       if (voters.length && voters.every((p) => this.rematch.has(p.id)) && !this.rematchAt) this.rematchAt = t + 2.5;
-      if (this.rematchAt && t >= this.rematchAt) { this.rematchAt = 0; this.startMatch(); } else if (t >= this.phaseEnds) { this.rematchAt = 0; this.toLobby(); }
+      if (this.rematchAt && t >= this.rematchAt) { this.rematchAt = 0; beginMatch(this); } else if (t >= this.phaseEnds) { this.rematchAt = 0; this.toLobby(); }
     }
 
     for (const player of this.players.values()) {
@@ -606,7 +606,8 @@ export class Room {
         if (player.host && this.phase === 'lobby' && bot?.bot) { this.removePlayer(bot); this.pushRoom(); }
         return;
       }
-      case 'start': if (player.host && this.phase === 'lobby') { if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Both teams need at least one pilot. Add a bot or invite a rival.', 'warn'); else this.startMatch(); } return;
+      case 'start': if (player.host && this.phase === 'lobby') { if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Both teams need at least one pilot. Add a bot or invite a rival.', 'warn'); else beginMatch(this); } return;
+      case 'map-vote': return castMapVote(this, player, message.id);
       case 'rematch': if (this.phase === 'matchEnd') { this.rematch.add(player.id); this.pushRoom(); } return;
       case 'respawn': if (this.mode === 'range' && !player.alive) this.spawn(player); return;
       default:
@@ -625,7 +626,8 @@ export class Room {
     if ([3, 5, 7].includes(rules.roundsToWin)) next.roundsToWin = rules.roundsToWin;
     if ([60, 100, 140].includes(rules.roundTime)) next.roundTime = rules.roundTime;
     if ([400, 800, 2000, 9000].includes(rules.startCredits)) next.startCredits = rules.startCredits;
-    if (rules.variant === 'auto' || VARIANTS.includes(rules.variant)) next.variant = rules.variant;
+    if (rules.variant === 'auto' || VARIANT_NAMES[rules.variant]) next.variant = rules.variant;
+    if (validMapRule(rules.map)) next.map = rules.map;
     if (MODIFIERS[rules.modifier]) next.modifier = rules.modifier;
     if (BOT_DIFFICULTY[rules.botDifficulty]) next.botDifficulty = rules.botDifficulty;
     if (typeof rules.friendlyFire === 'boolean') next.friendlyFire = rules.friendlyFire;
@@ -647,7 +649,7 @@ export class Room {
     const speed = dist / elapsed;
     let reject = speed > 13 && dist > 0.9;
     // During the buy phase pilots stay behind their gate.
-    if (this.phase === 'buy' && Math.abs(z) < 46.4 && this.mode === 'match') reject = true;
+    if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
     if (!reject && !this.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9)) reject = true;
     player.lastStateAt = t;
     if (reject) {
@@ -841,6 +843,7 @@ export class Room {
       const friendlyKill = killer.team === victim.team;
       if (!victim.dummy && !friendlyKill) {
         killer.match.kills += 1;
+        if (victim.bot) killer.match.botKills += 1; else killer.match.playerKills += 1;
         this.roundKills?.set(killer.id, (this.roundKills.get(killer.id) || 0) + 1);
         const record = killer.match.weaponKills[weapon.id] || (killer.match.weaponKills[weapon.id] = { kills: 0, headshots: 0 });
         record.kills += 1;
@@ -967,7 +970,7 @@ export class Room {
       if (player.gadgets.length >= GADGET_SLOTS) return this.notice(player, 'Both gadget slots are full. Click one to sell it.', 'warn');
       if (!charge(GADGETS[item].cost)) return;
       player.gadgets.push(item); player.bought[`gadget:${item}`] = { cost: GADGETS[item].cost, item };
-    } else return;
+    } else return this.notice(player, 'That item is not available on this server.', 'warn');
     this.pushYou(player);
     this.pushRoom();
   }

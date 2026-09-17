@@ -28,6 +28,7 @@
         <span class="scope-range" id="scope-zoom">M-44 // 4X</span>
         <div class="breath"><span>HOLD BREATH // SHIFT</span><div class="meter"><i id="breath-meter"></i></div></div>
       </div>
+      <div id="sight-overlay" class="sight hidden" aria-hidden="true"><div class="sight-glass"><span class="reticle"></span></div><span class="sight-label" id="sight-label"></span></div>
       <div id="drone-overlay" class="drone-overlay hidden"><span class="drone-title">RECON DRONE // LIVE FEED</span><span id="drone-time">12.0</span><span class="drone-help">WASD fly · SPACE / CTRL altitude · CLICK to recall</span></div>
 
       <div id="crosshair" class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
@@ -80,7 +81,7 @@
     <div id="pause-card" class="pause-card hidden">
       <p class="eyebrow">Paused</p><h2>Hold position.</h2>
       <p>The match keeps running. Click resume to lock your aim again.</p>
-      <div class="button-row"><button id="resume-button" type="button">Resume <span>→</span></button><button id="pause-settings" class="secondary-button" type="button">Settings</button><button id="leave-button" class="ghost-button" type="button">Leave match</button></div>
+      <div class="button-row"><button id="resume-button" type="button">Resume <span>→</span></button><button id="pause-settings" class="secondary-button" type="button">Settings</button><button id="pause-feedback" class="ghost-button" type="button">Report a bug</button><button id="leave-button" class="ghost-button" type="button">Leave match</button></div>
     </div>
 
     <!-- ===== Menus (rendered by menu.js) ===== -->
@@ -88,6 +89,7 @@
     <div id="lobby" class="screen hidden"></div>
     <div id="end-card" class="screen end-screen hidden"></div>
     <div id="settings-card" class="pause-card settings-card hidden"></div>
+    <div id="feedback" class="screen feedback-screen hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title"></div>
     <div id="net-banner" class="net-banner hidden"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>

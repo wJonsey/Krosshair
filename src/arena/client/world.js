@@ -6,12 +6,14 @@ import { MATERIALS } from '../shared/constants.js';
 import { getMap } from '../shared/map.js';
 import { World } from '../shared/physics.js';
 
-const PATTERNS = { noise: 0, panels: 1, bricks: 2, planks: 3, ribs: 4, tiles: 5, stripes: 6, windows: 7 };
+const PATTERNS = { noise: 0, panels: 1, bricks: 2, planks: 3, ribs: 4, tiles: 5, stripes: 6, windows: 7, strata: 8 };
 
 const VARIANTS = {
   dusk: { top: '#1d2a4a', horizon: '#f0a35e', fog: '#c58a66', fogNear: 45, fogFar: 210, sun: '#ffb070', sunPower: 2.6, sunDir: [-0.5, 0.5, 0.42], hemiSky: '#a9b6d6', hemiGround: '#6b5447', hemi: 1.7, lamps: 0.7, exposure: 1.05, stars: 0.15, windows: 0.5 },
   night: { top: '#03050a', horizon: '#142036', fog: '#0a111b', fogNear: 10, fogFar: 100, sun: '#9db9ff', sunPower: 1.1, sunDir: [0.35, 0.7, -0.3], hemiSky: '#5a78ad', hemiGround: '#2c3a52', hemi: 1.7, lamps: 1.6, exposure: 1.2, stars: 1, windows: 1, haze: 0.8 },
-  storm: { top: '#262c33', horizon: '#5d6770', fog: '#4f5860', fogNear: 8, fogFar: 110, sun: '#b4c0cd', sunPower: 1.0, sunDir: [0.2, 0.8, 0.35], hemiSky: '#9aa7b4', hemiGround: '#4a4f54', hemi: 1.6, lamps: 0.9, exposure: 0.95, stars: 0, windows: 0.7, haze: 0.85, rain: true },
+  storm: { top: '#262c33', horizon: '#5d6770', fog: '#4f5860', fogNear: 8, fogFar: 110, sun: '#b4c0cd', sunPower: 1.0, sunDir: [0.2, 0.8, 0.35], hemiSky: '#9aa7b4', hemiGround: '#4a4f54', hemi: 1.6, lamps: 0.9, exposure: 0.95, stars: 0, windows: 0.7, haze: 0.85, precip: 'rain' },
+  snow: { top: '#a9b5c1', horizon: '#dde5eb', fog: '#d3dce3', fogNear: 10, fogFar: 92, sun: '#ffffff', sunPower: 1.3, sunDir: [0.3, 0.75, 0.3], hemiSky: '#e6eef6', hemiGround: '#a8b3be', hemi: 1.9, lamps: 0.8, exposure: 0.95, stars: 0, windows: 0.5, haze: 0.92, precip: 'snow' },
+  haze: { top: '#8f7655', horizon: '#dfc08c', fog: '#d1af7a', fogNear: 18, fogFar: 150, sun: '#ffd9a0', sunPower: 2.4, sunDir: [-0.4, 0.6, 0.3], hemiSky: '#e6cfa4', hemiGround: '#8a6e48', hemi: 1.6, lamps: 0.2, exposure: 1.0, stars: 0, windows: 0.1, haze: 0.85 },
   noon: { top: '#2b6cb3', horizon: '#cfe3f2', fog: '#bfd5e8', fogNear: 90, fogFar: 340, sun: '#fff1d6', sunPower: 3.1, sunDir: [0.3, 0.85, 0.25], hemiSky: '#bcd7f5', hemiGround: '#6f6553', hemi: 1.6, lamps: 0, exposure: 1.0, stars: 0, windows: 0.05 },
 };
 
@@ -69,6 +71,12 @@ function surfaceMaterial(key) {
         #elif PATTERN == 6
           shade *= 1.0;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.9, 0.84), step(0.5, fract(suv.x / 0.9)) * 0.85);
+        #elif PATTERN == 8
+          // Sedimentary bands on cliff faces; tops stay plain.
+          float warp = vnoise(suv * 0.12) * 2.4;
+          float bands = vnoise(vec2(2.7, suv.y * 1.7 + warp)) * 0.6 + vnoise(vec2(9.1, suv.y * 5.3 + warp)) * 0.4;
+          shade *= mix(1.0, 0.72 + 0.5 * bands, 1.0 - an.y);
+          shade *= 1.0 - 0.22 * (1.0 - an.y) * smoothstep(0.44, 0.5, abs(fract(suv.y * 0.55 + warp * 0.3) - 0.5));
         #elif PATTERN == 7
           vec2 w = suv / vec2(2.2, 3.0);
           vec2 we = abs(fract(w) - 0.5);
@@ -179,13 +187,13 @@ export class Arena {
     rainGeometry.setAttribute('end', new THREE.BufferAttribute(seeds, 1));
     this.rain = new THREE.LineSegments(rainGeometry, new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: false,
-      uniforms: { time: { value: 0 }, eye: { value: new THREE.Vector3() }, opacity: { value: 0.3 } },
-      vertexShader: `attribute float end; uniform float time; uniform vec3 eye; varying float alpha;
-        void main() { vec3 p = position; p.y = mod(p.y - time * 26.0, 30.0); p.x += time * 3.0;
+      uniforms: { time: { value: 0 }, eye: { value: new THREE.Vector3() }, opacity: { value: 0.3 }, fall: { value: 26 }, streak: { value: 0.7 }, drift: { value: 3 }, sway: { value: 0 }, tint: { value: new THREE.Color(0.75, 0.82, 0.9) } },
+      vertexShader: `attribute float end; uniform float time; uniform vec3 eye; uniform float fall; uniform float streak; uniform float drift; uniform float sway; varying float alpha;
+        void main() { vec3 p = position; p.y = mod(p.y - time * fall, 30.0); p.x += time * drift + sin(time * 0.8 + position.z * 1.7) * sway; p.z += cos(time * 0.6 + position.x * 1.3) * sway;
           p.xz = mod(p.xz - eye.xz + 25.0, 50.0) - 25.0 + eye.xz; p.y += eye.y - 10.0;
-          p.y += end * 0.7; p.x += end * 0.08; alpha = 1.0 - end * 0.6;
+          p.y += end * streak; p.x += end * streak * 0.12; alpha = 1.0 - end * 0.6;
           gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }`,
-      fragmentShader: 'uniform float opacity; varying float alpha; void main() { gl_FragColor = vec4(0.75, 0.82, 0.9, opacity * alpha); }',
+      fragmentShader: 'uniform float opacity; uniform vec3 tint; varying float alpha; void main() { gl_FragColor = vec4(tint, opacity * alpha); }',
     }));
     this.rain.frustumCulled = false;
     this.rain.visible = false;
@@ -263,12 +271,74 @@ export class Arena {
       group.add(mesh);
       this.barrierMeshes.push(mesh);
     }
-    if (id === 'yard') this.addSkyline(group);
+    this.addBackdrop(group, this.map.env || {});
     this.scene.add(group);
+    // Fresh lamps and backdrop materials need the current conditions applied to them.
+    if (this.renderer && this.variantName) this.setVariant(this.variantName);
   }
 
-  // A ring of dark towers beyond the walls gives the yard a place in the world.
-  addSkyline(group) {
+  // Every arena sits in a wider world: an apron of ground beyond the walls and a ring of scenery.
+  addBackdrop(group, env) {
+    this.skylineMaterial = null;
+    const { bounds } = this.map;
+    const reach = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
+    const groundColor = { skyline: '#2a2f35', town: '#6d675c', mountains: '#dfe7ee', mesas: '#bfa06a' }[env.backdrop];
+    if (groundColor) {
+      // Four slabs around the playable box, so sunken routes inside it stay visible from above.
+      const apron = new THREE.MeshStandardMaterial({ color: groundColor, roughness: 1, metalness: 0 });
+      const pad = 6, far = 700;
+      [[-far, bounds.minX - pad, -far, far], [bounds.maxX + pad, far, -far, far], [bounds.minX - pad, bounds.maxX + pad, -far, bounds.minZ - pad], [bounds.minX - pad, bounds.maxX + pad, bounds.maxZ + pad, far]].forEach(([x1, x2, z1, z2]) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x2 - x1, z2 - z1), apron);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.position.set((x1 + x2) / 2, -0.4, (z1 + z2) / 2);
+        mesh.receiveShadow = false;
+        group.add(mesh);
+      });
+    }
+    let seed = 11 + this.map.id.length * 7;
+    const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const ring = (count, geometry, material, place) => {
+      const mesh = new THREE.InstancedMesh(geometry, material, count);
+      const matrix = new THREE.Matrix4(), rotation = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+      for (let i = 0; i < count; i += 1) {
+        const angle = (i / count) * Math.PI * 2 + random() * 0.12;
+        const spec = place(random);
+        rotation.setFromAxisAngle(up, spec.turn || 0);
+        mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(Math.sin(angle) * spec.radius, spec.y, Math.cos(angle) * spec.radius * 1.12), rotation, new THREE.Vector3(spec.w, spec.h, spec.d)));
+      }
+      mesh.frustumCulled = false;
+      group.add(mesh);
+      return mesh;
+    };
+    if (env.backdrop === 'skyline') this.addSkyline(group, reach + 70);
+    if (env.backdrop === 'town') {
+      const walls = surfaceMaterial('ochre');
+      walls.defines = { PATTERN: PATTERNS.windows };
+      walls.customProgramCacheKey = () => 'surface-windows';
+      walls.color.set('#a9835a');
+      walls.fog = false;
+      this.skylineMaterial = walls;
+      const specs = [];
+      ring(64, new THREE.BoxGeometry(1, 1, 1), walls, (r) => { const spec = { radius: reach + 18 + r() * 70, w: 12 + r() * 16, d: 12 + r() * 16, h: 9 + r() * 14 }; spec.y = spec.h / 2 - 1; specs.push(spec); return spec; });
+      let index = 0;
+      const roofs = new THREE.MeshStandardMaterial({ color: '#9c4f30', roughness: 0.9 });
+      seed = 11 + this.map.id.length * 7;
+      ring(64, new THREE.BoxGeometry(1, 1, 1), roofs, (r) => { const base = specs[index]; index += 1; r(); r(); r(); r(); return { radius: base.radius, w: base.w + 1.2, d: base.d + 1.2, h: 0.8, y: base.h - 1 + 0.4 }; });
+    }
+    if (env.backdrop === 'mountains') {
+      const rockMat = new THREE.MeshStandardMaterial({ color: '#c3cfda', roughness: 1, flatShading: true });
+      ring(34, new THREE.ConeGeometry(0.7, 1, 5), rockMat, (r) => { const h = 50 + r() * 90; return { radius: reach + 110 + r() * 160, w: h * (1.2 + r()), d: h * (1.2 + r()), h, y: h / 2 - 3, turn: r() * 3 }; });
+      const capMat = new THREE.MeshStandardMaterial({ color: '#8d99a6', roughness: 1, flatShading: true });
+      ring(22, new THREE.ConeGeometry(0.7, 1, 4), capMat, (r) => { const h = 26 + r() * 40; return { radius: reach + 50 + r() * 50, w: h * (1.6 + r()), d: h * (1.6 + r()), h, y: h / 2 - 3, turn: r() * 3 }; });
+    }
+    if (env.backdrop === 'mesas') {
+      ring(30, new THREE.BoxGeometry(1, 1, 1), surfaceMaterial('sandstone'), (r) => { const h = 16 + r() * 34; return { radius: reach + 45 + r() * 170, w: 30 + r() * 70, d: 30 + r() * 60, h, y: h / 2 - 2 }; });
+      ring(18, new THREE.BoxGeometry(1, 1, 1), surfaceMaterial('sandstone'), (r) => { const h = 6 + r() * 10; return { radius: reach + 20 + r() * 40, w: 14 + r() * 26, d: 14 + r() * 26, h, y: h / 2 - 1.5 }; });
+    }
+  }
+
+  // A ring of dark towers beyond the walls gives the city maps a place in the world.
+  addSkyline(group, inner = 130) {
     const material = surfaceMaterial('wall');
     material.defines = { PATTERN: PATTERNS.windows };
     material.customProgramCacheKey = () => 'surface-windows';
@@ -282,7 +352,7 @@ export class Arena {
     const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     for (let i = 0; i < count; i += 1) {
       const angle = (i / count) * Math.PI * 2 + random() * 0.1;
-      const radius = 130 + random() * 90;
+      const radius = inner + random() * 90;
       const width = 14 + random() * 20, depth = 14 + random() * 20, height = 18 + random() * 58;
       mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(Math.sin(angle) * radius, height / 2 - 2, Math.cos(angle) * radius * 1.15), rotation, new THREE.Vector3(width, height, depth)));
     }
@@ -304,10 +374,12 @@ export class Arena {
     if (this.skylineMaterial) {
       const uniforms = this.skylineMaterial.userData.uniforms;
       uniforms.uWindowGlow.value = v.windows;
-      uniforms.uHaze.value = v.haze ?? 0.6;
+      uniforms.uHaze.value = (v.haze ?? 0.6) * (this.map?.env?.backdrop === 'town' ? 0.45 : 1);
       uniforms.uHazeColor.value.set(v.fog).convertLinearToSRGB();
     }
-    this.rain.visible = Boolean(v.rain);
+    this.rain.visible = Boolean(v.precip);
+    const weather = this.rain.material.uniforms;
+    if (v.precip === 'snow') { weather.fall.value = 2.4; weather.streak.value = 0.09; weather.drift.value = 1.1; weather.sway.value = 0.5; weather.tint.value.setRGB(1, 1, 1); } else { weather.fall.value = 26; weather.streak.value = 0.7; weather.drift.value = 3; weather.sway.value = 0; weather.tint.value.setRGB(0.75, 0.82, 0.9); }
     for (const key of ['neonCyan', 'neonOrange', 'neonPink', 'lamp']) if (this.materials.has(key)) this.materials.get(key).emissiveIntensity = MATERIALS[key].emissive * (0.5 + v.lamps * 0.9);
   }
 
@@ -375,10 +447,10 @@ export class Arena {
     });
     const covered = this.physics.covered(camera.position.x, camera.position.y, camera.position.z) ? 1 : 0;
     this.shelter += (covered - this.shelter) * Math.min(1, dt * 4);
-    if (v.rain) {
+    if (v.precip) {
       const u = this.rain.material.uniforms;
-      u.time.value = this.time; u.eye.value.copy(camera.position); u.opacity.value = 0.32 * (1 - this.shelter);
-      this.nextLightning -= dt;
+      u.time.value = this.time; u.eye.value.copy(camera.position); u.opacity.value = (v.precip === 'snow' ? 0.95 : 0.32) * (1 - this.shelter);
+      if (v.precip === 'rain') this.nextLightning -= dt;
       if (this.nextLightning <= 0) { this.nextLightning = 9 + Math.random() * 16; this.lightning = 1; this.onThunder?.(0.6 + Math.random() * 1.8); }
     }
     if (this.lightning > 0) {

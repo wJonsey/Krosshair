@@ -12,7 +12,8 @@ import { SoundViz } from './soundviz.js';
 import { LocalPlayer, MATERIAL_SOUND } from './player.js';
 import { Hud, roundIntroVoice } from './hud.js';
 import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, setListener, setVolume, stopAllLoops, unlockAudio } from './audio.js';
-import { attachReport, hideEnd, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
+import { mapFingerprint } from '../shared/version.js';
+import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
 const root = document.querySelector('#game-root');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -41,13 +42,12 @@ const pauseCard = document.querySelector('#pause-card');
 const settingsCard = document.querySelector('#settings-card');
 const endCard = document.querySelector('#end-card');
 const visible = (element) => !element.classList.contains('hidden');
-player.uiBlocked = () => hud.blocking || visible(pauseCard) || visible(settingsCard) || visible(endCard);
+player.uiBlocked = () => hud.blocking || visible(pauseCard) || visible(settingsCard) || visible(endCard) || visible(feedbackCard);
+const feedbackCard = document.querySelector('#feedback');
 
-let afterIdentity = null;
 let inviteHandled = false;
 let currentVariant = null;
 let pendingEnd = null;
-bus.on('after-identity', (callback) => { afterIdentity = callback; });
 bus.on('look', () => viewmodel.setLook(game.look.color, game.look.accent));
 bus.on('settings', () => { arena.setQuality(game.settings.quality); });
 arena.onThunder = (delay) => { hud.flash(); setTimeout(() => play('thunder', { volume: 0.9 }), delay * 1000); };
@@ -61,18 +61,42 @@ function applyVariant(variant) {
   if (game.screen === 'game') setAmbience(variant);
 }
 
+// The room decides the arena (fixed, random or voted); follow it whenever it changes.
+function useMap(id) {
+  if (!id || arena.map?.id === id) return;
+  arena.loadMap(id);
+  hud.layers = null;
+  operators.clear();
+  effects.clearRound();
+}
+
+// The server picks the arena; if this page's copy of it differs, it is an outdated build and would play a different map.
+let staleWarned = false;
+function checkMapPrint(id, print) {
+  if (!print || staleWarned) return;
+  const ours = arena.map?.id === id ? mapFingerprint(arena.map) : '';
+  if (ours === print) return;
+  staleWarned = true;
+  console.warn(`map mismatch: server ${print}, this page ${ours || 'unknown map'}`);
+  document.querySelector('#net-banner').textContent = 'This page is out of date with the server, so maps won’t match. Refresh to update.';
+  document.querySelector('#net-banner').classList.remove('hidden');
+  toast('Your game files are older than the server. Refresh the page to get the current maps.', 'warn');
+}
+
 function feed(text, tone) { if (game.screen === 'game') hud.notice(text, tone); else toast(text, tone); }
 
 // ---------------------------------------------------------------- lobby / identity
 net.on('identity', (message) => {
   game.profile = message.profile; game.online = message.online; game.publicRooms = message.rooms; game.dailyModifier = message.modifier;
+  applyAccountPrefs(message.profile);
+  bus.emit('signed-in');
   if (game.screen === 'home') renderHome();
-  if (afterIdentity) { const callback = afterIdentity; afterIdentity = null; callback(); return; }
   const invite = new URLSearchParams(location.search).get('room');
   if (invite && !inviteHandled && game.screen === 'home') { inviteHandled = true; toast(`Joining room ${invite}…`); net.enter({ action: 'join', room: invite }); }
 });
 net.on('error', (message) => { toast(message.message, 'warn'); play('deny'); });
 net.on('rejoin-failed', () => { toast('Your seat was released. Back to the lobby.', 'warn'); leaveToHome(); });
+bus.on('logged-out', () => { if (game.screen !== 'home') leaveToHome(); });
 net.on('left', (message) => { game.profile = message.profile; game.publicRooms = message.rooms; leaveToHome(); });
 
 function leaveToHome() {
@@ -88,6 +112,7 @@ function leaveToHome() {
 
 net.on('welcome', (message) => {
   game.id = message.id;
+  game.serverWeapons = Array.isArray(message.weapons) ? message.weapons : ['m44', 'recon', 'wasp', 'breaker', 'p9', 'viper', 'knife'];
   net.holdRoom(message.room);
   operators.clear();
   game.marks.clear();
@@ -97,6 +122,7 @@ net.on('welcome', (message) => {
   message.broken.forEach((id) => arena.breakGlass(id));
   message.shields.forEach((shield) => arena.addShield(shield, !isEnemyTeam(shield.team)));
   arena.setBarriers(Boolean(message.barriers));
+  checkMapPrint(message.map, message.mapPrint);
   if (message.reconnected) toast('Reconnected to your match.', 'good');
 });
 const isEnemyTeam = (team) => team !== (game.roster.get(game.id)?.team || 'A');
@@ -108,7 +134,8 @@ net.on('room', (message) => {
   message.players.forEach((entry) => game.roster.set(entry.id, entry));
   player.gravityScale = message.rules.modifier === 'lowgrav' ? 0.34 : 1;
   applyVariant(message.variant);
-  if (message.phase === 'lobby') {
+  if (message.phase !== 'mapvote') useMap(message.map);
+  if (message.phase === 'lobby' || message.phase === 'mapvote') {
     if (game.screen !== 'lobby') { hud.show(false); hideEnd(); setAmbience(null); document.exitPointerLock?.(); player.mode = 'idle'; }
     showScreen('lobby');
     return;
@@ -134,7 +161,8 @@ net.on('you', (message) => {
   if (hud.buyOpen) hud.renderBuy();
 });
 
-net.on('match-start', (message) => { hideEnd(); pendingEnd = null; applyVariant(message.variant); toast(`${VARIANT_NAMES[message.variant]} over Kestrel Yard.`); });
+net.on('match-start', (message) => { hideEnd(); pendingEnd = null; useMap(message.map); checkMapPrint(message.map, message.mapPrint); applyVariant(message.variant); toast(`${VARIANT_NAMES[message.variant] || 'Clear'} over ${arena.map.title}.`); });
+net.on('map-chosen', (message) => toast(message.random ? `The dice picked ${message.title}.` : `${message.title} wins the vote.`, 'good'));
 
 net.on('spawn', (message) => {
   hideEnd();
@@ -152,7 +180,7 @@ net.on('round', (message) => {
   hud.blips.clear();
   if (game.room) { game.room.phase = 'buy'; game.room.round = message.round; game.room.scores = message.scores; }
   const title = message.decider ? 'DECIDER' : message.matchPoint ? 'MATCH POINT' : `ROUND ${message.round}`;
-  hud.banner(title, message.swapped ? 'Sides switched — you now attack from the other gate.' : 'Buy phase — press B for the armoury', message.swapped ? 'SWITCHING SIDES' : 'KESTREL YARD', 'neutral', 3200);
+  hud.banner(title, message.swapped ? 'Sides switched — you now attack from the other gate.' : 'Buy phase — press B for the armoury', message.swapped ? 'SWITCHING SIDES' : arena.map.title.toUpperCase(), 'neutral', 3200);
   announce(roundIntroVoice(message), true);
   setTimeout(() => { if (game.room?.phase === 'buy' && player.alive && !player.uiBlocked()) hud.openBuy(); }, 1100);
 });
@@ -232,7 +260,7 @@ net.on('shot', (message) => {
   if (player.mode === 'spectate' && player.pov?.owner === message.id) player.povShot({ weapon: message.w, ends: message.e }, { quiet: true });
   else message.e.forEach((end) => {
     effects.tracer(muzzle, end, shooter?.tracer || '#ffc857', 0.012 + weapon.tracer * 0.012);
-    if (weapon.id === 'm44') effects.trail(muzzle, end);
+    if (weapon.trail) effects.trail(muzzle, end);
     player.nearMiss(origin, end, message.id);
   });
   message.i.slice(0, 6).forEach(([x, y, z, nx, ny, nz, mat, exit], index) => { effects.impact([x, y, z], [nx, ny, nz], mat, Boolean(exit)); if (!exit && index < 2) playImpact(MATERIAL_SOUND(mat), [x, y, z], 0.6); });
@@ -339,6 +367,8 @@ document.addEventListener('pointerlockchange', () => {
 });
 document.querySelector('#resume-button').addEventListener('click', () => { pauseCard.classList.add('hidden'); player.lock(); });
 document.querySelector('#pause-settings').addEventListener('click', () => { pauseCard.classList.add('hidden'); openSettings(); });
+document.querySelector('#pause-feedback').addEventListener('click', () => { pauseCard.classList.add('hidden'); openFeedback('bug'); });
+bus.on('feedback-closed', () => { if (game.screen === 'game' && player.alive) pauseCard.classList.remove('hidden'); });
 document.querySelector('#leave-button').addEventListener('click', () => { play('uiBack'); net.leaveRoom(); });
 bus.on('settings-closed', () => { if (game.screen === 'game' && player.alive) pauseCard.classList.remove('hidden'); });
 bus.on('key', (code) => {

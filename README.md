@@ -1,6 +1,6 @@
 # Sniper Shootout
 
-A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and one hand-built map: **Kestrel Yard**. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
+A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and five hand-built arenas from a 1v1 gallery to a canyon-sized sniper range. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
 
 No accounts, no asset downloads: every model, texture and sound is generated in code.
 
@@ -36,9 +36,19 @@ To play with friends, create a private room and send them the invite link shown 
 
 Radar Pulse · Recon Drone (pilotable) · Decoy Hologram · Deploy Shield · Silent Step · Field Stim
 
-### Kestrel Yard
+### Arenas
 
-A mirrored industrial yard: rail lane to the west, market lane to the east, a plaza in the middle. Two depot roofs for long sightlines, a glass-fronted office overlooking the plaza, and a plus-shaped underpass that gets you across the map unseen. Locations are named on the HUD and used by pings. Each match rolls one of four conditions: Dusk, Night Fog, Storm Front or High Noon.
+Every arena is mirrored so both teams play the same ground, names its locations on the HUD, and gives bots a generated navigation grid. Hosts choose **Lobby vote** (three candidates plus "surprise me", 15 seconds, ties broken at random), **Random each match** (never the same map twice running, weighted by lobby size), or pin one arena. Matchmade queues rotate at random.
+
+| Arena | Size | Style | What defines it |
+| --- | --- | --- | --- |
+| Kestrel Yard | Medium · 2v2–4v4 | Industrial rail yard | Depot roofs, a glass-fronted office, a plus-shaped underpass |
+| Halcyon Atrium | Small · 1v1–2v2 | Glass-and-marble gallery | Two mezzanines with breakable glass railings, a skybridge, shoot-through exhibit panels |
+| Campanile | Small–medium · 2v2–3v3 | Old-town piazza | A climbable bell tower, arcades, a balcony house per side, a sunken canal walk |
+| Frostbite Station | Medium–large · 3v3–4v4 | Arctic research base | Helipad on stilts, lab roofs, snow berms (thin ones stop nothing), an ice trench |
+| Dustline Pass | Large · 3v3–4v4 | Desert canyon outpost | One stone bridge over a dry riverbed, plank crossings, a watchtower, a roof-terrace house, a climbable mesa |
+
+Each arena has its own set of conditions: Dusk, Night Fog, Storm Front and High Noon, plus **Whiteout** (snowfall, 90 m visibility) on Frostbite and **Dust Haze** on Dustline.
 
 ## Modes
 
@@ -49,7 +59,7 @@ A mirrored industrial yard: rail lane to the west, market lane to the east, a pl
 | Arcade | The day's modifier: Headhunter, One Tap, Low Orbit or Sidearms Only. |
 | Bot match | 3v3 against Recruit, Veteran or Elite bots. |
 | Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
-| Private room | Room code + invite link, team select, bots, custom rules (format, round time, credits, weather, modifier, friendly fire, sudden death). |
+| Private room | Room code + invite link, team select, bots, custom rules (arena vote / random / fixed, format, round time, credits, weather, modifier, friendly fire, sudden death). |
 
 ## Progression
 
@@ -80,11 +90,14 @@ src/arena/
 ├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking
 ├── shared/                      # Runs on both sides
 │   ├── constants.js             # Weapons, gadgets, economy, rules, progression
-│   ├── map.js                   # Kestrel Yard and the range, as collision boxes
+│   ├── map.js                   # Map registry, Kestrel Yard and the practice range
+│   ├── mapkit.js                # Box-map authoring tools (mirroring, walls, stairs, glass runs)
+│   ├── maps/                    # Halcyon Atrium, Campanile, Frostbite Station, Dustline Pass
 │   ├── physics.js               # Box world: movement, stairs, raycasts
 │   └── combat.js                # Hit zones, penetration, spread
 ├── server/
 │   ├── room.js                  # Match state machine, authoritative combat, gadgets
+│   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
 │   ├── bots.js, nav.js          # Bot AI and the generated navigation grid
 │   └── profiles.js              # JSON profile store
 ├── client/                      # Three.js client (world, characters, viewmodel, HUD, menus, audio)
@@ -102,7 +115,9 @@ The client predicts its own movement and draws tracers immediately; the server v
 npm test
 ```
 
-Checks the map (mirroring, clear spawns, closed gate-to-gate sightlines), walks a body through the underpass and onto the roofs, verifies bots can path everywhere, and exercises hit zones, penetration, glass and the damage model.
+For every arena: mirroring, clear spawns inside their zones, closed gate-to-gate sightlines, and bot paths from both spawns to every point of interest. Also walks a body through the yard's underpass and roofs, exercises hit zones, penetration, glass and the damage model, and drives a real room through map pinning, voting and random rotation.
+
+Adding an arena: write `shared/maps/<id>.js` with the `mapkit` builder (author the south half with `SYM`), register it in `MAP_INFO`/`BUILDERS` in `shared/map.js`, and `npm test` will tell you what is unfair or unreachable.
 
 ## Python backend
 

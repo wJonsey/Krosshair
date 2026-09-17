@@ -3,85 +3,11 @@
 // Convention: +x east, +z south, +y up. Alpha spawns south (z > 0), Bravo north.
 // Kestrel Yard is mirrored across z = 0 so both sides play identically.
 
-function createBuilder() {
-  const boxes = [];
-  let counter = 0;
-  function add(x1, z1, x2, z2, y1, y2, mat, opts = {}) {
-    const make = (za, zb, suffix, material) => {
-      const entry = {
-        id: `${opts.glass ? 'g' : 'b'}${counter}${suffix}`,
-        min: [Math.min(x1, x2), Math.min(y1, y2), Math.min(za, zb)],
-        max: [Math.max(x1, x2), Math.max(y1, y2), Math.max(za, zb)],
-        mat: material,
-      };
-      if (opts.glass) entry.glass = true;
-      if (opts.deco) entry.deco = true;
-      if (opts.noShadow) entry.noShadow = true;
-      boxes.push(entry);
-    };
-    make(z1, z2, '', mat);
-    if (opts.sym) make(-z1, -z2, 'm', opts.mirrorMat || mat);
-    counter += 1;
-  }
-  // Fills a rectangle with slabs, leaving rectangular holes [x1, z1, x2, z2] open.
-  function slabs(x1, z1, x2, z2, y1, y2, mat, holes = [], opts = {}) {
-    const xs = [...new Set([x1, x2, ...holes.flatMap((h) => [h[0], h[2]])])].filter((v) => v >= x1 && v <= x2).sort((a, b) => a - b);
-    const zs = [...new Set([z1, z2, ...holes.flatMap((h) => [h[1], h[3]])])].filter((v) => v >= z1 && v <= z2).sort((a, b) => a - b);
-    const inHole = (x, z) => holes.some((h) => x > h[0] && x < h[2] && z > h[1] && z < h[3]);
-    for (let xi = 0; xi < xs.length - 1; xi += 1) {
-      let runStart = null;
-      for (let zi = 0; zi < zs.length - 1; zi += 1) {
-        const solid = !inHole((xs[xi] + xs[xi + 1]) / 2, (zs[zi] + zs[zi + 1]) / 2);
-        if (solid && runStart === null) runStart = zs[zi];
-        const last = zi === zs.length - 2;
-        if (runStart !== null && (!solid || last)) {
-          add(xs[xi], runStart, xs[xi + 1], solid ? zs[zi + 1] : zs[zi], y1, y2, mat, opts);
-          runStart = null;
-        }
-      }
-    }
-  }
-  // axis 'x': wall runs along x, c1..c2 is its z thickness. axis 'z': runs along z, c1..c2 is x thickness.
-  function wall(axis, c1, c2, from, to, y1, y2, mat, openings = [], opts = {}) {
-    const put = (a, b, ya, yb, material, extra = {}) => {
-      if (Math.abs(b - a) < 1e-6 || Math.abs(yb - ya) < 1e-6) return;
-      if (axis === 'x') add(a, c1, b, c2, ya, yb, material, { ...opts, ...extra });
-      else add(c1, a, c2, b, ya, yb, material, { ...opts, ...extra });
-    };
-    let cursor = from;
-    [...openings].sort((m, n) => m.a - n.a).forEach((opening) => {
-      put(cursor, opening.a, y1, y2, mat);
-      put(opening.a, opening.b, y1, opening.y1, mat);
-      put(opening.a, opening.b, opening.y2, y2, mat);
-      if (opening.glass) {
-        const panes = Math.max(1, Math.ceil((opening.b - opening.a) / 3.2));
-        const width = (opening.b - opening.a) / panes;
-        const mid = (c1 + c2) / 2;
-        for (let pane = 0; pane < panes; pane += 1) {
-          const a = opening.a + pane * width, b = a + width;
-          if (axis === 'x') add(a, mid - 0.04, b, mid + 0.04, opening.y1, opening.y2, 'glass', { ...opts, glass: true });
-          else add(mid - 0.04, a, mid + 0.04, b, opening.y1, opening.y2, 'glass', { ...opts, glass: true });
-        }
-      }
-      cursor = opening.b;
-    });
-    put(cursor, to, y1, y2, mat);
-  }
-  // Solid steps rising from `from` to `to` along the axis.
-  function stairs(axis, from, to, l1, l2, yBottom, yTop, steps, mat, opts = {}) {
-    for (let step = 0; step < steps; step += 1) {
-      const a = from + ((to - from) * step) / steps;
-      const b = from + ((to - from) * (step + 1)) / steps;
-      const top = yBottom + ((yTop - yBottom) * (step + 1)) / steps;
-      if (axis === 'x') add(a, l1, b, l2, yBottom, top, mat, opts);
-      else add(l1, a, l2, b, yBottom, top, mat, opts);
-    }
-  }
-  return { boxes, add, slabs, wall, stairs };
-}
-
-const SYM = { sym: true };
-const DECO = { deco: true, noShadow: true };
+import { createBuilder, SYM, DECO } from './mapkit.js';
+import { buildAtrium } from './maps/atrium.js';
+import { buildCampanile } from './maps/campanile.js';
+import { buildFrostbite } from './maps/frostbite.js';
+import { buildDustline } from './maps/dustline.js';
 
 function buildYard() {
   const b = createBuilder();
@@ -184,6 +110,10 @@ function buildYard() {
   add(-7.5, -0.35, -3, 0.35, 0, 3.1, 'stone');
   add(3, -0.35, 7.5, 0.35, 0, 3.1, 'stone');
   add(6.4, 15, 9, 15.4, 0, 3.3, 'brick', SYM);
+  // Shoulders on the monument and a buffer stop between the tracks close the last standing-height lines.
+  add(-3, -0.6, -1.2, 0.6, 1.1, 2.5, 'stone');
+  add(1.2, -0.6, 3, 0.6, 1.1, 2.5, 'stone');
+  add(-38, -1, -35, 1, 0, 2.5, 'rust');
   add(-12, 9, -6, 10.4, 0, 1.15, 'concrete', SYM);
   add(-11.8, 9.2, -6.2, 10.2, 1.15, 1.3, 'grass', { ...DECO, sym: true });
   add(6, 9, 12, 10.4, 0, 1.15, 'concrete', SYM);
@@ -343,6 +273,8 @@ function buildYard() {
     zones,
     interest,
     lanes,
+    env: { backdrop: 'skyline', variants: ['dusk', 'night', 'storm', 'noon'], underground: true },
+    spawnZones: { A: [-44, 46.4, 44, 60], B: [-44, -60, 44, -46.4] },
     spawns: {
       A: [-7.5, -2.5, 2.5, 7.5].map((x) => ({ x, y: 0, z: 54, yaw: 0 })),
       B: [-7.5, -2.5, 2.5, 7.5].map((x) => ({ x, y: 0, z: -54, yaw: Math.PI })),
@@ -409,10 +341,22 @@ function buildRange() {
   };
 }
 
+// Playable arenas, in rotation order. Geometry is only built the first time a map is asked for.
+export const MAP_INFO = [
+  { id: 'yard', title: 'Kestrel Yard', size: 'Medium', players: '2v2 – 4v4', style: 'Industrial rail yard', blurb: 'Depot roofs, a glass-fronted office and a plus-shaped underpass.' },
+  { id: 'atrium', title: 'Halcyon Atrium', size: 'Small', players: '1v1 – 2v2', style: 'Glass-and-marble gallery', blurb: 'Two mezzanines, a skybridge and glass railings that do not stay intact for long.' },
+  { id: 'campanile', title: 'Campanile', size: 'Small – medium', players: '2v2 – 3v3', style: 'Old-town piazza', blurb: 'A bell tower over the square, arcades, a balcony house and a sunken canal walk.' },
+  { id: 'frostbite', title: 'Frostbite Station', size: 'Medium – large', players: '3v3 – 4v4', style: 'Arctic research base', blurb: 'A helipad on stilts, lab roofs, snow berms and an ice trench under the pipes.' },
+  { id: 'dustline', title: 'Dustline Pass', size: 'Large', players: '3v3 – 4v4', style: 'Desert canyon outpost', blurb: 'One stone bridge, a dry riverbed beneath it, watchtowers and a climbable mesa.' },
+];
+export const MAP_IDS = MAP_INFO.map((info) => info.id);
+const BUILDERS = { yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline };
+
 const cache = new Map();
 export function getMap(id = 'yard') {
-  if (!cache.has(id)) cache.set(id, id === 'range' ? buildRange() : buildYard());
-  return cache.get(id);
+  const key = BUILDERS[id] ? id : 'yard';
+  if (!cache.has(key)) cache.set(key, BUILDERS[key]());
+  return cache.get(key);
 }
 
 export function zoneAt(map, x, y, z) {

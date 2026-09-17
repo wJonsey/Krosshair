@@ -1,7 +1,7 @@
 // Third-person operators: procedural model + animation, snapshot interpolation
 // for remote players, decoys, drones, and replay playback (killcam / final kill).
 import * as THREE from 'three';
-import { BODY, FLAG, INTERP_DELAY, MATERIALS } from '../shared/constants.js';
+import { BODY, FLAG, INTERP_DELAY, MATERIALS, WEAPONS } from '../shared/constants.js';
 import { bus, game, isEnemy } from './state.js';
 import { playFootstep, startLoop, loop } from './audio.js';
 
@@ -129,10 +129,10 @@ export function animateOperator(root, pose) {
   data.spine.rotation.x = c * 0.28 + stride * 0.08;
   data.aim.rotation.x = pose.pitch - data.spine.rotation.x;
   data.head.rotation.x = pose.pitch * 0.6;
-  const long = pose.weapon === 'm44' || pose.weapon === 'recon' || pose.weapon === 'breaker' || pose.weapon === 'talon';
-  data.gunBarrel.visible = pose.weapon !== 'knife';
-  data.gunScope.visible = pose.weapon === 'm44' || pose.weapon === 'recon';
-  data.gun.scale.z = pose.weapon === 'talon' ? 0.85 : long ? 1 : pose.weapon === 'wasp' ? 0.7 : 0.45;
+  const weapon = WEAPONS[pose.weapon] || WEAPONS.m44;
+  data.gunBarrel.visible = !weapon.melee;
+  data.gunScope.visible = Boolean(weapon.scope && weapon.scope[0] < 40);
+  data.gun.scale.z = weapon.slot === 'sidearm' ? 0.45 : { sniper: 1, marksman: 0.95, lmg: 1, shotgun: weapon.pellets > 1 ? 0.95 : 1, rifle: 0.85, smg: 0.7 }[weapon.family] || 0.45;
 }
 
 function nameTag(text, color) {

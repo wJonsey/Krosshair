@@ -164,7 +164,7 @@ export function traceShot(world, origin, dir, weapon, targets, maxDist = 260) {
       const scale = clamp(power / weapon.pen, 0.3, 1);
       result.hits.push({ id: event.target.id, kind: event.target.kind, zone: event.zone, distance: event.t, scale, wallbang });
       // Only the long rifle carries enough energy to pass through a body.
-      if (weapon.id !== 'm44' || event.target.kind !== 'player') { result.distance = event.t; break; }
+      if (!weapon.pierce || event.target.kind !== 'player') { result.distance = event.t; break; }
       power -= 0.45;
       if (power <= 0.1) { result.distance = event.t; break; }
     }

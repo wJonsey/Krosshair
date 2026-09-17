@@ -52,10 +52,16 @@ export function botBuy(room, bot) {
     if (bot.credits >= 900) room.buy(bot, 'helmet');
   }
   const roll = Math.random();
+  // Bots mostly stick to long guns, with the odd rifle or SMG; they keep enough back for armour next round.
   if (room.rules.modifier !== 'sidearms' && bot.weapons.primary === 'm44') {
-    if (roll < 0.2 && bot.credits >= 2100) room.buy(bot, 'recon'); else if (roll > 0.72 && bot.credits >= 2400) room.buy(bot, 'talon'); else if (roll > 0.9 && bot.credits >= 1700) room.buy(bot, 'wasp');
+    const picks = [['recon', 0.16], ['vesper', 0.12], ['talon', 0.14], ['halcyon', 0.1], ['ronin', 0.08], ['harbinger', 0.05], ['anvil', 0.04], ['wasp', 0.04], ['hornet', 0.03]];
+    let chance = roll;
+    for (const [id, weight] of picks) {
+      chance -= weight;
+      if (chance <= 0) { if (bot.credits >= WEAPONS[id].cost + 400) room.buy(bot, id); break; }
+    }
   }
-  if (room.rules.modifier === 'sidearms' && bot.credits >= 900) room.buy(bot, 'viper');
+  if (room.rules.modifier === 'sidearms' && bot.credits >= 900) room.buy(bot, Math.random() < 0.7 ? 'viper' : 'pike');
   if (bot.credits >= 800 && Math.random() < 0.5) room.buy(bot, Math.random() < 0.5 ? 'pulse' : 'stim');
 }
 
@@ -150,7 +156,7 @@ function chooseGoal(room, bot, t) {
   const weights = points.map(([, y, z]) => {
     const forward = -z * side;
     let weight = 1 + Math.max(0, 30 - Math.abs(forward - (remaining < 45 ? 25 : 0))) / 12;
-    if (y > 3 && WEAPONS[bot.weapons.primary]?.id === 'm44') weight *= 1.6;
+    if (y > 3 && WEAPONS[bot.weapons.primary]?.family === 'sniper') weight *= 1.6;
     if (y < -1) weight *= 0.7;
     return weight;
   });
@@ -235,16 +241,16 @@ export function updateBot(room, bot, dt, t) {
     const dx = current.x - eye[0], dz = current.z - eye[2];
     const dist = Math.hypot(dx, dz);
     // Pick the right tool.
-    const wantSidearm = (bot.weapons.primary === 'm44' && dist < 9) || !bot.weapons.primary || (bot.ammo.primary && bot.ammo.primary.mag + bot.ammo.primary.reserve === 0);
+    const wantSidearm = (WEAPONS[bot.weapons.primary]?.action === 'bolt' && dist < 9) || !bot.weapons.primary || (bot.ammo.primary && bot.ammo.primary.mag + bot.ammo.primary.reserve === 0);
     const wantSlot = wantSidearm ? 'sidearm' : 'primary';
     if (bot.active !== wantSlot && !bot.reloadEnd) room.switchWeapon(bot, wantSlot);
     const weapon = WEAPONS[bot.weapons[bot.active]];
     const aimY = current.y + (ai.aimHead && target.seesChest !== false ? (crouched ? 1.06 : 1.6) : target.seesChest ? (crouched ? 0.7 : 1.15) : (crouched ? 1.06 : 1.6));
-    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 4.5) * (weapon.id === 'm44' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1);
+    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 4.5) * (weapon.family === 'sniper' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1);
     const yaw = Math.atan2(-dx, -dz) + ai.errYaw * errorScale;
     const pitch = Math.atan2(aimY - eye[1], dist) + ai.errPitch * errorScale * 0.7;
     const off = turnToward(bot, yaw, pitch, 3.2 + (1 / diff.aimTime) * 2.2, dt);
-    const sniping = weapon.id === 'm44' || weapon.id === 'recon';
+    const sniping = weapon.family === 'sniper' || weapon.family === 'marksman';
     if (t < ai.evadeUntil || !sniping || dist < 14) {
       if (t > ai.strafeUntil) { ai.strafeUntil = t + rand(0.5, 1.3); if (Math.random() < 0.5) ai.strafe *= -1; }
       strafe(room, bot, dt, sniping ? 3.4 : 4.6);
@@ -260,7 +266,7 @@ export function updateBot(room, bot, dt, t) {
       if (room.fire(bot, eye, dir, t, ++bot.shotSeq)) {
         ai.errYaw = gauss(); ai.errPitch = gauss();
         ai.aimHead = Math.random() < diff.headBias;
-        if (weapon.id === 'm44') {
+        if (!weapon.auto && weapon.cooldown >= 0.9) {
           ai.reactAt = t + diff.aimTime * rand(0.8, 1.3);
           if (Math.random() < 0.45) { ai.evadeUntil = t + rand(0.6, 1.2); ai.strafe = Math.random() < 0.5 ? 1 : -1; }
         } else ai.reactAt = t + rand(0.02, 0.12);

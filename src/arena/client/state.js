@@ -23,7 +23,9 @@ export const DEFAULT_SETTINGS = { sensitivity: 1, scopeSensitivity: 0.7, fov: 78
 
 export const game = {
   name: stored('name', legacyName),
-  token: stored('token', null),
+  token: stored('token', null), // pre-accounts guest progress, claimed on sign-up
+  authSession: stored('authSession', null),
+  username: null,
   session,
   look: stored('look', { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' }),
   settings: { ...DEFAULT_SETTINGS, ...stored('settings', {}) },

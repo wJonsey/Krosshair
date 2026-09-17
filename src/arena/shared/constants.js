@@ -50,13 +50,35 @@ export const MATERIALS = {
   target: { color: '#d9d4c8', rough: 0.8, pattern: 'noise', resist: 0.5, sound: 'wood' },
   barrier: { color: '#6ce6d1', rough: 0.2, resist: 99, sound: 'energy', seeThrough: true },
   shield: { color: '#8fd5ff', rough: 0.2, resist: 99, sound: 'energy', seeThrough: true },
+  // --- map pack: gallery, old town, arctic, desert ---
+  marble: { color: '#cfcbc0', rough: 0.35, pattern: 'tiles', resist: 8, sound: 'concrete' },
+  marbleDark: { color: '#3b3f45', rough: 0.3, pattern: 'tiles', resist: 8, sound: 'concrete' },
+  plasterWhite: { color: '#dcd8cc', rough: 0.9, pattern: 'noise', resist: 3, sound: 'concrete' },
+  ochre: { color: '#c9994f', rough: 0.95, pattern: 'noise', resist: 3, sound: 'concrete' },
+  rosePlaster: { color: '#c98268', rough: 0.95, pattern: 'noise', resist: 3, sound: 'concrete' },
+  terracotta: { color: '#b55f3a', rough: 0.85, pattern: 'bricks', resist: 2, sound: 'concrete' },
+  cobble: { color: '#7d766a', rough: 1, pattern: 'tiles', resist: 99, sound: 'concrete' },
+  water: { color: '#2a6d88', rough: 0.08, metal: 0.3, resist: 99, sound: 'grass' },
+  bronze: { color: '#8a6a3a', rough: 0.4, metal: 0.8, pattern: 'noise', resist: 8, sound: 'metal' },
+  hedge: { color: '#2f5a35', rough: 1, pattern: 'noise', resist: 0.15, sound: 'grass' },
+  sand: { color: '#c4a66e', rough: 1, pattern: 'noise', resist: 99, sound: 'gravel' },
+  sandstone: { color: '#b88a58', rough: 0.95, pattern: 'strata', resist: 99, sound: 'concrete' },
+  adobe: { color: '#c59c6e', rough: 1, pattern: 'noise', resist: 3, sound: 'concrete' },
+  sandbag: { color: '#9a8960', rough: 1, pattern: 'bricks', resist: 2.5, sound: 'cloth' },
+  snow: { color: '#e4ecf2', rough: 0.9, pattern: 'noise', resist: 99, sound: 'gravel' },
+  snowBerm: { color: '#d3dfe9', rough: 0.95, pattern: 'noise', resist: 0.6, sound: 'gravel' },
+  ice: { color: '#a5d2e6', rough: 0.12, metal: 0.1, pattern: 'noise', resist: 2, sound: 'glass' },
+  hull: { color: '#cfd6db', rough: 0.5, metal: 0.3, pattern: 'panels', resist: 1.6, sound: 'metal' },
+  hazard: { color: '#d8762a', rough: 0.55, metal: 0.4, pattern: 'ribs', resist: 1.6, sound: 'metal' },
+  darkMetal: { color: '#23292f', rough: 0.4, metal: 0.7, pattern: 'ribs', resist: 1.6, sound: 'metal' },
+  rock: { color: '#6f6a62', rough: 1, pattern: 'strata', resist: 99, sound: 'concrete' },
 };
 
 export const ZONE_MULT = { head: 1, torso: 1, limb: 1 };
 
 export const WEAPONS = {
   m44: {
-    id: 'm44', slot: 'primary', name: 'M-44 Long Sight', tag: 'BOLT-ACTION SNIPER', cost: 0,
+    id: 'm44', sight: 'scope', slot: 'primary', family: 'sniper', short: 'M-44', action: 'bolt', trail: true, pierce: true, name: 'M-44 Long Sight', tag: 'BOLT-ACTION SNIPER', cost: 0,
     damage: 104, head: 4, limb: 0.72, armorPen: 0.55, pen: 1.0,
     mag: 5, reserve: 20, cooldown: 1.25, reload: 2.9, equip: 0.75,
     auto: false, pellets: 1, scope: [18, 9], scopeTime: 0.22,
@@ -64,7 +86,7 @@ export const WEAPONS = {
     falloff: null, recoil: { kick: 3.4, side: 0.5, recover: 5 }, speed: 0.9, loud: 95, tracer: 1,
   },
   recon: {
-    id: 'recon', slot: 'primary', name: 'RC-9 Recon', tag: 'SEMI-AUTO MARKSMAN', cost: 1700,
+    id: 'recon', sight: 'prism', slot: 'primary', family: 'marksman', short: 'RC-9', sway: 0.7, name: 'RC-9 Recon', tag: 'SEMI-AUTO MARKSMAN', cost: 1700,
     damage: 45, head: 2.3, limb: 0.8, armorPen: 0.4, pen: 0.6,
     mag: 10, reserve: 30, cooldown: 0.3, reload: 2.4, equip: 0.6,
     auto: false, pellets: 1, scope: [30], scopeTime: 0.17,
@@ -72,7 +94,7 @@ export const WEAPONS = {
     falloff: null, recoil: { kick: 1.6, side: 0.35, recover: 8 }, speed: 0.94, loud: 80, tracer: 0.8,
   },
   talon: {
-    id: 'talon', slot: 'primary', name: 'Talon AR', tag: 'AUTOMATIC RIFLE', cost: 2000,
+    id: 'talon', sight: 'dot', slot: 'primary', family: 'rifle', short: 'TALON', name: 'Talon AR', tag: 'AUTOMATIC RIFLE', cost: 2000,
     damage: 26, head: 2.6, limb: 0.8, armorPen: 0.45, pen: 0.5,
     mag: 30, reserve: 90, cooldown: 0.105, reload: 2.4, equip: 0.55,
     auto: true, pellets: 1, scope: [42], scopeTime: 0.14,
@@ -80,7 +102,7 @@ export const WEAPONS = {
     falloff: [32, 85, 0.7], recoil: { kick: 0.8, side: 0.4, recover: 9 }, speed: 0.96, loud: 75, tracer: 0.6,
   },
   wasp: {
-    id: 'wasp', slot: 'primary', name: 'Wasp-9', tag: 'SUBMACHINE GUN', cost: 1250,
+    id: 'wasp', sight: 'dot', slot: 'primary', family: 'smg', short: 'WASP-9', name: 'Wasp-9', tag: 'SUBMACHINE GUN', cost: 1250,
     damage: 20, head: 1.8, limb: 0.85, armorPen: 0, pen: 0.25,
     mag: 30, reserve: 90, cooldown: 0.078, reload: 1.9, equip: 0.4,
     auto: true, pellets: 1, scope: [56], scopeTime: 0.1,
@@ -88,15 +110,71 @@ export const WEAPONS = {
     falloff: [12, 36, 0.45], recoil: { kick: 0.55, side: 0.3, recover: 10 }, speed: 1.04, loud: 60, tracer: 0.5,
   },
   breaker: {
-    id: 'breaker', slot: 'primary', name: 'Breaker-12', tag: 'PUMP SHOTGUN', cost: 1100,
+    id: 'breaker', sight: 'bead', slot: 'primary', family: 'shotgun', short: 'BREAKER', action: 'pump', name: 'Breaker-12', tag: 'PUMP SHOTGUN', cost: 1100,
     damage: 14, head: 1.5, limb: 0.85, armorPen: 0, pen: 0.12,
     mag: 6, reserve: 18, cooldown: 0.8, reload: 2.6, equip: 0.55,
     auto: false, pellets: 9, scope: [60], scopeTime: 0.1,
     spread: { hip: 4, ads: 3.1, move: 0.4, air: 2, bloom: 0, bloomMax: 0 },
     falloff: [8, 26, 0.2], recoil: { kick: 3.0, side: 0.6, recover: 6 }, speed: 1.0, loud: 85, tracer: 0.35,
   },
+  vesper: {
+    id: 'vesper', sight: 'scope', slot: 'primary', family: 'sniper', short: 'VESPER', action: 'bolt', trail: true, name: 'Vesper SR', tag: 'LIGHT BOLT-ACTION', cost: 1400,
+    damage: 88, head: 3.5, limb: 0.7, armorPen: 0.45, pen: 0.8,
+    mag: 6, reserve: 24, cooldown: 0.95, reload: 2.4, equip: 0.55,
+    auto: false, pellets: 1, scope: [24, 12], scopeTime: 0.15,
+    spread: { hip: 4, ads: 0, move: 2.2, air: 7, bloom: 0, bloomMax: 0 },
+    falloff: null, recoil: { kick: 2.6, side: 0.4, recover: 6 }, speed: 1.0, loud: 85, tracer: 0.9,
+  },
+  harbinger: {
+    id: 'harbinger', sight: 'scope', slot: 'primary', family: 'sniper', short: 'HARB .50', trail: true, pierce: true, name: 'Harbinger .50', tag: 'ANTI-MATERIEL RIFLE', cost: 3400,
+    damage: 150, head: 3, limb: 0.9, armorPen: 0.85, pen: 2.2,
+    mag: 4, reserve: 12, cooldown: 1.5, reload: 3.6, equip: 1.0,
+    auto: false, pellets: 1, scope: [14, 7], scopeTime: 0.32,
+    spread: { hip: 7, ads: 0, move: 4, air: 10, bloom: 0, bloomMax: 0 },
+    falloff: null, recoil: { kick: 5, side: 0.8, recover: 4 }, speed: 0.84, loud: 120, tracer: 1.3,
+  },
+  ronin: {
+    id: 'ronin', sight: 'iron', slot: 'primary', family: 'rifle', short: 'RONIN', name: 'Ronin-47', tag: 'HEAVY ASSAULT RIFLE', cost: 2500,
+    damage: 34, head: 2.5, limb: 0.8, armorPen: 0.5, pen: 0.6,
+    mag: 30, reserve: 90, cooldown: 0.125, reload: 2.6, equip: 0.6,
+    auto: true, pellets: 1, scope: [45], scopeTime: 0.16,
+    spread: { hip: 2.8, ads: 0.45, move: 1.6, air: 5, bloom: 0.32, bloomMax: 2.8 },
+    falloff: [30, 80, 0.7], recoil: { kick: 1.25, side: 0.7, recover: 7 }, speed: 0.93, loud: 85, tracer: 0.7,
+  },
+  halcyon: {
+    id: 'halcyon', sight: 'holo', slot: 'primary', family: 'rifle', short: 'C8', name: 'Halcyon C8', tag: 'CARBINE', cost: 1700,
+    damage: 22, head: 2.6, limb: 0.8, armorPen: 0.35, pen: 0.45,
+    mag: 30, reserve: 120, cooldown: 0.09, reload: 2.1, equip: 0.45,
+    auto: true, pellets: 1, scope: [48], scopeTime: 0.12,
+    spread: { hip: 2, ads: 0.35, move: 1, air: 4, bloom: 0.18, bloomMax: 1.8 },
+    falloff: [24, 70, 0.65], recoil: { kick: 0.6, side: 0.3, recover: 11 }, speed: 1.0, loud: 70, tracer: 0.55,
+  },
+  anvil: {
+    id: 'anvil', sight: 'dot', slot: 'primary', family: 'lmg', short: 'ANVIL', name: 'Anvil LMG', tag: 'LIGHT MACHINE GUN', cost: 2900,
+    damage: 28, head: 2.2, limb: 0.85, armorPen: 0.55, pen: 0.9,
+    mag: 80, reserve: 160, cooldown: 0.1, reload: 5.2, equip: 1.0,
+    auto: true, pellets: 1, scope: [50], scopeTime: 0.28,
+    spread: { hip: 4, ads: 0.6, move: 2.6, air: 7, bloom: 0.12, bloomMax: 3 },
+    falloff: [35, 90, 0.75], recoil: { kick: 0.9, side: 0.55, recover: 7 }, speed: 0.84, loud: 95, tracer: 0.7,
+  },
+  hornet: {
+    id: 'hornet', sight: 'holo', slot: 'primary', family: 'smg', short: 'HORNET', name: 'Hornet PDW', tag: 'PERSONAL DEFENCE WEAPON', cost: 1000,
+    damage: 16, head: 1.8, limb: 0.9, armorPen: 0.15, pen: 0.2,
+    mag: 40, reserve: 120, cooldown: 0.062, reload: 2.2, equip: 0.35,
+    auto: true, pellets: 1, scope: [58], scopeTime: 0.08,
+    spread: { hip: 1.4, ads: 1, move: 0.4, air: 2.5, bloom: 0.22, bloomMax: 3.4 },
+    falloff: [10, 30, 0.4], recoil: { kick: 0.45, side: 0.35, recover: 12 }, speed: 1.07, loud: 55, tracer: 0.4,
+  },
+  maul: {
+    id: 'maul', sight: 'iron', slot: 'primary', family: 'shotgun', short: 'MAUL', name: 'Maul-S', tag: 'SEMI-AUTO SHOTGUN', cost: 1800,
+    damage: 11, head: 1.4, limb: 0.85, armorPen: 0, pen: 0.1,
+    mag: 7, reserve: 21, cooldown: 0.34, reload: 3.0, equip: 0.6,
+    auto: false, pellets: 8, scope: [62], scopeTime: 0.12,
+    spread: { hip: 4.6, ads: 3.8, move: 0.5, air: 2, bloom: 0.5, bloomMax: 1.5 },
+    falloff: [6, 20, 0.2], recoil: { kick: 2.4, side: 0.7, recover: 7 }, speed: 0.97, loud: 85, tracer: 0.3,
+  },
   p9: {
-    id: 'p9', slot: 'sidearm', name: 'P9 Service', tag: 'SIDEARM', cost: 0,
+    id: 'p9', sight: 'iron', slot: 'sidearm', family: 'pistol', short: 'P9', name: 'P9 Service', tag: 'SIDEARM', cost: 0,
     damage: 24, head: 2.3, limb: 0.85, armorPen: 0.1, pen: 0.3,
     mag: 12, reserve: 36, cooldown: 0.16, reload: 1.5, equip: 0.3,
     auto: false, pellets: 1, scope: [62], scopeTime: 0.08,
@@ -104,19 +182,58 @@ export const WEAPONS = {
     falloff: [16, 44, 0.5], recoil: { kick: 0.9, side: 0.3, recover: 9 }, speed: 1.06, loud: 55, tracer: 0.4,
   },
   viper: {
-    id: 'viper', slot: 'sidearm', name: 'Viper .50', tag: 'HEAVY REVOLVER', cost: 800,
+    id: 'viper', sight: 'iron', slot: 'sidearm', family: 'pistol', short: 'VIPER', name: 'Viper .50', tag: 'HEAVY REVOLVER', cost: 800,
     damage: 55, head: 2.1, limb: 0.8, armorPen: 0.4, pen: 0.5,
     mag: 6, reserve: 18, cooldown: 0.48, reload: 2.2, equip: 0.4,
     auto: false, pellets: 1, scope: [58], scopeTime: 0.1,
     spread: { hip: 1.6, ads: 0.25, move: 1.4, air: 5, bloom: 0.9, bloomMax: 2.5 },
     falloff: [24, 60, 0.6], recoil: { kick: 2.6, side: 0.5, recover: 6 }, speed: 1.03, loud: 80, tracer: 0.6,
   },
+  pike: {
+    id: 'pike', sight: 'iron', slot: 'sidearm', family: 'pistol', short: 'PIKE', name: 'Pike MP', tag: 'MACHINE PISTOL', cost: 550,
+    damage: 15, head: 2, limb: 0.85, armorPen: 0, pen: 0.2,
+    mag: 18, reserve: 54, cooldown: 0.07, reload: 1.7, equip: 0.3,
+    auto: true, pellets: 1, scope: [62], scopeTime: 0.08,
+    spread: { hip: 1.8, ads: 1.2, move: 0.6, air: 3, bloom: 0.35, bloomMax: 3.5 },
+    falloff: [8, 26, 0.4], recoil: { kick: 0.6, side: 0.45, recover: 11 }, speed: 1.06, loud: 55, tracer: 0.35,
+  },
+  wren: {
+    id: 'wren', sight: 'iron', slot: 'sidearm', family: 'pistol', short: 'WREN', suppressed: true, name: 'Wren .22', tag: 'SUPPRESSED PISTOL', cost: 350,
+    damage: 21, head: 2.6, limb: 0.85, armorPen: 0, pen: 0.15,
+    mag: 15, reserve: 45, cooldown: 0.17, reload: 1.5, equip: 0.3,
+    auto: false, pellets: 1, scope: [62], scopeTime: 0.08,
+    spread: { hip: 1.2, ads: 0.4, move: 0.7, air: 4, bloom: 0.3, bloomMax: 2 },
+    falloff: [14, 40, 0.5], recoil: { kick: 0.5, side: 0.2, recover: 12 }, speed: 1.08, loud: 18, tracer: 0.15,
+  },
+  sawn: {
+    id: 'sawn', sight: 'bead', slot: 'sidearm', family: 'shotgun', short: 'SAWN-OFF', name: 'Sawn-Off', tag: 'DOUBLE-BARREL', cost: 700,
+    damage: 12, head: 1.4, limb: 0.85, armorPen: 0, pen: 0.1,
+    mag: 2, reserve: 16, cooldown: 0.22, reload: 2.2, equip: 0.35,
+    auto: false, pellets: 8, scope: [64], scopeTime: 0.08,
+    spread: { hip: 5.2, ads: 4.6, move: 0.3, air: 1.5, bloom: 0, bloomMax: 0 },
+    falloff: [4, 14, 0.15], recoil: { kick: 3.2, side: 0.9, recover: 6 }, speed: 1.04, loud: 90, tracer: 0.3,
+  },
   knife: {
-    id: 'knife', slot: 'melee', name: 'Kestrel Blade', tag: 'MELEE', cost: 0,
+    id: 'knife', slot: 'melee', family: 'melee', short: 'BLADE', name: 'Kestrel Blade', tag: 'MELEE', cost: 0,
     damage: 55, backstab: 200, range: 2.3, cooldown: 0.62, equip: 0.25,
     melee: true, speed: 1.14, loud: 0,
   },
 };
+// Username + password accounts. Switched off until the game moves to its real servers:
+// pilots play as guests with a callsign, and progress stays tied to their browser.
+// Flip to true to bring back login and sign-up (server/accounts.js keeps working either way).
+export const ACCOUNTS_ENABLED = false;
+
+// Sight types (weapon.sight): scope = full scope overlay, prism = magnified lens, dot = red dot,
+// holo = holographic window, iron = iron sights on the model, bead = shotgun bead.
+// How the armoury groups weapons, in display order.
+export const WEAPON_CLASSES = [
+  { id: 'long', name: 'Long range', families: ['sniper', 'marksman'] },
+  { id: 'rifle', name: 'Rifles', families: ['rifle', 'lmg'] },
+  { id: 'close', name: 'Close quarters', families: ['smg', 'shotgun'] },
+  { id: 'sidearm', name: 'Sidearms', slot: 'sidearm' },
+];
+export function weaponClass(weapon) { return WEAPON_CLASSES.find((c) => (c.slot ? weapon.slot === c.slot : weapon.slot === 'primary' && c.families.includes(weapon.family)))?.id || 'long'; }
 export const DEFAULT_LOADOUT = { primary: 'm44', sidearm: 'p9', melee: 'knife' };
 export const SLOT_ORDER = ['primary', 'sidearm', 'melee'];
 
@@ -166,7 +283,7 @@ export const MODIFIERS = {
   sidearms: { name: 'Sidearms Only', desc: 'No primaries. Pistols, revolvers and knives.' },
 };
 export const VARIANTS = ['dusk', 'night', 'storm', 'noon'];
-export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm Front', noon: 'High Noon' };
+export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm Front', noon: 'High Noon', snow: 'Whiteout', haze: 'Dust Haze' };
 export const BOT_DIFFICULTY = {
   recruit: { name: 'Recruit', reaction: 0.95, aimTime: 1.0, error: 2.1, headBias: 0.08, fov: 95 },
   veteran: { name: 'Veteran', reaction: 0.6, aimTime: 0.7, error: 1.0, headBias: 0.2, fov: 110 },

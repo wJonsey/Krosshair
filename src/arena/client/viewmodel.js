@@ -1,6 +1,7 @@
 // First-person weapons. Rendered in their own scene on top of the world so the
 // rifle never clips through walls. All models and animation are procedural.
 import * as THREE from 'three';
+import { WEAPONS } from '../shared/constants.js';
 
 const M = (color, rough = 0.4, metal = 0.5, emissive = null) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: emissive || '#000000', emissiveIntensity: emissive ? 1.3 : 0 });
 
@@ -14,6 +15,61 @@ function part(group, geometry, material, position, rotation = null) {
 const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const tube = (r, length, seg = 10) => new THREE.CylinderGeometry(r, r, length, seg);
 const ALONG = [Math.PI / 2, 0, 0];
+
+
+// Shared builder for the newer long guns: receiver, barrel, stock, grip, magazine, optic.
+// o: { len, barrel, bore, guard, stock, wood, mag: [kind, h], optic, brake, bipod, suppressor, hip, ads, reach }
+function longGun(g, o, m) {
+  const front = 0.08 - o.len;
+  part(g, box(o.width || 0.056, o.height || 0.09, o.len), m.steel, [0, 0, 0.08 - o.len / 2]);
+  if (o.guard) part(g, box(0.064, 0.072, o.guard), m.dark, [0, -0.005, front + 0.02 - o.guard / 2]);
+  const guardEnd = front - (o.guard ? o.guard - 0.02 : 0);
+  part(g, tube(o.bore || 0.015, o.barrel), m.grey, [0, 0.01, guardEnd - o.barrel / 2], ALONG);
+  let muzzle = guardEnd - o.barrel;
+  if (o.brake) { part(g, box(0.05, 0.04, 0.1), m.dark, [0, 0.01, muzzle - 0.04]); muzzle -= 0.09; }
+  if (o.suppressor) { part(g, tube(0.028, 0.24, 10), m.dark, [0, 0.01, muzzle - 0.1], ALONG); muzzle -= 0.22; }
+  part(g, box(0.05, o.stockH || 0.1, o.stock), o.wood ? m.wood : m.dark, [0, -0.02, 0.08 + o.stock / 2]);
+  part(g, box(0.04, 0.12, 0.055), m.dark, [0, -0.1, 0.0], [-0.28, 0, 0]);
+  const [kind, h = 0.16] = o.mag || ['box'];
+  const magZ = 0.08 - o.len * 0.62;
+  let mag = null;
+  if (kind === 'box') mag = part(g, box(0.04, h, 0.07), m.dark, [0, -0.05 - h / 2, magZ], [0.12, 0, 0]);
+  if (kind === 'drum') mag = part(g, new THREE.CylinderGeometry(0.075, 0.075, 0.06, 16), m.dark, [0, -0.1, magZ], [0, 0, Math.PI / 2]);
+  if (kind === 'belt') { mag = part(g, box(0.1, 0.11, 0.14), m.dark, [0.02, -0.1, magZ]); part(g, box(0.02, 0.03, 0.12), m.grey, [0.045, 0.02, magZ]); }
+  if (kind === 'tube') mag = part(g, tube(0.018, o.len * 0.8), m.grey, [0, -0.05, 0.08 - o.len * 0.5], ALONG);
+  if (o.optic === 'scope' || o.optic === 'bigscope') {
+    const r = o.optic === 'bigscope' ? 0.044 : 0.034, l = o.optic === 'bigscope' ? 0.44 : 0.32;
+    part(g, tube(r, l, 12), m.dark, [0, 0.1, 0.08 - o.len * 0.45], ALONG);
+    part(g, tube(r + 0.008, 0.06, 12), m.dark, [0, 0.1, 0.08 - o.len * 0.45 - l / 2], ALONG);
+    part(g, box(0.03, 0.04, 0.05), m.grey, [0, 0.058, 0.08 - o.len * 0.3]);
+    part(g, box(0.03, 0.04, 0.05), m.grey, [0, 0.058, 0.08 - o.len * 0.62]);
+  } else if (o.optic === 'holo') {
+    // Holographic sight: open window on a base, reticle glass at the back.
+    part(g, box(0.05, 0.016, 0.1), m.dark, [0, 0.058, -0.15]);
+    part(g, box(0.008, 0.05, 0.03), m.dark, [0.025, 0.09, -0.12]);
+    part(g, box(0.008, 0.05, 0.03), m.dark, [-0.025, 0.09, -0.12]);
+    part(g, box(0.058, 0.01, 0.1), m.dark, [0, 0.118, -0.15]);
+    part(g, box(0.042, 0.038, 0.003), m.glow, [0, 0.09, -0.19]);
+  } else if (o.optic === 'dot') {
+    part(g, box(0.05, 0.05, 0.08), m.dark, [0, 0.085, -0.14]);
+    part(g, box(0.04, 0.034, 0.004), m.glow, [0, 0.094, -0.18]);
+  } else {
+    // Iron sights: thin front post, rear notch with a gap to look through.
+    part(g, box(0.004, 0.024, 0.008), m.grey, [0, 0.062, front + 0.03]);
+    part(g, box(0.008, 0.024, 0.012), m.grey, [0.011, 0.062, 0.03]);
+    part(g, box(0.008, 0.024, 0.012), m.grey, [-0.011, 0.062, 0.03]);
+  }
+  if (o.bipod) { part(g, tube(0.008, 0.26, 6), m.grey, [0.03, -0.12, guardEnd - 0.05], [0.4, 0, 0.3]); part(g, tube(0.008, 0.26, 6), m.grey, [-0.03, -0.12, guardEnd - 0.05], [0.4, 0, -0.3]); }
+  part(g, box(0.006, 0.01, o.len * 0.7), m.glow, [0.031, 0, 0.08 - o.len / 2]);
+  return { mag, muzzle };
+}
+
+// Front post and rear notch on a pistol slide whose top sits at y ≈ 0.048.
+function pistolSights(g, grey, dark, frontZ) {
+  part(g, box(0.006, 0.012, 0.01), grey, [0, 0.054, frontZ]);
+  part(g, box(0.01, 0.012, 0.01), dark, [0.011, 0.054, -0.02]);
+  part(g, box(0.01, 0.012, 0.01), dark, [-0.011, 0.054, -0.02]);
+}
 
 export function buildWeapon(id, accent) {
   const g = new THREE.Group();
@@ -88,17 +144,71 @@ export function buildWeapon(id, accent) {
     part(g, box(0.05, 0.1, 0.3), wood, [0, -0.03, 0.22]);
     part(g, box(0.006, 0.01, 0.3), glow, [0.032, 0.0, -0.08]);
     data.pump = part(g, box(0.06, 0.055, 0.17), wood, [0, -0.03, -0.42]);
+    part(g, new THREE.SphereGeometry(0.006, 8, 6), grey, [0, 0.05, -0.8]);
     data.muzzle.set(0, 0.025, -0.84);
-    data.ads = [0, -0.075, -0.26];
+    data.ads = [0, -0.056, -0.26];
   } else if (id === 'p9' || id === 'viper') {
     const heavy = id === 'viper';
     part(g, box(0.04, 0.055, heavy ? 0.3 : 0.22), heavy ? grey : steel, [0, 0.02, heavy ? -0.16 : -0.11]);
     part(g, box(0.038, 0.13, 0.055), heavy ? wood : dark, [0, -0.06, 0.0], [-0.22, 0, 0]);
     if (heavy) { part(g, tube(0.032, 0.07, 8), steel, [0, 0.015, -0.06], ALONG); part(g, box(0.012, 0.02, 0.02), glow, [0, 0.055, -0.3]); } else part(g, box(0.006, 0.008, 0.16), glow, [0.022, 0.03, -0.11]);
     data.mag = heavy ? null : part(g, box(0.03, 0.1, 0.04), dark, [0, -0.07, 0.0], [-0.22, 0, 0]);
+    pistolSights(g, grey, dark, heavy ? -0.3 : -0.21);
     data.muzzle.set(0, 0.02, heavy ? -0.34 : -0.24);
     data.hip = [0.17, -0.17, -0.4];
-    data.ads = [0, -0.075, -0.34];
+    data.ads = [0, -0.06, -0.34];
+  } else if (['vesper', 'harbinger', 'ronin', 'halcyon', 'anvil', 'hornet', 'maul'].includes(id)) {
+    const m = { steel, dark, grey, wood, glow };
+    const spec = {
+      vesper: { len: 0.5, barrel: 0.52, optic: 'scope', stock: 0.3, wood: true, mag: ['box', 0.07], reach: -0.46, ads: [0, -0.1, -0.2], adsHide: true, bolt: true },
+      harbinger: { len: 0.64, height: 0.11, width: 0.07, barrel: 0.66, bore: 0.022, brake: true, optic: 'bigscope', stock: 0.34, mag: ['box', 0.12], bipod: true, reach: -0.52, hip: [0.2, -0.22, -0.46], ads: [0, -0.11, -0.2], adsHide: true },
+      ronin: { len: 0.46, guard: 0.22, barrel: 0.24, optic: 'iron', stock: 0.28, wood: true, mag: ['box', 0.2], reach: -0.46, ads: [0, -0.074, -0.4] },
+      halcyon: { len: 0.4, guard: 0.2, barrel: 0.16, optic: 'holo', stock: 0.2, stockH: 0.07, mag: ['box', 0.15], reach: -0.4, ads: [0, -0.094, -0.26] },
+      anvil: { len: 0.56, height: 0.11, width: 0.07, guard: 0.24, barrel: 0.3, bore: 0.018, optic: 'dot', stock: 0.28, mag: ['belt'], bipod: true, reach: -0.5, hip: [0.2, -0.22, -0.44], ads: [0, -0.094, -0.24] },
+      hornet: { len: 0.34, height: 0.1, barrel: 0.1, optic: 'holo', stock: 0.16, stockH: 0.06, mag: ['box', 0.22], reach: -0.3, hip: [0.17, -0.19, -0.36], ads: [0, -0.094, -0.28] },
+      maul: { len: 0.42, guard: 0.18, barrel: 0.36, bore: 0.02, optic: 'iron', stock: 0.28, mag: ['tube'], reach: -0.44, ads: [0, -0.074, -0.38] },
+    }[id];
+    const built = longGun(g, spec, m);
+    data.mag = built.mag;
+    data.muzzle.set(0, 0.01, built.muzzle);
+    if (spec.hip) data.hip = spec.hip;
+    data.ads = spec.ads;
+    data.adsHide = Boolean(spec.adsHide);
+    data.reach = spec.reach;
+    if (spec.bolt) {
+      const bolt = new THREE.Group();
+      part(bolt, tube(0.011, 0.08, 6), grey, [0.04, 0, 0], [0, 0, Math.PI / 2]);
+      part(bolt, new THREE.SphereGeometry(0.018, 8, 6), grey, [0.08, 0, 0]);
+      bolt.position.set(0.03, 0.03, -0.03);
+      g.add(bolt);
+      data.bolt = bolt;
+    }
+  } else if (id === 'pike' || id === 'wren') {
+    part(g, box(0.04, 0.056, 0.22), steel, [0, 0.02, -0.11]);
+    part(g, box(0.038, 0.13, 0.055), dark, [0, -0.06, 0.0], [-0.22, 0, 0]);
+    part(g, box(0.006, 0.008, 0.16), glow, [0.022, 0.03, -0.11]);
+    pistolSights(g, grey, dark, -0.21);
+    if (id === 'pike') {
+      data.mag = part(g, box(0.03, 0.2, 0.04), dark, [0, -0.12, 0.02], [-0.22, 0, 0]);
+      part(g, box(0.036, 0.04, 0.08), dark, [0, -0.02, -0.19]);
+      data.muzzle.set(0, 0.02, -0.26);
+    } else {
+      data.mag = part(g, box(0.03, 0.1, 0.04), dark, [0, -0.07, 0.0], [-0.22, 0, 0]);
+      part(g, tube(0.022, 0.18, 10), dark, [0, 0.02, -0.31], ALONG);
+      data.muzzle.set(0, 0.02, -0.42);
+    }
+    data.hip = [0.17, -0.17, -0.4];
+    data.ads = [0, -0.06, -0.34];
+  } else if (id === 'sawn') {
+    part(g, tube(0.02, 0.3), grey, [0.021, 0.02, -0.2], ALONG);
+    part(g, tube(0.02, 0.3), grey, [-0.021, 0.02, -0.2], ALONG);
+    part(g, box(0.07, 0.05, 0.1), steel, [0, 0.0, -0.02]);
+    part(g, box(0.05, 0.12, 0.06), wood, [0, -0.07, 0.04], [-0.35, 0, 0]);
+    part(g, box(0.006, 0.01, 0.12), glow, [0.037, 0.0, -0.02]);
+    part(g, new THREE.SphereGeometry(0.005, 8, 6), grey, [0, 0.045, -0.34]);
+    data.muzzle.set(0, 0.02, -0.36);
+    data.hip = [0.17, -0.17, -0.38];
+    data.ads = [0, -0.05, -0.32];
   } else {
     part(g, box(0.012, 0.045, 0.24), grey, [0, 0.0, -0.17]);
     part(g, box(0.004, 0.012, 0.2), glow, [0.008, 0.02, -0.17]);
@@ -122,9 +232,12 @@ export function buildWeapon(id, accent) {
   left.userData.arm = true;
   part(left, new THREE.CapsuleGeometry(0.045, 0.36, 4, 8), sleeve, [0, 0, 0.24], ALONG);
   part(left, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
-  const reach = id === 'knife' || id === 'p9' || id === 'viper' ? null : (id === 'wasp' ? -0.3 : id === 'talon' ? -0.4 : -0.45);
+  const reach = ['knife', 'p9', 'viper', 'pike', 'wren', 'sawn'].includes(id) ? null : data.reach ?? (id === 'wasp' ? -0.3 : id === 'talon' ? -0.4 : -0.45);
   if (reach !== null) { left.position.set(-0.03, -0.06, reach); left.rotation.set(0.35, 0.75, 0); g.add(left); }
   data.sleeve = sleeve;
+  data.sight = WEAPONS[id]?.sight || null;
+  // Magnified optics hand over to their HUD overlay; everything else stays in view.
+  data.adsHide = data.sight === 'scope' || data.sight === 'prism';
   g.userData = data;
   g.traverse((mesh) => { mesh.frustumCulled = false; });
   return g;
@@ -183,8 +296,8 @@ export class ViewModel {
     this.kickRot = Math.min(1.4, this.kickRot + weapon.recoil.kick * 0.2);
     this.flashTime = 0.055;
     this.flash.material.rotation = Math.random() * Math.PI;
-    if (weapon.id === 'm44') { this.cycleTime = 0; this.cycleDuration = weapon.cooldown - 0.2; }
-    if (weapon.id === 'breaker') { this.cycleTime = 0; this.cycleDuration = 0.6; }
+    if (weapon.action === 'bolt') { this.cycleTime = 0; this.cycleDuration = weapon.cooldown - 0.2; }
+    if (weapon.action === 'pump') { this.cycleTime = 0; this.cycleDuration = 0.6; }
   }
   reload(duration) { this.reloadTime = duration; this.reloadDuration = duration; }
   cancelReload() { this.reloadTime = 0; }
@@ -219,7 +332,9 @@ export class ViewModel {
     const idle = Math.sin(performance.now() / 900) * 0.0025 * (1 - ads);
     const ease = 1 - (1 - this.equip) ** 3;
     const x = THREE.MathUtils.lerp(data.hip[0], data.ads[0], ads) + bx + this.swayX;
-    const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0);
+    // Dots, holos and prisms: the housing drops just below the aim point and the HUD draws the sight picture.
+    const clear = ({ dot: 0.075, holo: 0.09 }[data.sight] || 0) * ads * ads;
+    const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0) - clear;
     const z = THREE.MathUtils.lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085;
     model.position.set(x, y, z);
     model.rotation.set(this.kickRot * 0.13 + (1 - ease) * 0.9 + this.swayY * 1.5, -0.035 * (1 - ads) + this.swayX * 2, -this.swayX * 1.4);
@@ -253,7 +368,7 @@ export class ViewModel {
       if (k >= 1) this.slash = -1;
     }
 
-    const hide = this.hidden || (data.adsHide && ads > 0.82);
+    const hide = this.hidden || (data.adsHide && ads > 0.7);
     this.holder.visible = !hide;
     this.flashTime = Math.max(0, this.flashTime - dt);
     const flashing = this.flashTime > 0 && !hide;

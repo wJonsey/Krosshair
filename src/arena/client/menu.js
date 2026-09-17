@@ -3,9 +3,11 @@
 import * as THREE from 'three';
 import { BOT_DIFFICULTY, COSMETICS, MASTERY_TIERS, MODIFIERS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankName, xpForLevel } from '../shared/constants.js';
 import { bus, game, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
+import { ACCOUNTS_ENABLED } from '../shared/constants.js';
 import { net } from './net.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator } from './characters.js';
+import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -31,7 +33,59 @@ function onlineLabel(state = net.connected ? 'open' : 'closed') {
   return net.identified ? `${game.online} ONLINE` : 'RELAY ONLINE';
 }
 
-function validName() { return game.name.trim().length >= 2; }
+// ------------------------------------------------------------------ account
+let authMode = 'login';
+let authPending = null;
+let applyingPrefs = false;
+let prefsTimer = null;
+
+let pendingPlay = null;
+function authHtml() {
+  if (!ACCOUNTS_ENABLED) return `<label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label>`;
+  if (game.username) {
+    return `<div class="account-row"><div><span class="field-label">Signed in as</span><b>${escapeHtml(game.username)}</b></div><button type="button" id="logout-button" class="ghost-button">Log out</button></div>`;
+  }
+  const signup = authMode === 'signup';
+  return `<form class="auth" id="auth-form" novalidate>
+    <div class="segmented" role="tablist" aria-label="Account">${[['login', 'Log in'], ['signup', 'Sign up']].map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === authMode}" class="${id === authMode ? 'active' : ''}" data-auth-mode="${id}">${label}</button>`).join('')}</div>
+    <label class="field">Username<input id="auth-username" autocomplete="username" maxlength="16" spellcheck="false" autocapitalize="off" /></label>
+    <label class="field">Password<input id="auth-password" type="password" autocomplete="${signup ? 'new-password' : 'current-password'}" maxlength="128" /></label>
+    ${signup ? '<label class="field">Confirm password<input id="auth-confirm" type="password" autocomplete="new-password" maxlength="128" /></label><p class="auth-hint">No email needed. Your username is your callsign in matches. Passwords can’t be reset, so keep yours safe.</p>' : ''}
+    <div class="auth-actions"><button type="submit" id="auth-submit" ${authPending ? 'disabled' : ''}>${signup ? 'Create account' : 'Log in'}</button><p id="auth-status" class="feedback-status" role="status"></p></div>
+  </form>`;
+}
+function setAuthStatus(text, tone = '') { const status = $('#auth-status'); if (status) { status.textContent = text; status.className = `feedback-status ${tone}`; } }
+
+// Look, settings and tutorial progress live on the account; this browser mirrors them.
+export function applyAccountPrefs(profile) {
+  if (!profile) return;
+  applyingPrefs = true;
+  if (profile.look) { game.look = { ...game.look, ...profile.look }; store('look', game.look); bus.emit('look'); refreshPreviewLook(); }
+  if (profile.settings) { Object.assign(game.settings, profile.settings); saveSettings(); setVolume(game.settings.volume); }
+  if (profile.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); }
+  applyingPrefs = false;
+  // A brand-new account starts from whatever this browser already had.
+  if (!profile.settings || (game.tutorialDone && !profile.tutorialDone)) uploadPrefs(0);
+}
+function uploadPrefs(delay = 800) {
+  if (applyingPrefs || !net.identified) return;
+  clearTimeout(prefsTimer);
+  prefsTimer = setTimeout(() => net.send({ type: 'prefs', look: game.look, settings: game.settings, tutorialDone: game.tutorialDone }), delay);
+}
+bus.on('settings', () => uploadPrefs());
+
+net.on('auth-error', (message) => {
+  authPending = null;
+  const submit = $('#auth-submit');
+  if (submit) submit.disabled = false;
+  setAuthStatus(message.message, 'warn');
+  play('deny');
+});
+net.on('auth-required', (message) => {
+  if (message.expired) toast('Your login expired. Log in again to keep playing.', 'warn');
+  if (game.screen === 'home') renderHome();
+});
+net.on('logged-out', () => { toast('Logged out.'); bus.emit('logged-out'); if (game.screen === 'home') renderHome(); });
 
 // ------------------------------------------------------------------ operator preview
 function ensurePreview(canvas) {
@@ -76,11 +130,13 @@ function swatchRow(kind, key, level) {
 
 function careerHtml() {
   const profile = game.profile;
-  if (!profile) return `<div class="panel"><p class="eyebrow">Career</p><p class="muted">${net.connected ? 'Enter a callsign to load your career, contracts and unlocks.' : 'Connecting to the relay…'}</p></div>`;
+  if (!profile) return `<div class="panel"><p class="eyebrow">Career</p><p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.') : 'Connecting to the relay…'}</p></div>`;
   const level = profile.level, base = xpForLevel(level), next = xpForLevel(level + 1);
   const progress = Math.round(((profile.xp - base) / (next - base)) * 100);
   const s = profile.stats;
   const kd = s.deaths ? (s.kills / s.deaths).toFixed(2) : s.kills.toFixed(2);
+  // Kills from before accounts tracked the split count as player kills.
+  const botKills = s.botKills || 0, playerKills = s.playerKills || Math.max(0, s.kills - botKills);
   const accuracy = s.shots ? Math.round((s.hits / s.shots) * 100) : 0;
   const winRate = s.matches ? Math.round((s.wins / s.matches) * 100) : 0;
   const ranked = profile.rankedMatches > 0;
@@ -91,12 +147,12 @@ function careerHtml() {
     const nextTier = MASTERY_TIERS[tier + 1];
     return `<div class="mastery tier-${tier}"><span>${weapon.name}</span><b>${MASTERY_TIERS[tier][1]}</b><small>${kills} kills${nextTier ? ` · ${nextTier[0] - kills} to ${nextTier[1]}` : ' · maxed'}</small></div>`;
   }).join('');
-  const history = profile.history.length ? profile.history.slice(0, 8).map((h) => `<div class="history-row ${h.result}"><b>${h.result.toUpperCase()}</b><span>${h.score}</span><span>${h.kills}/${h.deaths}/${h.assists}</span><span>${(h.mode || '').toUpperCase()}${h.mvp ? ' · MVP' : ''}</span><small>${h.rating === null ? '' : `${h.rating >= 0 ? '+' : ''}${h.rating} SR · `}${new Date(h.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('') : '<p class="muted">No matches yet. Your last 25 results land here.</p>';
+  const history = profile.history.length ? profile.history.slice(0, 8).map((h) => `<div class="history-row ${h.result}"><b>${h.result.toUpperCase()}</b><span>${h.score}</span><span title="${h.botKills ? `${h.playerKills} player, ${h.botKills} bot kills` : ''}">${h.playerKills ?? h.kills}${h.botKills ? `+${h.botKills}` : ''}/${h.deaths}/${h.assists}</span><span>${(h.mode || '').toUpperCase()}${h.mvp ? ' · MVP' : ''}</span><small>${h.rating === null ? '' : `${h.rating >= 0 ? '+' : ''}${h.rating} SR · `}${new Date(h.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('') : '<p class="muted">No matches yet. Your last 25 results land here.</p>';
   const recent = profile.recent.length ? `<p class="recent"><span>RECENT PILOTS</span> ${profile.recent.map(escapeHtml).join(' · ')}</p>` : '';
   return `
     <div class="panel career"><p class="eyebrow">Career</p>
       <div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP to level ${level + 1}</small></div><div class="rank"><span>${rankName(profile.rating, ranked).toUpperCase()}</span><b>${ranked ? profile.rating : '—'}</b><small>SKILL RATING</small></div></div>
-      <div class="stat-grid"><div><b>${s.matches}</b><span>MATCHES</span></div><div><b>${winRate}%</b><span>WIN RATE</span></div><div><b>${kd}</b><span>K / D</span></div><div><b>${accuracy}%</b><span>ACCURACY</span></div><div><b>${s.headshots}</b><span>HEADSHOTS</span></div><div><b>${s.longest} M</b><span>LONGEST KILL</span></div><div><b>${s.clutches}</b><span>CLUTCHES</span></div><div><b>${s.mvps}</b><span>MVPS</span></div></div>
+      <div class="stat-grid"><div><b>${s.matches}</b><span>MATCHES</span></div><div><b>${winRate}%</b><span>WIN RATE</span></div><div><b>${kd}</b><span>K / D</span></div><div><b>${accuracy}%</b><span>ACCURACY</span></div><div><b>${playerKills}</b><span>PLAYER KILLS</span></div><div><b>${botKills}</b><span>BOT KILLS</span></div><div><b>${s.headshots}</b><span>HEADSHOTS</span></div><div><b>${s.longest} M</b><span>LONGEST KILL</span></div><div><b>${s.assists}</b><span>ASSISTS</span></div><div><b>${s.clutches}</b><span>CLUTCHES</span></div><div><b>${s.mvps}</b><span>MVPS</span></div><div><b>${s.wallbangs || 0}</b><span>WALLBANGS</span></div></div>
     </div>
     <div class="panel"><p class="eyebrow">Daily contracts <small>reset at 00:00 UTC</small></p>${contracts}</div>
     <div class="panel tabs"><div class="tab-head"><button type="button" class="tab active" data-tab="history">Match history</button><button type="button" class="tab" data-tab="mastery">Weapon mastery</button></div><div class="tab-body" data-body="history">${history}${recent}</div><div class="tab-body hidden" data-body="mastery">${mastery}</div></div>`;
@@ -108,13 +164,13 @@ export function renderHome() {
   const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms right now. Start one, or warm up against bots.</p>';
   const inviteRoom = new URLSearchParams(location.search).get('room') || '';
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
-  const keep = { room: $('#room-input')?.value, isPublic: $('#room-public')?.checked, name: $('#name-input')?.value, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
+  const keep = { room: $('#room-input')?.value, isPublic: $('#room-public')?.checked, name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
   home.innerHTML = `
     <div class="home-grid">
       <section class="home-left">
         <p class="eyebrow">Tactical sniper duels · one life</p>
         <h1>Sniper<br /><em>Shootout.</em></h1>
-        <label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label>
+        ${authHtml()}
         <div class="operator-panel">
           <canvas id="operator-preview" width="200" height="260"></canvas>
           <div class="operator-options">
@@ -124,7 +180,7 @@ export function renderHome() {
             <span class="field-label">Title</span><select id="title-select">${COSMETICS.title.map((t) => `<option value="${t.id}" ${game.look.title === t.id ? 'selected' : ''} ${level < t.level ? 'disabled' : ''}>${t.name}${level < t.level ? ` — level ${t.level}` : ''}</option>`).join('')}</select>
           </div>
         </div>
-        <div class="home-foot"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span><button type="button" id="open-settings" class="ghost-button">Settings</button><button type="button" id="open-controls" class="ghost-button">Controls</button></div>
+        <div class="home-foot"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span><button type="button" id="open-settings" class="ghost-button">Settings</button><button type="button" id="open-controls" class="ghost-button">Controls</button><button type="button" id="open-feedback" class="ghost-button">Feedback</button></div>
       </section>
       <section class="home-mid">
         <button type="button" class="play-card primary" data-play="casual"><small>QUICK PLAY</small><strong>Find a match</strong><span>Casual queue. Bots fill empty seats so you never wait.</span></button>
@@ -143,7 +199,12 @@ export function renderHome() {
     </div>`;
   if (keep.room !== undefined) $('#room-input').value = keep.room;
   if (keep.isPublic) $('#room-public').checked = true;
-  if (keep.name !== undefined) $('#name-input').value = keep.name;
+  if (keep.name !== undefined && $('#name-input')) $('#name-input').value = keep.name;
+  if (keep.username !== undefined && $('#auth-username')) {
+    $('#auth-username').value = keep.username; $('#auth-password').value = keep.password || '';
+    if ($('#auth-confirm')) $('#auth-confirm').value = keep.confirm || '';
+    if (keep.status) $('#auth-status').outerHTML = keep.status;
+  }
   if (keep.tab === 'mastery') {
     home.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === 'mastery'));
     home.querySelectorAll('.tab-body').forEach((body) => body.classList.toggle('hidden', body.dataset.body !== 'mastery'));
@@ -153,18 +214,20 @@ export function renderHome() {
   refreshPreviewLook();
 }
 
-function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); }
+function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
 
 function play_(payload) {
   unlockAudio();
-  const input = $('#name-input');
-  if (input) game.name = input.value.trim().slice(0, 16);
-  if (!validName()) { toast('Choose a callsign with at least 2 characters first.', 'warn'); input?.focus(); play('deny'); return; }
   if (!net.connected) { toast('Still connecting to the relay… start the server with npm run arena.', 'warn'); return; }
-  store('name', game.name);
+  if (!ACCOUNTS_ENABLED) {
+    const input = $('#name-input');
+    if (input) game.name = input.value.trim().slice(0, 16);
+    if (game.name.length < 2) { toast('Choose a callsign with at least 2 characters first.', 'warn'); input?.focus(); play('deny'); return; }
+    store('name', game.name);
+    if (!net.identified || game.profile?.name !== game.name) { pendingPlay = payload; play('ready'); net.identify(); return; }
+  } else if (!net.identified) { toast('Log in or sign up to play.', 'warn'); $('#auth-username')?.focus(); play('deny'); return; }
   play('ready');
-  const go = () => net.enter(payload);
-  if (!net.identified || game.profile?.name !== game.name) { bus.emit('after-identity', go); net.identify(); } else go();
+  net.enter(payload);
 }
 
 home.addEventListener('click', (event) => {
@@ -182,6 +245,9 @@ home.addEventListener('click', (event) => {
     play_({ action: 'join', room: code, isPublic: $('#room-public').checked });
   } else if (target.id === 'open-settings') openSettings();
   else if (target.id === 'open-controls') openSettings(true);
+  else if (target.id === 'open-feedback') openFeedback();
+  else if (target.dataset.authMode) { authMode = target.dataset.authMode; setAuthStatus(''); renderHome(); $('#auth-username')?.focus(); play('ui'); }
+  else if (target.id === 'logout-button') { play('uiBack'); net.auth('logout'); }
   else if (target.dataset.tab) {
     home.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab === target));
     home.querySelectorAll('.tab-body').forEach((body) => body.classList.toggle('hidden', body.dataset.body !== target.dataset.tab));
@@ -190,7 +256,27 @@ home.addEventListener('click', (event) => {
 });
 home.addEventListener('change', (event) => {
   if (event.target.id === 'title-select') { game.look.title = event.target.value; saveLook(); }
-  if (event.target.id === 'name-input') { game.name = event.target.value.trim().slice(0, 16); store('name', game.name); if (validName() && net.connected) net.identify(); }
+  if (event.target.id === 'name-input') { game.name = event.target.value.trim().slice(0, 16); store('name', game.name); if (game.name.length >= 2 && net.connected) net.identify(); }
+});
+home.addEventListener('submit', (event) => {
+  if (event.target.id !== 'auth-form') return;
+  event.preventDefault();
+  if (authPending) return;
+  const username = $('#auth-username').value.trim(), password = $('#auth-password').value;
+  if (!/^[A-Za-z0-9_-]{3,16}$/.test(username)) { setAuthStatus('Usernames are 3–16 letters, numbers, - or _.', 'warn'); return $('#auth-username').focus(); }
+  if (password.length < 8) { setAuthStatus('Passwords need at least 8 characters.', 'warn'); return $('#auth-password').focus(); }
+  if (authMode === 'signup' && $('#auth-confirm').value !== password) { setAuthStatus('Those passwords don’t match.', 'warn'); return $('#auth-confirm').focus(); }
+  if (!net.connected) return setAuthStatus('Not connected to the server yet. Try again in a moment.', 'warn');
+  authPending = authMode;
+  $('#auth-submit').disabled = true;
+  setAuthStatus(authMode === 'signup' ? 'Creating your account…' : 'Logging in…');
+  net.auth(authMode, { username, password, legacyToken: authMode === 'signup' ? game.token : undefined });
+});
+bus.on('signed-in', () => {
+  if (pendingPlay) { const payload = pendingPlay; pendingPlay = null; net.enter(payload); }
+  if (authPending === 'signup') { toast(`Welcome, ${game.username}. Your progress now saves to your account.`, 'good'); game.token = null; store('token', null); }
+  else if (authPending === 'login') toast(`Welcome back, ${game.username}.`, 'good');
+  authPending = null;
 });
 home.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.target.id === 'room-input') $('#join-room').click(); });
 
@@ -199,6 +285,8 @@ export function renderLobby() {
   const room = game.room;
   if (!room) return;
   clearInterval(lobbyTimer);
+  stopMapVote();
+  if (room.phase === 'mapvote') { renderMapVote(lobby, room); return; }
   if (lobbyRoom !== room.name) { lobbyRoom = room.name; lobbyLines = []; }
   const draft = $('#lobby-chat-input')?.value || '';
   const chatFocused = document.activeElement?.id === 'lobby-chat-input';
@@ -215,6 +303,7 @@ export function renderLobby() {
   const rules = room.rules;
   const select = (key, options, value) => `<select data-rule="${key}" ${host ? '' : 'disabled'}>${options.map(([v, label]) => `<option value="${v}" ${String(v) === String(value) ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
   const rulesHtml = custom ? `<div class="panel rules"><p class="eyebrow">Match rules ${host ? '' : '<small>host only</small>'}</p><div class="rule-grid">
+      <label>Arena${select('map', mapRuleOptions(), rules.map)}</label>
       <label>Format${select('roundsToWin', [[3, 'Best of 5'], [5, 'Best of 9'], [7, 'Best of 13']], rules.roundsToWin)}</label>
       <label>Round time${select('roundTime', [[60, '60 s'], [100, '100 s'], [140, '140 s']], rules.roundTime)}</label>
       <label>Starting credits${select('startCredits', [[400, '400'], [800, '800'], [2000, '2000'], [9000, '9000 (rich)']], rules.startCredits)}</label>
@@ -223,7 +312,7 @@ export function renderLobby() {
       <label>Bot skill${select('botDifficulty', Object.entries(BOT_DIFFICULTY).map(([id, d]) => [id, d.name]), rules.botDifficulty)}</label>
       <label>Friendly fire${select('friendlyFire', [['false', 'Off'], ['true', 'On']], rules.friendlyFire)}</label>
       <label>Sudden death${select('overtimeOn', [['true', 'On'], ['false', 'Off']], rules.overtime > 0)}</label>
-    </div><small class="muted">${MODIFIERS[rules.modifier].desc}</small></div>` : `<div class="panel rules"><p class="eyebrow">${room.queue.toUpperCase()} queue</p><p class="muted">${room.queue === 'ranked' ? 'Ranked starts as soon as a second pilot connects. Skill rating moves only when humans face humans.' : room.queue === 'arcade' ? `Today: <b>${MODIFIERS[rules.modifier].name}</b> — ${MODIFIERS[rules.modifier].desc}` : 'Bots take the empty seats, and hand them over when more pilots arrive.'}</p></div>`;
+    </div><small class="muted">${mapRuleSummary(rules.map)}<br />${MODIFIERS[rules.modifier].desc}</small></div>` : `<div class="panel rules"><p class="eyebrow">${room.queue.toUpperCase()} queue</p><p class="muted">${room.queue === 'ranked' ? 'Ranked starts as soon as a second pilot connects. Skill rating moves only when humans face humans.' : room.queue === 'arcade' ? `Today: <b>${MODIFIERS[rules.modifier].name}</b> — ${MODIFIERS[rules.modifier].desc}` : 'Bots take the empty seats, and hand them over when more pilots arrive.'}</p></div>`;
   const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.name)}`;
   const humans = room.players.filter((p) => !p.bot).length;
   const canStart = room.players.some((p) => p.team === 'A') && room.players.some((p) => p.team === 'B');
@@ -323,6 +412,93 @@ settingsCard.addEventListener('click', (event) => {
   if (event.target.id === 'reset-settings') { Object.assign(game.settings, DEFAULT_SETTINGS); saveSettings(); setVolume(game.settings.volume); openSettings(); }
 });
 
+// ------------------------------------------------------------------ feedback
+const feedbackCard = $('#feedback');
+const FEEDBACK_COPY = {
+  bug: { title: 'Scope stays zoomed in after I die', details: 'What happened, what you expected instead, and the steps to make it happen again.', send: 'Send bug report' },
+  suggestion: { title: 'Add a burst-fire rifle', details: 'What you would add or change, and how it would make matches better.', send: 'Send suggestion' },
+};
+let feedbackKind = 'bug';
+let feedbackPending = false;
+function sentReports() { try { return JSON.parse(localStorage.getItem('sniper-shootout:feedback') || '[]'); } catch { return []; } }
+
+export function openFeedback(kind = feedbackKind) {
+  feedbackKind = kind;
+  const copy = FEEDBACK_COPY[kind];
+  const sent = sentReports();
+  feedbackCard.innerHTML = `
+    <div class="feedback-card">
+      <header class="feedback-head">
+        <div><p class="eyebrow">Feedback</p><h2 id="feedback-title">Report a bug or suggest an idea</h2></div>
+        <button type="button" class="ghost-button" data-feedback-close>Close <kbd>Esc</kbd></button>
+      </header>
+      <form id="feedback-form" novalidate>
+        <div class="segmented" role="radiogroup" aria-label="Type">${Object.entries({ bug: 'Bug', suggestion: 'Suggestion' }).map(([id, label]) => `<button type="button" role="radio" aria-checked="${id === kind}" class="${id === kind ? 'active' : ''}" data-kind="${id}">${label}</button>`).join('')}</div>
+        <label class="field">Title<input name="title" maxlength="90" required placeholder="${copy.title}" autocomplete="off" /></label>
+        <label class="field">Details<textarea name="details" maxlength="3000" rows="7" required placeholder="${copy.details}"></textarea><small class="counter"><span id="feedback-count">0</span> / 3000</small></label>
+        <label class="check"><input type="checkbox" name="device" checked /> Include browser, screen size and graphics settings</label>
+        <div class="feedback-actions"><button type="submit" id="feedback-send">${copy.send}</button><p id="feedback-status" class="feedback-status" role="status"></p></div>
+      </form>
+      ${sent.length ? `<section class="feedback-sent"><h3>Sent from this browser</h3>${sent.slice(0, 5).map((r) => `<div><span class="kind ${r.kind}">${r.kind === 'bug' ? 'Bug' : 'Idea'}</span><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.ref)} · ${new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('')}</section>` : ''}
+    </div>`;
+  feedbackCard.classList.remove('hidden');
+  document.exitPointerLock?.();
+  $('#feedback-form input[name="title"]').focus();
+}
+export function closeFeedback() {
+  if (feedbackCard.classList.contains('hidden')) return;
+  feedbackCard.classList.add('hidden');
+  bus.emit('feedback-closed');
+}
+function setFeedbackStatus(text, tone = '') { const status = $('#feedback-status'); if (status) { status.textContent = text; status.className = `feedback-status ${tone}`; } }
+
+feedbackCard.addEventListener('click', (event) => {
+  if (event.target === feedbackCard || event.target.closest('[data-feedback-close]')) { play('uiBack'); return closeFeedback(); }
+  const kind = event.target.closest('[data-kind]')?.dataset.kind;
+  if (!kind || kind === feedbackKind) return;
+  // Switch type without losing what has been typed.
+  const form = $('#feedback-form');
+  const draft = { title: form.title.value, details: form.details.value, device: form.device.checked };
+  openFeedback(kind);
+  Object.assign($('#feedback-form').title, { value: draft.title });
+  $('#feedback-form').details.value = draft.details;
+  $('#feedback-form').device.checked = draft.device;
+  $('#feedback-count').textContent = draft.details.length;
+});
+feedbackCard.addEventListener('input', (event) => { if (event.target.name === 'details') $('#feedback-count').textContent = event.target.value.length; });
+feedbackCard.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Escape') closeFeedback(); });
+feedbackCard.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (feedbackPending) return;
+  const form = event.target;
+  const title = form.title.value.trim(), details = form.details.value.trim();
+  if (title.length < 4) { setFeedbackStatus('Give it a title of at least 4 characters.', 'warn'); return form.title.focus(); }
+  if (details.length < 10) { setFeedbackStatus('Add a few more words of detail.', 'warn'); return form.details.focus(); }
+  if (!net.connected) return setFeedbackStatus('Not connected to the server. Your report is still here; send it once you reconnect.', 'warn');
+  const device = form.device.checked ? {
+    browser: navigator.userAgent, screen: `${innerWidth}×${innerHeight} @${devicePixelRatio}x`, quality: game.settings.quality, fov: game.settings.fov,
+    screenName: game.screen, room: game.room?.name || '', mode: game.room?.mode || '', phase: game.room?.phase || '',
+  } : null;
+  feedbackPending = { kind: feedbackKind, title };
+  $('#feedback-send').disabled = true;
+  setFeedbackStatus('Sending…');
+  net.send({ type: 'feedback', kind: feedbackKind, title, details, device });
+  setTimeout(() => { if (feedbackPending && feedbackPending.title === title) { feedbackPending = false; const send = $('#feedback-send'); if (send) send.disabled = false; setFeedbackStatus('No answer from the server. Try sending again.', 'warn'); } }, 8000);
+});
+net.on('feedback-result', (message) => {
+  const pending = feedbackPending;
+  feedbackPending = false;
+  const send = $('#feedback-send');
+  if (send) send.disabled = false;
+  if (!message.ok || !pending) return setFeedbackStatus(message.message || 'That did not send. Try again.', 'warn');
+  const sent = [{ ...pending, ref: message.ref, at: Date.now() }, ...sentReports()].slice(0, 20);
+  try { localStorage.setItem('sniper-shootout:feedback', JSON.stringify(sent)); } catch { /* private mode */ }
+  play('buy');
+  openFeedback(feedbackKind);
+  setFeedbackStatus(`Sent — thanks. Reference ${message.ref}.`, 'good');
+});
+if (location.hash === '#feedback') setTimeout(() => openFeedback(), 0);
+
 // ------------------------------------------------------------------ end of match
 export function showEnd(message) {
   endState = { message, report: null };
@@ -340,8 +516,8 @@ function renderEnd() {
   const result = !message.winner ? 'draw' : message.winner === team ? 'win' : 'loss';
   const title = { win: 'Victory.', loss: 'Defeat.', draw: 'Stalemate.' }[result];
   const mine = message.scores[team], theirs = message.scores[team === 'A' ? 'B' : 'A'];
-  const rows = (side) => message.table.filter((row) => row.team === side).map((row) => `<div class="score-row${row.id === game.id ? ' you' : ''}"><span class="pilot"><i style="background:${row.color}"></i>${escapeHtml(row.name)}${row.mvp ? ' <em class="mvp">MVP</em>' : ''}${row.bot ? ' <em>BOT</em>' : ''}</span><span>${row.kills}</span><span>${row.deaths}</span><span>${row.assists}</span><span>${row.damage}</span><span>${row.headshots}</span><span>${row.accuracy}%</span><span>${row.score}</span></div>`).join('');
-  const head = '<div class="score-row head"><span>PILOT</span><span>K</span><span>D</span><span>A</span><span>DMG</span><span>HS</span><span>ACC</span><span>SCORE</span></div>';
+  const rows = (side) => message.table.filter((row) => row.team === side).map((row) => `<div class="score-row${row.id === game.id ? ' you' : ''}"><span class="pilot"><i style="background:${row.color}"></i>${escapeHtml(row.name)}${row.mvp ? ' <em class="mvp">MVP</em>' : ''}${row.bot ? ' <em>BOT</em>' : ''}</span><span>${row.playerKills ?? row.kills}</span><span>${row.botKills ?? 0}</span><span>${row.deaths}</span><span>${row.assists}</span><span>${row.damage}</span><span>${row.headshots}</span><span>${row.accuracy}%</span><span>${row.score}</span></div>`).join('');
+  const head = '<div class="score-row head"><span>PILOT</span><span title="Player kills">K</span><span title="Bot kills">BOT</span><span>D</span><span>A</span><span>DMG</span><span>HS</span><span>ACC</span><span>SCORE</span></div>';
   const votes = game.room?.rematch?.length || 0;
   const humans = game.room?.players.filter((p) => !p.bot && p.connected).length || 1;
   const voted = game.room?.rematch?.includes(game.id);
@@ -422,7 +598,7 @@ bus.on('tutorial', (id) => {
   drillsDone.add(id);
   play('ready');
   renderTutorial(true);
-  if (drillsDone.size === DRILLS.length && !game.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); toast('Drills complete. You are cleared for live matches.', 'good'); }
+  if (drillsDone.size === DRILLS.length && !game.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); uploadPrefs(0); toast('Drills complete. You are cleared for live matches.', 'good'); }
 });
 
 // ------------------------------------------------------------------ screens + connection banner

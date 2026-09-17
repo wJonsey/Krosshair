@@ -334,20 +334,20 @@ export class LocalPlayer {
       const shotDir = applySpread(dir, angle, rng);
       const trace = traceShot(this.arena.physics, origin, shotDir, weapon, this.operators.targets());
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], trace.end, tracerColor, 0.012 + weapon.tracer * 0.012);
-      if (weapon.id === 'm44') this.effects.trail([muzzle.x, muzzle.y, muzzle.z], trace.end);
+      if (weapon.trail) this.effects.trail([muzzle.x, muzzle.y, muzzle.z], trace.end);
       trace.impacts.slice(0, 3).forEach((impact) => { this.effects.impact(impact.point, impact.normal, impact.mat, impact.exit); if (!impact.exit && pellet < 2) playImpact(MATERIAL_SOUND(impact.mat), impact.point, 0.5); });
       trace.hits.forEach((hit) => { const p = [origin[0] + shotDir[0] * hit.distance, origin[1] + shotDir[1] * hit.distance, origin[2] + shotDir[2] * hit.distance]; this.effects.hitPuff(p); });
     }
     this.effects.muzzleLight(muzzle, '#ffb45e', this.arena.variantName === 'night' ? 40 : 20);
     this.viewmodel.fire(weapon);
     playShot(weapon.id);
-    if (weapon.id === 'm44') play('bolt', { delay: 0.32, volume: 0.7 });
-    if (weapon.id === 'breaker') play('pump', { delay: 0.28, volume: 0.8 });
+    if (weapon.action === 'bolt') play('bolt', { delay: 0.32, volume: 0.7 });
+    if (weapon.action === 'pump') play('pump', { delay: 0.28, volume: 0.8 });
     const recoil = weapon.recoil;
     this.recoilPitch += (recoil.kick * Math.PI) / 180 * (scoped ? 0.8 : 1);
     this.recoilYaw += ((Math.random() - 0.5) * 2 * recoil.side * Math.PI) / 180;
     this.shake = Math.min(1, this.shake + recoil.kick * 0.08);
-    if (weapon.id === 'm44') this.scopeToggle = false;
+    if (weapon.action === 'bolt') this.scopeToggle = false;
     bus.emit('fired', weapon);
     bus.emit('tutorial', 'fire');
   }
@@ -481,7 +481,7 @@ export class LocalPlayer {
     const scopedOptic = weapon.scope && weapon.scope[0] < 40;
     this.swayTime += dt;
     let swayScale = scopedOptic ? this.scopeAmount * 0.0042 : 0;
-    swayScale *= (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.1 : 1) * (this.winded ? 2.1 : 1) * (weapon.id === 'recon' ? 0.7 : 1);
+    swayScale *= (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.1 : 1) * (this.winded ? 2.1 : 1) * (weapon.sway || 1);
     this.swayX = Math.sin(this.swayTime * 1.13) * swayScale + Math.sin(this.swayTime * 2.71) * swayScale * 0.35;
     this.swayY = Math.sin(this.swayTime * 1.7 + 1.3) * swayScale * 0.8 + Math.cos(this.swayTime * 0.83) * swayScale * 0.3;
     const eye = THREE.MathUtils.lerp(BODY.eye, BODY.crouchEye, this.crouchAmount);
@@ -588,15 +588,15 @@ export class LocalPlayer {
     const tracer = game.roster.get(pov.owner)?.tracer || '#ffc857';
     for (const end of shot.ends || []) {
       this.effects.tracer(from, end, tracer, 0.012 + weapon.tracer * 0.012);
-      if (weapon.id === 'm44') this.effects.trail(from, end);
+      if (weapon.trail) this.effects.trail(from, end);
     }
     if (final) this.effects.hitPuff(pov.replay?.end || shot.ends?.[0]);
     this.effects.muzzleLight(muzzle, '#ffb45e', this.arena.variantName === 'night' ? 40 : 20);
     this.viewmodel.fire(weapon);
     if (quiet) return;
     playShot(weapon.id);
-    if (weapon.id === 'm44') play('bolt', { delay: 0.32, volume: 0.7 });
-    if (weapon.id === 'breaker') play('pump', { delay: 0.28, volume: 0.8 });
+    if (weapon.action === 'bolt') play('bolt', { delay: 0.32, volume: 0.7 });
+    if (weapon.action === 'pump') play('pump', { delay: 0.28, volume: 0.8 });
   }
 
   updateSpectate(dt) {

@@ -1,6 +1,6 @@
 // In-match HUD: score bar, vitals, loadout, kill feed, minimap, buy menu,
 // scoreboard, banners, hit feedback, chat and radio.
-import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIONS, VARIANT_NAMES, WEAPONS, masteryTier } from '../shared/constants.js';
+import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIONS, VARIANT_NAMES, WEAPONS, masteryTier, WEAPON_CLASSES, weaponClass } from '../shared/constants.js';
 import { zoneAt } from '../shared/map.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
@@ -9,7 +9,7 @@ import { weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const WEAPON_SHORT = { m44: 'M-44', recon: 'RC-9', talon: 'TALON', wasp: 'WASP-9', breaker: 'BREAKER', p9: 'P9', viper: 'VIPER', knife: 'BLADE' };
+const WEAPON_SHORT = new Proxy({}, { get: (_, id) => WEAPONS[id]?.short || WEAPONS[id]?.name?.toUpperCase() });
 
 export class Hud {
   constructor({ player, arena, operators }) {
@@ -29,7 +29,7 @@ export class Hud {
       clock: $('#clock'), phase: $('#phase-label'), round: $('#round-label'), scoreMine: $('#score-mine'), scoreTheirs: $('#score-theirs'), pipsMine: $('#pips-mine'), pipsTheirs: $('#pips-theirs'),
       labelMine: $('#label-mine'), labelTheirs: $('#label-theirs'), zone: $('#zone-name'), variant: $('#variant-name'), minimap: $('#minimap'),
       killfeed: $('#killfeed'), feed: $('#event-feed'), chatLog: $('#chat-log'), chatInput: $('#chat-input'), crosshair: $('#crosshair'), hitmarker: $('#hitmarker'), arcs: $('#damage-arcs'),
-      scope: $('#scope-overlay'), scopeZoom: $('#scope-zoom'), breath: $('#breath-meter'), fxDamage: $('#fx-damage'), fxLow: $('#fx-low'), fxSuppress: $('#fx-suppress'), fxFlash: $('#fx-flash'),
+      scope: $('#scope-overlay'), sight: $('#sight-overlay'), sightLabel: $('#sight-label'), scopeZoom: $('#scope-zoom'), breath: $('#breath-meter'), fxDamage: $('#fx-damage'), fxLow: $('#fx-low'), fxSuppress: $('#fx-suppress'), fxFlash: $('#fx-flash'),
       banner: $('#banner'), bannerEyebrow: $('#banner-eyebrow'), bannerTitle: $('#banner-title'), bannerSub: $('#banner-sub'), prompt: $('#prompt'),
       spectate: $('#spectate-bar'), spectateName: $('#spectate-name'), reactions: $('#reactions'), spectateWeapon: $('#spectate-weapon'),
       pov: $('#pov-card'), povLabel: $('#pov-label'), povSkip: $('#pov-skip'), povTitle: $('#pov-title'), povName: $('#pov-name'), povHp: $('#pov-hp'), povHpBar: $('#pov-hp-bar'), povTag: $('#pov-tag'), povWeapon: $('#pov-weapon'), povArt: $('#pov-art'), povAmmo: $('#pov-ammo'), povMag: $('#pov-mag'), povDetail: $('#pov-detail'),
@@ -211,6 +211,15 @@ export class Hud {
   onBuyClick(event) {
     const card = event.target.closest('[data-item]');
     if (event.target.closest('[data-close]')) { play('ui'); return this.closeBuy(); }
+    const tab = event.target.closest('[data-tab]');
+    if (tab) {
+      this.buyTab = tab.dataset.tab;
+      const you = game.you;
+      const inClass = Object.values(WEAPONS).filter((w) => !w.melee && weaponClass(w) === this.buyTab && (!game.serverWeapons || game.serverWeapons.includes(w.id)));
+      this.buyFocus = (inClass.find((w) => you?.weapons[w.slot] === w.id) || inClass[0])?.id || this.buyFocus;
+      play('ui');
+      return this.renderBuy();
+    }
     if (!card || card.classList.contains('locked')) return;
     const item = card.dataset.item;
     net.send({ type: card.classList.contains('refundable') ? 'sell' : 'buy', item });
@@ -257,8 +266,13 @@ export class Hud {
     const free = game.room?.mode === 'range';
     const modifier = game.room?.rules?.modifier;
     const bought = new Set(you.bought || []);
-    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee);
-    if (!WEAPONS[this.buyFocus] || WEAPONS[this.buyFocus].melee) this.buyFocus = you.weapons.primary || you.weapons.sidearm;
+    // A relay running older code silently ignores guns it has never heard of, so only offer what it knows.
+    const served = game.serverWeapons;
+    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee && (!served || served.includes(weapon.id)));
+    const missing = Object.values(WEAPONS).filter((weapon) => !weapon.melee).length - weapons.length;
+    if (!weapons.some((weapon) => weapon.id === this.buyFocus)) this.buyFocus = you.weapons.primary || you.weapons.sidearm;
+    if (!WEAPON_CLASSES.some((c) => c.id === this.buyTab)) this.buyTab = weaponClass(WEAPONS[this.buyFocus]);
+    const shown = weapons.filter((weapon) => weaponClass(weapon) === this.buyTab);
     const cost = (value) => (free || !value ? 'Free' : value);
     const weaponRow = (weapon) => {
       const owned = you.weapons[weapon.slot] === weapon.id;
@@ -281,8 +295,12 @@ export class Hud {
       </header>
       <div class="armoury-body">
         <nav class="arsenal" aria-label="Weapons">
-          <h3>Primary</h3>${weapons.filter((w) => w.slot === 'primary').map(weaponRow).join('')}
-          <h3>Sidearm</h3>${weapons.filter((w) => w.slot === 'sidearm').map(weaponRow).join('')}
+          <div class="arsenal-tabs" role="tablist">${WEAPON_CLASSES.map((c) => {
+            const equipped = weapons.some((w) => weaponClass(w) === c.id && you.weapons[w.slot] === w.id);
+            return `<button type="button" role="tab" aria-selected="${c.id === this.buyTab}" class="${c.id === this.buyTab ? 'active' : ''}${equipped ? ' equipped' : ''}" data-tab="${c.id}">${c.name}</button>`;
+          }).join('')}</div>
+          ${shown.map(weaponRow).join('')}
+          ${missing ? `<p class="arsenal-note">${missing} more ${missing === 1 ? 'weapon arrives' : 'weapons arrive'} when this server updates.</p>` : ''}
         </nav>
         ${this.inspectHtml(WEAPONS[this.buyFocus])}
       </div>
@@ -309,8 +327,8 @@ export class Hud {
       const players = room.players.filter((p) => p.team === team).sort((a, b) => b.score - a.score);
       const friendly = team === mine;
       return `<section class="${friendly ? 'friendly' : 'rival'}"><h3>${friendly ? 'YOUR TEAM' : 'RIVALS'} <b>${room.scores[team]}</b></h3>
-        <div class="score-row head"><span>PILOT</span><span>K</span><span>D</span><span>A</span><span>SCORE</span><span>${friendly ? 'CR' : ''}</span><span>MS</span></div>
-        ${players.map((p) => `<div class="score-row${p.id === game.id ? ' you' : ''}${p.alive ? '' : ' dead'}"><span class="pilot"><i style="background:${p.color}"></i>${escapeHtml(p.name)}${p.bot ? ' <em>BOT</em>' : ` <em>LV ${p.level}</em>`}${p.connected ? '' : ' <em>OFFLINE</em>'}</span><span>${p.kills}</span><span>${p.deaths}</span><span>${p.assists}</span><span>${p.score}</span><span>${friendly ? p.credits : ''}</span><span>${p.bot ? '—' : p.ping}</span></div>`).join('')}</section>`;
+        <div class="score-row head"><span>PILOT</span><span title="Player kills">K</span><span title="Bot kills">BOT</span><span>D</span><span>A</span><span>SCORE</span><span>${friendly ? 'CR' : ''}</span><span>MS</span></div>
+        ${players.map((p) => `<div class="score-row${p.id === game.id ? ' you' : ''}${p.alive ? '' : ' dead'}"><span class="pilot"><i style="background:${p.color}"></i>${escapeHtml(p.name)}${p.bot ? ' <em>BOT</em>' : ` <em>LV ${p.level}</em>`}${p.connected ? '' : ' <em>OFFLINE</em>'}</span><span>${p.playerKills ?? p.kills}</span><span>${p.botKills ?? 0}</span><span>${p.deaths}</span><span>${p.assists}</span><span>${p.score}</span><span>${friendly ? p.credits : ''}</span><span>${p.bot ? '—' : p.ping}</span></div>`).join('')}</section>`;
     };
     const rules = room.rules;
     this.dom.scoreboard.innerHTML = `<div class="scoreboard-head"><span>${escapeHtml(room.name.toUpperCase())} // ${room.queue.toUpperCase()}</span><b>FIRST TO ${rules.roundsToWin} · ${VARIANT_NAMES[room.variant] || ''} · ${MODIFIERS[rules.modifier]?.name || ''}</b></div>${table(mine)}${table(mine === 'A' ? 'B' : 'A')}`;
@@ -328,11 +346,12 @@ export class Hud {
       const context = canvas.getContext('2d');
       context.fillStyle = under ? '#1b242b' : '#0f151b';
       context.fillRect(0, 0, width, height);
-      const boxes = map.boxes.filter((box) => !box.deco && (under ? box.max[1] <= 0 && box.max[1] > -3.39 : box.max[1] > 0.4)).sort((a, b) => a.max[1] - b.max[1]);
+      const boxes = map.boxes.filter((box) => !box.deco && (under ? box.max[1] <= 0 && box.max[1] > -3.39 : box.max[1] > 0.4 || (!map.env?.underground && box.max[1] < -1.5 && box.max[1] > -3.6))).sort((a, b) => a.max[1] - b.max[1]);
       for (const box of boxes) {
         const x = (box.min[0] - bounds.minX) * MAP_SCALE, z = (box.min[2] - bounds.minZ) * MAP_SCALE;
         const w = Math.max(1, (box.max[0] - box.min[0]) * MAP_SCALE), h = Math.max(1, (box.max[2] - box.min[2]) * MAP_SCALE);
         if (under) context.fillStyle = box.mat === 'tunnel' && box.max[1] > -0.6 ? '#070a0d' : '#33414b';
+        else if (box.max[1] < 0) context.fillStyle = '#1c2f3a'; // open-air sunken routes: wadi, canal, trench
         else if (box.glass) context.fillStyle = '#6ce6d1';
         else { const shade = Math.min(1, box.max[1] / 7); context.fillStyle = `rgb(${40 + shade * 60},${52 + shade * 62},${62 + shade * 64})`; }
         context.fillRect(x, z, w, h);
@@ -351,7 +370,7 @@ export class Hud {
     const { width, height, bounds, scale: MAP_SCALE } = this.layers;
     const context = this.dom.minimap.getContext('2d');
     const camera = this.player.camera.position;
-    const under = camera.y < -0.8;
+    const under = camera.y < -0.8 && Boolean(map.env?.underground);
     const flip = game.room?.mode !== 'range' && ((myTeam() === 'B') !== Boolean(game.room?.swapped));
     context.save();
     if (flip) { context.translate(width, height); context.rotate(Math.PI); }
@@ -455,8 +474,19 @@ export class Hud {
     const pov = player.pov;
     this.root.classList.toggle('watching', Boolean(pov));
     const weapon = pov ? player.viewWeapon : player.weapon;
-    const optic = weapon.scope && weapon.scope[0] < 40;
-    const scopedView = optic && (pov ? pov.scope > 0.82 : player.mode === 'play' && player.scopeAmount > 0.82);
+    // How far down the sights we are (0 hip → 1 fully aimed), for the pilot or whoever we are watching.
+    const aim = weapon.melee ? 0 : pov ? pov.scope : player.mode === 'play' ? player.scopeAmount : 0;
+    const sight = weapon.sight || (weapon.scope && weapon.scope[0] < 40 ? 'scope' : 'iron');
+    const scopedView = sight === 'scope' && aim > 0.7;
+    const sightView = (sight === 'dot' || sight === 'holo' || sight === 'prism') && aim > 0.55;
+    dom.sight.classList.toggle('hidden', !sightView);
+    if (sightView) {
+      const kind = `sight sight-${sight}`;
+      if (dom.sight.className !== kind) dom.sight.className = kind;
+      dom.sight.style.opacity = String(Math.min(1, (aim - 0.55) / 0.3));
+      const label = sight === 'prism' ? `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / weapon.scope[0] * 10) / 10}X` : '';
+      if (dom.sightLabel.textContent !== label) dom.sightLabel.textContent = label;
+    }
     if (pov && !dom.pov.classList.contains('hidden')) {
       const melee = Boolean(weapon.melee);
       dom.povWeapon.textContent = weapon.name; dom.povTag.textContent = weapon.tag;
@@ -472,7 +502,8 @@ export class Hud {
       dom.breath.style.width = `${player.breath * 100}%`;
       dom.breath.classList.toggle('winded', player.winded);
     }
-    const showCross = (player.mode === 'play' || Boolean(pov)) && !scopedView && !this.buyOpen;
+    // Aiming down any sight replaces the crosshair with the sight itself.
+    const showCross = (player.mode === 'play' || Boolean(pov)) && aim < 0.55 && !this.buyOpen;
     dom.crosshair.classList.toggle('hidden', !showCross);
     if (showCross) {
       const spread = weapon.melee ? 0 : pov ? (pov.scope > 0.9 ? weapon.spread.ads : weapon.spread.hip) : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);

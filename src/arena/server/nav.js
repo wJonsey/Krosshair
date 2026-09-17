@@ -73,7 +73,8 @@ export class NavGrid {
     for (let step = 0; step < 90; step += 1) {
       const dx = to.x - body.x, dz = to.z - body.z;
       const dist = Math.hypot(dx, dz);
-      if (dist < 0.12 && body.onGround) return Math.abs(body.y - to.y) < 0.12;
+      // One step of tolerance: on stairs a node's height can land on either side of a riser.
+      if (dist < 0.12 && body.onGround) return Math.abs(body.y - to.y) < 0.4;
       body.vy -= BODY.gravity / 30;
       const move = Math.min(dist, 0.12);
       this.world.moveBody(body, dist > 1e-6 ? (dx / dist) * move : 0, body.vy / 30, dist > 1e-6 ? (dz / dist) * move : 0);
@@ -85,7 +86,8 @@ export class NavGrid {
   nearest(x, y, z, accept = null) {
     const ix = Math.round((x - this.origin.x) / CELL), iz = Math.round((z - this.origin.z) / CELL);
     let best = null, bestScore = Infinity;
-    for (let radius = 0; radius <= 3 && !best; radius += 1) {
+    // Always compare the immediate neighbours too: the exact cell may only hold a bench or crate top.
+    for (let radius = 0; radius <= 3 && (!best || radius <= 1); radius += 1) {
       for (let dx = -radius; dx <= radius; dx += 1) {
         for (let dz = -radius; dz <= radius; dz += 1) {
           const list = this.cells.get(this.key(ix + dx, iz + dz));

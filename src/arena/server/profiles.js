@@ -1,11 +1,16 @@
-// Tiny JSON-file profile store. Profiles are keyed by a secret device token
-// that the browser keeps in localStorage, so no accounts are needed.
+// Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
+// the server knows; accounts (server/accounts.js) map a login to one of these tokens.
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { dailyContracts, dateKey, levelFromXp, COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
 
 const HISTORY_LIMIT = 25;
+// Settings a pilot's account remembers, with the values the server will accept.
+const SETTING_RULES = {
+  sensitivity: [0.1, 5], scopeSensitivity: [0.1, 3], padSensitivity: [0.1, 5], fov: [50, 120], volume: [0, 1],
+  quality: ['high', 'medium', 'low'], announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool',
+};
 
 export class ProfileStore {
   constructor(file) {
@@ -41,8 +46,9 @@ export class ProfileStore {
     if (!this.profiles.has(key)) {
       this.profiles.set(key, {
         name: 'Pilot', created: Date.now(), xp: 0, rating: 1000, rankedMatches: 0,
-        stats: { matches: 0, wins: 0, kills: 0, deaths: 0, assists: 0, headshots: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, mvps: 0, clutches: 0, wallbangs: 0 },
+        stats: { matches: 0, wins: 0, kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, mvps: 0, clutches: 0, wallbangs: 0 },
         weapons: {}, history: [], contracts: { date: '', progress: {}, claimed: {} }, recent: [],
+        look: null, settings: null, tutorialDone: false,
       });
     }
     const profile = this.profiles.get(key);
@@ -61,13 +67,30 @@ export class ProfileStore {
     const level = levelFromXp(profile.xp);
     return {
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
-      stats: profile.stats, weapons: profile.weapons, history: profile.history, recent: profile.recent,
+      look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
+      stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
         ...contract, text: contract.text.replace('{n}', contract.n),
         progress: Math.min(contract.n, profile.contracts.progress[contract.id] || 0),
         done: Boolean(profile.contracts.claimed[contract.id]),
       })),
     };
+  }
+
+  // Look, settings and tutorial progress follow the account between browsers.
+  savePrefs(token, { look, settings, tutorialDone } = {}) {
+    const profile = this.get(token);
+    if (look && typeof look === 'object') profile.look = this.sanitizeCosmetics(token, look);
+    if (settings && typeof settings === 'object') {
+      const clean = {};
+      for (const [key, rule] of Object.entries(SETTING_RULES)) {
+        const value = settings[key];
+        if (rule === 'bool') { if (typeof value === 'boolean') clean[key] = value; } else if (typeof rule[0] === 'string') { if (rule.includes(value)) clean[key] = value; } else if (Number.isFinite(value)) clean[key] = Math.min(rule[1], Math.max(rule[0], value));
+      }
+      profile.settings = clean;
+    }
+    if (tutorialDone === true) profile.tutorialDone = true;
+    this.scheduleSave();
   }
 
   sanitizeCosmetics(token, look) {
@@ -83,14 +106,15 @@ export class ProfileStore {
     const s = profile.stats;
     s.matches += 1;
     if (summary.won) s.wins += 1;
-    for (const field of ['kills', 'deaths', 'assists', 'headshots', 'damage', 'shots', 'hits', 'roundsWon', 'roundsPlayed', 'clutches', 'wallbangs']) s[field] += summary[field] || 0;
+    for (const field of ['kills', 'playerKills', 'botKills', 'deaths', 'assists', 'headshots', 'damage', 'shots', 'hits', 'roundsWon', 'roundsPlayed', 'clutches', 'wallbangs']) s[field] = (s[field] || 0) + (summary[field] || 0);
     if (summary.mvp) s.mvps += 1;
     s.longest = Math.max(s.longest, Math.round(summary.longest || 0));
     Object.entries(summary.weaponKills || {}).forEach(([id, entry]) => {
       const record = profile.weapons[id] || (profile.weapons[id] = { kills: 0, headshots: 0 });
       record.kills += entry.kills; record.headshots += entry.headshots;
     });
-    let xp = 100 + summary.kills * 25 + (summary.headshots || 0) * 10 + (summary.roundsWon || 0) * 30 + (summary.assists || 0) * 10 + (summary.won ? 200 : 0) + (summary.mvp ? 75 : 0);
+    // Bots are worth less than people.
+    let xp = 100 + (summary.playerKills || 0) * 25 + (summary.botKills || 0) * 10 + (summary.headshots || 0) * 10 + (summary.roundsWon || 0) * 30 + (summary.assists || 0) * 10 + (summary.won ? 200 : 0) + (summary.mvp ? 75 : 0);
     const progress = {
       kills: summary.kills, headshots: summary.headshotKills || 0, rounds: summary.roundsWon || 0, wins: summary.won ? 1 : 0,
       damage: Math.round(summary.damage || 0), longshots: summary.longshots || 0, wallbangs: summary.wallbangs || 0,
@@ -111,7 +135,7 @@ export class ProfileStore {
     if (summary.ranked) { profile.rating = Math.max(100, profile.rating + summary.ratingDelta); profile.rankedMatches += 1; }
     profile.history.unshift({
       at: Date.now(), result: summary.draw ? 'draw' : summary.won ? 'win' : 'loss', score: summary.score, mode: summary.mode,
-      kills: summary.kills, deaths: summary.deaths, assists: summary.assists || 0, headshots: summary.headshots || 0, mvp: Boolean(summary.mvp),
+      kills: summary.kills, playerKills: summary.playerKills || 0, botKills: summary.botKills || 0, deaths: summary.deaths, assists: summary.assists || 0, headshots: summary.headshots || 0, mvp: Boolean(summary.mvp),
       rating: summary.ranked ? Math.round(summary.ratingDelta) : null, variant: summary.variant,
     });
     profile.history.length = Math.min(profile.history.length, HISTORY_LIMIT);

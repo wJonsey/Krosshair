@@ -1,5 +1,6 @@
 // WebSocket transport: identify, clock sync, automatic reconnect.
 import { bus, game, store } from './state.js';
+import { ACCOUNTS_ENABLED } from '../shared/constants.js';
 
 const handlers = new Map();
 let socket = null;
@@ -26,7 +27,9 @@ export const net = {
   // Server clock, in seconds.
   time() { return performance.now() / 1000 + net.offset; },
   connect,
-  identify() { net.send({ type: 'identify', name: game.name, token: game.token, session: game.session }); },
+  // action: resume | login | signup | logout
+  identify() { net.send({ type: 'identify', name: game.name, token: game.token, tab: game.session }); },
+  auth(action, fields = {}) { net.send({ type: 'auth', action, tab: game.session, session: game.authSession, ...fields }); },
   enter(payload) { net.send({ type: 'enter', look: game.look, ...payload }); },
   leaveRoom() { remember(null); net.send({ type: 'leave-room' }); },
   holdRoom(name) { remember(name); },
@@ -58,19 +61,24 @@ function connect() {
     setTimeout(ping, 250);
     setTimeout(ping, 600);
     pingTimer = setInterval(ping, 2000);
-    if (game.name.length >= 2) net.identify();
+    if (!ACCOUNTS_ENABLED) { if (game.name.trim().length >= 2) net.identify(); } else if (game.authSession) net.auth('resume'); else bus.emit('auth-required', {});
   });
   socket.addEventListener('message', (event) => {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
     if (message.type === 'pong') return sample(message);
     if (message.type === 'identity') {
-      game.token = message.token;
-      store('token', game.token);
+      if (message.session) { game.authSession = message.session; store('authSession', message.session); }
+      if (message.token) { game.token = message.token; store('token', message.token); }
+      if (message.username) { game.username = message.username; game.name = message.username; }
       net.identified = true;
       if (wantRoom) net.send({ type: 'enter', action: 'rejoin', room: wantRoom, look: game.look });
     }
     if (message.type === 'rejoin-failed') remember(null);
+    if (message.type === 'auth-required' || message.type === 'logged-out') {
+      game.authSession = null; store('authSession', null);
+      game.username = null; game.profile = null; net.identified = false;
+    }
     handlers.get(message.type)?.(message);
   });
   socket.addEventListener('close', () => {
