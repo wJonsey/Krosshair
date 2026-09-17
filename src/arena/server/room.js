@@ -129,7 +129,7 @@ export class Room {
       color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', level: 1, rating: 1000, difficulty: null, ping: 0,
       token: null, session: null, credits: this.rules.startCredits, match: freshMatchStats(),
       alive: false, hp: 100, armor: 0, helmet: false, weapons: { ...DEFAULT_LOADOUT }, ammo: {}, active: 'primary', gadgets: [], bought: {},
-      x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], epoch: 0, lastStateAt: 0, strikes: 0,
+      x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,
       nextFire: 0, equipUntil: 0, reloadEnd: 0, reloadSlot: null, scopedSince: 0, spread: { primary: new SpreadTracker(), sidearm: new SpreadTracker() },
       stimUntil: 0, stimUsed: false, ghostUntil: 0, drone: null, damageFrom: new Map(), diedThisRound: false, lastFireAt: 0,
       disconnectedAt: 0, pendingJoin: false, shotSeq: 0, ...base,
@@ -550,7 +550,7 @@ export class Room {
       if (player.ghostUntil > t) flags |= FLAG.ghost;
       if (player.reloadEnd) flags |= FLAG.reloading;
       if (player.drone) flags |= FLAG.piloting;
-      player.history.push({ t, x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch, flags });
+      player.history.push({ t, x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch, flags, weapon: player.weapons[player.active] || 'knife' });
       if (player.history.length > 110) player.history.shift();
       rows.push([player.id, round2(player.x), round2(player.y), round2(player.z), round3(player.yaw), round3(player.pitch), flags, player.weapons[player.active] || 'knife', player.dummy ? 1 : 0]);
     }
@@ -758,11 +758,12 @@ export class Room {
       }
     }
     if (registered) player.match.hits += 1;
+    this.logShot(player, { t, weapon: weapon.id, origin: origin.map(round2), ends, lag: t - rewindTo });
     this.broadcast({ type: 'shot', id: player.id, w: weapon.id, o: origin.map(round2), e: ends, i: impacts, seq }, (other) => other !== player || player.bot);
     if (!player.bot) this.send(player, { type: 'shot-ack', seq, e: ends, i: impacts });
     for (const [id, entry] of damageBy) {
       const victim = this.players.get(id);
-      if (victim) this.applyDamage(victim, player, entry.amount, entry.zone, weapon, { distance: entry.distance, wallbang: entry.wallbang, origin, end: ends[0] });
+      if (victim) this.applyDamage(victim, player, entry.amount, entry.zone, weapon, { distance: entry.distance, wallbang: entry.wallbang, origin, end: ends[0], lag: t - rewindTo });
     }
     if (weapon.loud > 0) for (const other of this.players.values()) if (other.bot && other.alive && other.team !== player.team) botOnSound(this, other, player, weapon.loud);
     this.pushYou(player);
@@ -792,11 +793,12 @@ export class Room {
       if (!best || dist < best.dist) best = { other, dist };
     }
     this.broadcast({ type: 'swing', id: player.id, hit: Boolean(best) }, (other) => other !== player);
+    this.logShot(player, { t: now(), weapon: weapon.id, melee: true, lag: now() - rewindTo });
     if (!best) return;
     const victim = best.other;
     const victimForward = [-Math.sin(victim.yaw), -Math.cos(victim.yaw)];
     const behind = victimForward[0] * forward[0] + victimForward[1] * forward[2] > 0.45;
-    this.applyDamage(victim, player, behind ? weapon.backstab : weapon.damage, 'torso', weapon, { distance: best.dist, backstab: behind, origin: eye, end: [victim.x, victim.y + 1.2, victim.z] });
+    this.applyDamage(victim, player, behind ? weapon.backstab : weapon.damage, 'torso', weapon, { distance: best.dist, backstab: behind, origin: eye, end: [victim.x, victim.y + 1.2, victim.z], lag: now() - rewindTo });
   }
 
   applyDamage(victim, attacker, amount, zone, weapon, meta = {}) {
@@ -861,7 +863,7 @@ export class Room {
     };
     this.broadcast(event);
     if (killer && killer !== victim) {
-      const record = { t, killer: killer.id, victim: victim.id, weapon: weapon.id, zone, distance: event.distance, origin: meta.origin || this.eyeOf(killer), end: meta.end || [victim.x, victim.y + 1.2, victim.z] };
+      const record = { t, killer: killer.id, victim: victim.id, weapon: weapon.id, zone, distance: event.distance, origin: meta.origin || this.eyeOf(killer), end: meta.end || [victim.x, victim.y + 1.2, victim.z], lag: meta.lag || 0 };
       // Built right away: by match end the position history has already scrolled past this moment.
       const replay = this.buildReplay(record, 4);
       if (!victim.dummy) this.lastKill = replay;
@@ -873,14 +875,27 @@ export class Room {
     this.checkRoundEnd();
   }
 
+  // Recent shots and swings, so a killcam can replay every round of the fight, not just the last one.
+  logShot(player, shot) {
+    player.shotLog.push(shot);
+    while (player.shotLog.length && player.shotLog[0].t < shot.t - 8) player.shotLog.shift();
+  }
+
   buildReplay(kill, seconds) {
     const t0 = kill.t - seconds;
+    // The killer aimed at where everyone else was `lag` seconds earlier (interp delay + ping, which the
+    // server rewound for). Delay the other tracks by that much so the replay shows what they actually saw.
+    const lag = clamp(kill.lag || 0, 0, MAX_REWIND);
     const tracks = {};
     for (const player of this.players.values()) {
-      const samples = player.history.filter((s) => s.t >= t0 - 0.06 && s.t <= kill.t + 0.05);
-      if (samples.length) tracks[player.id] = samples.map((s) => [round3(s.t - t0), round2(s.x), round2(s.y), round2(s.z), round3(s.yaw), round3(s.pitch), s.flags]);
+      const shift = player.id === kill.killer ? 0 : lag;
+      const samples = player.history.filter((s) => s.t >= t0 - shift - 0.06 && s.t <= kill.t - shift + 0.05);
+      if (samples.length) tracks[player.id] = samples.map((s) => [round3(s.t - t0 + shift), round2(s.x), round2(s.y), round2(s.z), round3(s.yaw), round3(s.pitch), s.flags, s.weapon]);
     }
-    return { ...kill, t: undefined, duration: seconds, tracks, origin: kill.origin.map(round2), end: kill.end.map(round2) };
+    const killer = this.players.get(kill.killer);
+    const shots = (killer?.shotLog || []).filter((shot) => shot.t >= t0 && shot.t <= kill.t + 0.01)
+      .map((shot) => ({ t: round3(shot.t - t0), weapon: shot.weapon, melee: Boolean(shot.melee), origin: shot.origin, ends: shot.ends }));
+    return { ...kill, t: undefined, lag: undefined, duration: seconds, tracks, shots, origin: kill.origin.map(round2), end: kill.end.map(round2) };
   }
 
   // ---------------------------------------------------------------- world state

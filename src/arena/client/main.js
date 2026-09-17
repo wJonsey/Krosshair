@@ -209,7 +209,7 @@ net.on('match-end', (message) => {
     let finished = false;
     const once = () => { if (finished) return; finished = true; finish(); };
     player.startFinalReplay(message.replay, once);
-    setTimeout(() => { if (!finished) { operators.stopReplay(); operators.hidden = null; player.mode = 'idle'; once(); } }, 9000);
+    setTimeout(() => { if (!finished) { operators.stopReplay(); player.endReplayView(); operators.hidden = null; player.mode = 'idle'; once(); } }, 9000);
   } else finish();
 });
 
@@ -392,7 +392,7 @@ function frame() {
   hud.update(dt);
   renderer.clear();
   renderer.render(arena.scene, camera);
-  if (game.screen === 'game' && (player.mode === 'play') && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
+  if (game.screen === 'game' && (player.mode === 'play' || player.replayView) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
   renderPreview();
 }
 

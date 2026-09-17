@@ -362,7 +362,7 @@ export class Operators {
       entity.id = id;
       const entry = game.roster.get(id) || {};
       entity.style({ color: entry.color, accent: entry.accent, name: '' }, !isEnemy(id));
-      entity.buffer = track.map(([t, x, y, z, yaw, pitch, flags]) => ({ t, x, y, z, yaw, pitch, flags, weapon: replay.weapon && id === replay.killer ? replay.weapon : 'm44' }));
+      entity.buffer = track.map(([t, x, y, z, yaw, pitch, flags, weapon]) => ({ t, x, y, z, yaw, pitch, flags, weapon: weapon || (replay.weapon && id === replay.killer ? replay.weapon : 'm44') }));
       this.replay.entities.set(id, entity);
     }
     this.entities.forEach((entity) => { entity.root.visible = false; });

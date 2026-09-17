@@ -384,13 +384,14 @@ export class Hud {
     }
 
     // Aim UI
-    const weapon = player.weapon;
+    const replayView = player.replayView;
+    const weapon = replayView ? player.viewWeapon : player.weapon;
     const optic = weapon.scope && weapon.scope[0] < 40;
-    const scopedView = player.mode === 'play' && optic && player.scopeAmount > 0.82;
+    const scopedView = optic && (replayView ? replayView.scope > 0.82 : player.mode === 'play' && player.scopeAmount > 0.82);
     dom.scope.classList.toggle('hidden', !scopedView);
     if (scopedView) {
-      const zoom = weapon.scope[Math.min(player.zoomIndex, weapon.scope.length - 1)];
-      dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 ? ' · WHEEL TO ZOOM' : ''}`;
+      const zoom = weapon.scope[replayView ? 0 : Math.min(player.zoomIndex, weapon.scope.length - 1)];
+      dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !replayView ? ' · WHEEL TO ZOOM' : ''}`;
       dom.breath.style.width = `${player.breath * 100}%`;
       dom.breath.classList.toggle('winded', player.winded);
     }
