@@ -132,7 +132,7 @@ export class Effects {
     const color = danger ? '#ff4d3d' : '#ffc857';
     context.strokeStyle = color; context.fillStyle = color; context.lineWidth = 6;
     context.beginPath(); context.moveTo(128, 100); context.lineTo(108, 62); context.lineTo(128, 24); context.lineTo(148, 62); context.closePath(); context.stroke();
-    context.font = '700 24px "Barlow Condensed", sans-serif'; context.textAlign = 'center';
+    context.font = '400 24px "Michroma", sans-serif'; context.textAlign = 'center';
     context.fillText(label.toUpperCase(), 128, 124);
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false, fog: false, sizeAttenuation: false }));
     sprite.scale.set(0.12, 0.06, 1);

@@ -89,7 +89,7 @@ function surfaceMaterial(key) {
 function textSprite(text, color, size) {
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
-  const font = '800 96px "Barlow Condensed", sans-serif';
+  const font = '400 96px "Michroma", sans-serif';
   context.font = font;
   canvas.width = Math.ceil(context.measureText(text).width) + 40;
   canvas.height = 128;

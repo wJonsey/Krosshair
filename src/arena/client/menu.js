@@ -112,7 +112,7 @@ export function renderHome() {
   home.innerHTML = `
     <div class="home-grid">
       <section class="home-left">
-        <p class="eyebrow">Tactical sniper duels // best of nine // one life</p>
+        <p class="eyebrow">Tactical sniper duels · one life</p>
         <h1>Sniper<br /><em>Shootout.</em></h1>
         <label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label>
         <div class="operator-panel">
@@ -386,25 +386,25 @@ function buildShareCard() {
   const result = !message.winner ? 'STALEMATE' : message.winner === row.team ? 'VICTORY' : 'DEFEAT';
   const accent = result === 'VICTORY' ? '#6ce6d1' : result === 'DEFEAT' ? '#ec6a9e' : '#ffc857';
   const gradient = c.createLinearGradient(0, 0, 1200, 630);
-  gradient.addColorStop(0, '#07090c'); gradient.addColorStop(1, '#141c24');
+  gradient.addColorStop(0, '#0a0e12'); gradient.addColorStop(1, '#141c24');
   c.fillStyle = gradient; c.fillRect(0, 0, 1200, 630);
-  c.fillStyle = 'rgba(108,230,209,.05)';
+  c.fillStyle = 'rgba(230,237,241,.025)';
   for (let y = 0; y < 630; y += 6) c.fillRect(0, y, 1200, 1);
   c.fillStyle = accent; c.fillRect(0, 0, 14, 630);
-  c.fillStyle = '#ff7148'; c.font = '700 22px "Space Grotesk", sans-serif'; c.fillText('SNIPER SHOOTOUT  //  KESTREL YARD  //  ' + (VARIANT_NAMES[message.variant] || '').toUpperCase(), 70, 84);
-  c.fillStyle = '#f2f0ea'; c.font = '800 170px "Barlow Condensed", sans-serif'; c.fillText(result, 62, 250);
-  c.fillStyle = accent; c.font = '800 120px "Barlow Condensed", sans-serif';
+  c.fillStyle = '#ffb547'; c.font = '700 22px "Geist", sans-serif'; c.fillText('SNIPER SHOOTOUT  //  KESTREL YARD  //  ' + (VARIANT_NAMES[message.variant] || '').toUpperCase(), 70, 84);
+  c.fillStyle = '#e6edf1'; c.font = '400 170px "Michroma", sans-serif'; c.fillText(result, 62, 250);
+  c.fillStyle = accent; c.font = '400 120px "Michroma", sans-serif';
   c.textAlign = 'right'; c.fillText(`${message.scores[row.team]} – ${message.scores[row.team === 'A' ? 'B' : 'A']}`, 1130, 240); c.textAlign = 'left';
-  c.fillStyle = '#9ba4ae'; c.font = '600 30px "Space Grotesk", sans-serif'; c.fillText(`${game.look.title.toUpperCase()}  ${row.name.toUpperCase()}${row.mvp ? '   ★ MVP' : ''}`, 70, 320);
+  c.fillStyle = '#8c99a4'; c.font = '600 30px "Geist", sans-serif'; c.fillText(`${game.look.title.toUpperCase()}  ${row.name.toUpperCase()}${row.mvp ? '   ★ MVP' : ''}`, 70, 320);
   const stats = [['KILLS', row.kills], ['DEATHS', row.deaths], ['ASSISTS', row.assists], ['HEADSHOTS', row.headshots], ['ACCURACY', `${row.accuracy}%`], ['LONGEST', `${row.longest} M`]];
   stats.forEach(([label, value], index) => {
     const x = 70 + index * 182;
     c.fillStyle = 'rgba(242,240,234,.06)'; c.fillRect(x, 370, 166, 150);
     c.fillStyle = accent; c.fillRect(x, 370, 4, 150);
-    c.fillStyle = '#f2f0ea'; c.font = '700 66px "Barlow Condensed", sans-serif'; c.fillText(String(value), x + 22, 450);
-    c.fillStyle = '#5b6672'; c.font = '600 17px "Space Grotesk", sans-serif'; c.fillText(label, x + 22, 492);
+    c.fillStyle = '#e6edf1'; c.font = '400 66px "Michroma", sans-serif'; c.fillText(String(value), x + 22, 450);
+    c.fillStyle = '#56626c'; c.font = '600 17px "Geist", sans-serif'; c.fillText(label, x + 22, 492);
   });
-  c.fillStyle = '#5b6672'; c.font = '500 20px "Space Grotesk", sans-serif';
+  c.fillStyle = '#56626c'; c.font = '500 20px "Geist", sans-serif';
   c.fillText(`${new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}  ·  ${(MODIFIERS[message.modifier]?.name || 'Standard').toUpperCase()}  ·  LEVEL ${game.profile?.level || levelFromXp(0)}`, 70, 580);
 }
 

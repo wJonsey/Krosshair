@@ -15,7 +15,7 @@ const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const tube = (r, length, seg = 10) => new THREE.CylinderGeometry(r, r, length, seg);
 const ALONG = [Math.PI / 2, 0, 0];
 
-function buildWeapon(id, accent) {
+export function buildWeapon(id, accent) {
   const g = new THREE.Group();
   const steel = M('#2a3038'), dark = M('#14181d', 0.5, 0.3), grey = M('#56616c', 0.35, 0.7), wood = M('#6e4a2b', 0.7, 0.05), glow = M(accent, 0.3, 0.2, accent);
   const data = { muzzle: new THREE.Vector3(0, 0.03, -0.9), mag: null, bolt: null, pump: null, hip: [0.19, -0.2, -0.42], ads: [0, -0.115, -0.3], adsHide: false };
@@ -114,10 +114,12 @@ function buildWeapon(id, accent) {
   const right = new THREE.Group();
   part(right, new THREE.CapsuleGeometry(0.045, 0.34, 4, 8), sleeve, [0, 0, 0.22], ALONG);
   part(right, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
+  right.userData.arm = true;
   right.position.set(0.02, -0.09, 0.05);
   right.rotation.set(0.25, -0.25, 0);
   g.add(right);
   const left = new THREE.Group();
+  left.userData.arm = true;
   part(left, new THREE.CapsuleGeometry(0.045, 0.36, 4, 8), sleeve, [0, 0, 0.24], ALONG);
   part(left, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
   const reach = id === 'knife' || id === 'p9' || id === 'viper' ? null : (id === 'wasp' ? -0.3 : id === 'talon' ? -0.4 : -0.45);

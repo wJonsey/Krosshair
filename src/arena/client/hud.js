@@ -5,6 +5,7 @@ import { zoneAt } from '../shared/map.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
 import { play, announce } from './audio.js';
+import { weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -31,13 +32,15 @@ export class Hud {
       scope: $('#scope-overlay'), scopeZoom: $('#scope-zoom'), breath: $('#breath-meter'), fxDamage: $('#fx-damage'), fxLow: $('#fx-low'), fxSuppress: $('#fx-suppress'), fxFlash: $('#fx-flash'),
       banner: $('#banner'), bannerEyebrow: $('#banner-eyebrow'), bannerTitle: $('#banner-title'), bannerSub: $('#banner-sub'), prompt: $('#prompt'),
       spectate: $('#spectate-bar'), spectateName: $('#spectate-name'), reactions: $('#reactions'), spectateWeapon: $('#spectate-weapon'),
-      pov: $('#pov-card'), povLabel: $('#pov-label'), povSkip: $('#pov-skip'), povTitle: $('#pov-title'), povName: $('#pov-name'), povHp: $('#pov-hp'), povHpBar: $('#pov-hp-bar'), povTag: $('#pov-tag'), povWeapon: $('#pov-weapon'), povAmmo: $('#pov-ammo'), povMag: $('#pov-mag'), povDetail: $('#pov-detail'),
+      pov: $('#pov-card'), povLabel: $('#pov-label'), povSkip: $('#pov-skip'), povTitle: $('#pov-title'), povName: $('#pov-name'), povHp: $('#pov-hp'), povHpBar: $('#pov-hp-bar'), povTag: $('#pov-tag'), povWeapon: $('#pov-weapon'), povArt: $('#pov-art'), povAmmo: $('#pov-ammo'), povMag: $('#pov-mag'), povDetail: $('#pov-detail'),
       drone: $('#drone-overlay'), droneTime: $('#drone-time'),
       buy: $('#buy-menu'), scoreboard: $('#scoreboard'), quick: $('#quick-wheel'), controls: $('#controls-hint'),
     };
     this.dom.reactions.innerHTML = REACTIONS.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
     this.dom.reactions.addEventListener('click', (event) => { const emoji = event.target.closest('button')?.dataset.emoji; if (emoji) net.send({ type: 'react', emoji }); });
     this.dom.buy.addEventListener('click', (event) => this.onBuyClick(event));
+    this.dom.buy.addEventListener('pointerover', (event) => this.onBuyFocus(event));
+    this.dom.buy.addEventListener('focusin', (event) => this.onBuyFocus(event));
     this.dom.chatInput.addEventListener('keydown', (event) => {
       event.stopPropagation();
       if (event.key === 'Enter') { const text = this.dom.chatInput.value.trim(); if (text) net.send({ type: 'chat', text, team: this.chatTeam }); this.closeChat(); }
@@ -213,40 +216,82 @@ export class Hud {
     net.send({ type: card.classList.contains('refundable') ? 'sell' : 'buy', item });
     play('buy');
   }
+  // Hover or keyboard focus picks what the inspect panel shows, without rebuilding the menu.
+  onBuyFocus(event) {
+    const row = event.target.closest('[data-item]');
+    if (!row) return;
+    if (WEAPONS[row.dataset.item]) {
+      if (this.buyFocus === row.dataset.item) return;
+      this.buyFocus = row.dataset.item;
+      const inspect = this.dom.buy.querySelector('.inspect');
+      if (inspect) inspect.outerHTML = this.inspectHtml(WEAPONS[this.buyFocus]);
+      this.dom.buy.querySelectorAll('.arm-row').forEach((other) => other.classList.toggle('focus', other.dataset.item === this.buyFocus));
+    } else {
+      const caption = this.dom.buy.querySelector('.gear-caption');
+      if (caption) caption.textContent = row.dataset.desc || '';
+    }
+  }
+  inspectHtml(weapon) {
+    const kills = game.profile?.weapons?.[weapon.id]?.kills || 0;
+    const tier = masteryTier(kills);
+    const meter = (value) => `<span class="meter"><i style="width:${Math.round(Math.max(0.04, Math.min(1, value)) * 100)}%"></i></span>`;
+    const perShot = weapon.damage * weapon.pellets;
+    const shots = Math.ceil(100 / perShot);
+    const rows = [
+      ['Damage', `${weapon.damage}${weapon.pellets > 1 ? ` × ${weapon.pellets}` : ''} · ${shots === 1 ? 'one-shot body kill' : `${shots} body shots`}`, perShot / 130],
+      ['Fire rate', `${Math.round(60 / weapon.cooldown)} rpm${weapon.auto ? ' · auto' : ''}`, 0.09 / weapon.cooldown + 0.04],
+      ['Range', weapon.falloff ? `full damage to ${weapon.falloff[0]} m` : 'no falloff', weapon.falloff ? weapon.falloff[1] / 90 : 1],
+      ['Penetration', `${Math.round(weapon.pen * 100)}%`, weapon.pen],
+      ['Mobility', `${Math.round(weapon.speed * 100)}%`, (weapon.speed - 0.82) / 0.26],
+    ];
+    return `<section class="inspect" aria-live="polite">
+      <img class="inspect-art" src="${weaponArt(weapon.id)}" alt="" />
+      <header><small>${weapon.tag}</small><h3>${weapon.name}</h3></header>
+      <dl>${rows.map(([label, text, value]) => `<div><dt>${label}</dt><dd>${meter(value)}<span>${text}</span></dd></div>`).join('')}</dl>
+      <p class="inspect-foot"><span>Magazine ${weapon.mag} / ${weapon.reserve}</span><span>${MASTERY_TIERS[tier][1]} mastery · ${kills} kills</span></p>
+    </section>`;
+  }
   renderBuy() {
     if (!this.buyOpen || !game.you) return;
     const you = game.you;
     const free = game.room?.mode === 'range';
     const modifier = game.room?.rules?.modifier;
     const bought = new Set(you.bought || []);
-    const stat = (label, value) => `<div class="stat"><span>${label}</span><div><i style="width:${Math.round(value * 100)}%"></i></div></div>`;
-    const weaponCard = (weapon) => {
+    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee);
+    if (!WEAPONS[this.buyFocus] || WEAPONS[this.buyFocus].melee) this.buyFocus = you.weapons.primary || you.weapons.sidearm;
+    const cost = (value) => (free || !value ? 'Free' : value);
+    const weaponRow = (weapon) => {
       const owned = you.weapons[weapon.slot] === weapon.id;
       const refundable = owned && weapon.cost > 0 && (bought.has(`slot:${weapon.slot}`) || free);
       const locked = (!owned && !free && you.credits + (bought.has(`slot:${weapon.slot}`) ? WEAPONS[you.weapons[weapon.slot]].cost : 0) < weapon.cost) || (weapon.slot === 'primary' && modifier === 'sidearms');
-      const tier = masteryTier(game.profile?.weapons?.[weapon.id]?.kills || 0);
-      const dps = Math.min(1, (weapon.damage * weapon.pellets) / 130);
-      const rate = Math.min(1, 0.09 / weapon.cooldown + 0.06);
-      const range = weapon.falloff ? Math.min(1, weapon.falloff[1] / 90) : 1;
-      return `<button type="button" class="buy-card${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}" data-item="${weapon.id}">
-        <header><strong>${weapon.name}</strong><em>${weapon.cost ? weapon.cost : 'FREE'}</em></header><small>${weapon.tag}${tier ? ` · ${MASTERY_TIERS[tier][1].toUpperCase()} MASTERY` : ''}</small>
-        ${stat('DMG', dps)}${stat('RATE', rate)}${stat('RANGE', range)}${stat('PEN', weapon.pen)}
-        <footer>${owned ? (refundable ? 'EQUIPPED · CLICK TO REFUND' : 'EQUIPPED') : locked ? 'LOCKED' : 'BUY'}</footer></button>`;
+      const state = owned ? (refundable ? 'Equipped · refund' : 'Equipped') : locked ? 'Locked' : 'Buy';
+      return `<button type="button" class="arm-row${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}${weapon.id === this.buyFocus ? ' focus' : ''}" data-item="${weapon.id}">
+        <img src="${weaponArt(weapon.id)}" alt="" /><span class="arm-name">${weapon.name}</span><span class="arm-cost">${cost(weapon.cost)}</span><span class="arm-state">${state}</span></button>`;
     };
-    const gearCard = (id, name, cost, desc, owned, refundable, icon = '') => {
-      const locked = !owned && !free && you.credits < cost;
-      return `<button type="button" class="buy-card gear${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}" data-item="${id}"><header><strong>${icon ? `<span class="icon">${icon}</span>` : ''}${name}</strong><em>${cost}</em></header><small>${desc}</small><footer>${owned ? (refundable ? 'OWNED · CLICK TO REFUND' : 'OWNED') : locked ? 'LOCKED' : 'BUY'}</footer></button>`;
+    const gearChip = (id, name, price, desc, owned, refundable, icon = '') => {
+      const locked = !owned && !free && you.credits < price;
+      return `<button type="button" class="gear-chip${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}" data-item="${id}" data-desc="${escapeHtml(desc)}" title="${escapeHtml(desc)}">${icon ? `<i>${icon}</i>` : ''}<span>${name}</span><em>${owned ? (refundable ? 'Refund' : 'Owned') : cost(price)}</em></button>`;
     };
-    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee);
     const armorOwned = (id) => (id === 'helmet' ? you.helmet : you.armor >= ARMOR[id].points && (id === 'heavy' || you.armor < ARMOR.heavy.points));
     this.dom.buy.innerHTML = `
-      <div class="buy-head"><div><p class="eyebrow">Armoury${free ? ' // everything is free on the range' : ''}</p><h2>Gear up.</h2></div><div class="buy-credits"><span>CREDITS</span><b>${free ? '∞' : you.credits}</b></div><button type="button" class="secondary-button" data-close>Deploy <span>B</span></button></div>
-      <div class="buy-grid">
-        <section><h3>Primary</h3>${weapons.filter((w) => w.slot === 'primary').map(weaponCard).join('')}</section>
-        <section><h3>Sidearm</h3>${weapons.filter((w) => w.slot === 'sidearm').map(weaponCard).join('')}<h3>Armour</h3>${['light', 'heavy', 'helmet'].map((id) => gearCard(id, ARMOR[id].name, ARMOR[id].cost, ARMOR[id].desc, armorOwned(id), bought.has(id === 'helmet' ? 'helmet' : 'armor') && armorOwned(id))).join('')}</section>
-        <section class="wide"><h3>Gadgets <small>${you.gadgets.length} / 2 slots · keys Q and E</small></h3><div class="gadget-grid">${Object.values(GADGETS).map((gadget) => gearCard(gadget.id, gadget.name, gadget.cost, gadget.desc, you.gadgets.includes(gadget.id), bought.has(`gadget:${gadget.id}`) || (free && you.gadgets.includes(gadget.id)), gadget.icon)).join('')}</div></section>
+      <header class="armoury-head">
+        <h2>Armoury</h2>
+        <div class="armoury-credits"><span>Credits</span><b>${free ? '∞' : you.credits}</b></div>
+        <button type="button" class="ghost-button" data-close>Deploy <kbd>B</kbd></button>
+      </header>
+      <div class="armoury-body">
+        <nav class="arsenal" aria-label="Weapons">
+          <h3>Primary</h3>${weapons.filter((w) => w.slot === 'primary').map(weaponRow).join('')}
+          <h3>Sidearm</h3>${weapons.filter((w) => w.slot === 'sidearm').map(weaponRow).join('')}
+        </nav>
+        ${this.inspectHtml(WEAPONS[this.buyFocus])}
       </div>
-      <p class="buy-foot">Survive the round and you keep your gear. Die and you are back to the M-44 and a P9. ${modifier && modifier !== 'standard' ? `<b>${MODIFIERS[modifier].name}:</b> ${MODIFIERS[modifier].desc}` : ''}</p>`;
+      <div class="gear">
+        <div><h3>Armour</h3><div class="gear-row">${['light', 'heavy', 'helmet'].map((id) => gearChip(id, ARMOR[id].name, ARMOR[id].cost, ARMOR[id].desc, armorOwned(id), bought.has(id === 'helmet' ? 'helmet' : 'armor') && armorOwned(id))).join('')}</div></div>
+        <div><h3>Gadgets <small>${you.gadgets.length} / 2 · Q and E</small></h3><div class="gear-row">${Object.values(GADGETS).map((gadget) => gearChip(gadget.id, gadget.name, gadget.cost, gadget.desc, you.gadgets.includes(gadget.id), bought.has(`gadget:${gadget.id}`) || (free && you.gadgets.includes(gadget.id)), gadget.icon)).join('')}</div></div>
+        <p class="gear-caption">${free ? 'Everything is free on the range.' : 'Survive the round to keep your gear. Die and you respawn with the M-44 and P9.'}</p>
+      </div>
+      ${modifier && modifier !== 'standard' ? `<p class="buy-foot"><b>${MODIFIERS[modifier].name}</b> ${MODIFIERS[modifier].desc}</p>` : ''}`;
   }
 
   // ------------------------------------------------------------ scoreboard
@@ -415,6 +460,7 @@ export class Hud {
     if (pov && !dom.pov.classList.contains('hidden')) {
       const melee = Boolean(weapon.melee);
       dom.povWeapon.textContent = weapon.name; dom.povTag.textContent = weapon.tag;
+      if (dom.povArt.dataset.weapon !== weapon.id) { dom.povArt.dataset.weapon = weapon.id; dom.povArt.src = weaponArt(weapon.id); }
       dom.povAmmo.textContent = melee ? '' : String(pov.mag ?? weapon.mag).padStart(2, '0');
       dom.povMag.textContent = melee ? '' : `/ ${weapon.mag}`;
     }

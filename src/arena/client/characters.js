@@ -139,7 +139,7 @@ function nameTag(text, color) {
   const canvas = document.createElement('canvas');
   canvas.width = 320; canvas.height = 64;
   const context = canvas.getContext('2d');
-  context.font = '700 30px "Barlow Condensed", sans-serif';
+  context.font = '400 30px "Michroma", sans-serif';
   context.textAlign = 'center';
   context.fillStyle = 'rgba(7,9,12,.7)';
   const width = Math.min(300, context.measureText(text).width + 44);
