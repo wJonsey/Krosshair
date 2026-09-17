@@ -169,7 +169,7 @@ export function renderHome() {
     <div class="home-grid">
       <section class="home-left">
         <p class="eyebrow">Tactical sniper duels · one life</p>
-        <h1>Kros<br /><em>shair.</em></h1>
+        <div class="brand-lockup"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="84" height="84" /><h1>Kros<br /><em>shair.</em></h1></div>
         ${authHtml()}
         <div class="operator-panel">
           <canvas id="operator-preview" width="200" height="260"></canvas>
@@ -318,7 +318,7 @@ export function renderLobby() {
   const canStart = room.players.some((p) => p.team === 'A') && room.players.some((p) => p.team === 'B');
   lobby.innerHTML = `
     <div class="lobby-card">
-      <div class="lobby-head"><div><p class="eyebrow">${custom ? 'Private room' : 'Matchmaking'} // ${escapeHtml(room.name)}</p><h2 id="lobby-title">${custom ? 'Ready room.' : 'Finding rivals.'}</h2></div><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
+      <div class="lobby-head"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="Krosshair" width="56" height="56" /><div class="lobby-heading"><p class="eyebrow">${custom ? 'Private room' : 'Matchmaking'} // ${escapeHtml(room.name)}</p><h2 id="lobby-title">${custom ? 'Ready room.' : 'Finding rivals.'}</h2></div><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
       <p id="lobby-status" class="lobby-status"></p>
       <div class="teams">${teamColumn('A', 'Alpha')}<div class="versus">VS</div>${teamColumn('B', 'Bravo')}</div>
       ${rulesHtml}

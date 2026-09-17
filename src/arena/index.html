@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Krosshair // Kestrel Yard</title>
+  <link rel="icon" type="image/svg+xml" href="brand/krosshair-logo-dark.svg" />
+  <link rel="icon" type="image/png" sizes="1024x1024" href="brand/krosshair-logo-dark.png" />
+  <link rel="apple-touch-icon" href="brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Michroma&display=swap" rel="stylesheet" />
@@ -93,6 +96,27 @@
     <div id="net-banner" class="net-banner hidden"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
-  <script type="module" src="client/main.js"></script>
+  <!-- ===== Loading screen (client/boot.js) — sits in the page itself so it shows before the engine downloads ===== -->
+  <div id="boot" class="boot" role="status" aria-live="polite">
+    <div id="boot-range" class="boot-range" aria-hidden="true"></div>
+    <div class="boot-core">
+      <svg id="boot-logo" class="boot-logo" viewBox="0 0 120 120" aria-hidden="true">
+        <g class="logo-ring"><circle cx="60" cy="60" r="52" /><path d="M60 2v14M60 104v14M2 60h14M104 60h14" /><path class="logo-mils" d="M60 24v4M60 92v4M24 60h4M92 60h4M34.5 34.5l2.8 2.8M82.7 82.7l2.8 2.8M85.5 34.5l-2.8 2.8M37.3 82.7l-2.8 2.8" /></g>
+        <g id="boot-logo-k" class="logo-k"><path d="M44.5 36v48" /><path d="M73.5 36 47.5 61l27 23" /><circle cx="47.5" cy="61" r="2.4" /></g>
+      </svg>
+      <h1 class="boot-word">Kross<em>hair</em></h1>
+      <p class="eyebrow">Tactical sniper duels · one life</p>
+      <ul class="boot-steps">
+        <li data-step="engine" class="active">Engine</li><li data-step="arena">Arena</li><li data-step="link">Server link</li><li data-step="optics">Optics</li>
+      </ul>
+      <div class="meter boot-meter"><i id="boot-bar"></i></div>
+      <p id="boot-status" class="boot-status">Downloading engine…</p>
+      <button id="boot-enter" class="boot-enter hidden" type="button">Enter the yard <span>→</span></button>
+    </div>
+    <p class="boot-score">WARM-UP // <b id="boot-hits">0</b> HITS · <span id="boot-acc">—</span> <small>shoot the plates while you wait</small></p>
+    <div id="boot-reticle" class="boot-reticle" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+  </div>
+  <script src="client/boot.js"></script>
+  <script type="module" src="client/main.js" id="main-module"></script>
 </body>
 </html>

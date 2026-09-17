@@ -63,6 +63,11 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 .home-grid { display: grid; grid-template-columns: minmax(280px, 360px) minmax(320px, 1fr) minmax(300px, 400px); gap: 24px; max-width: 1480px; margin: 0 auto; align-items: start; }
 .home-left h1 { font: 400 clamp(30px, 3.1vw, 46px)/1.1 var(--display); text-transform: uppercase; letter-spacing: .02em; margin: 0 0 32px; }
 .home-left h1 em { color: var(--haze); font-style: normal; }
+.brand-lockup { display: flex; align-items: center; gap: 18px; margin: 0 0 32px; }
+.brand-lockup h1 { margin: 0; }
+.brand-mark { flex: none; display: block; }
+.lobby-head .lobby-heading { flex: 1; min-width: 0; }
+.lobby-head .brand-mark { align-self: center; }
 .callsign-field, .field-label { display: block; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .callsign-field input, .room-row-input input, .lobby-chat input { display: block; width: 100%; margin-top: 8px; border: 0; border-bottom: 1px solid var(--hairline-strong); background: transparent; padding: 10px 0; font: 400 16px var(--body); outline: none; border-radius: 0; }
 .callsign-field input:focus, .room-row-input input:focus, .lobby-chat input:focus { border-color: var(--signal); }
@@ -542,3 +547,68 @@ section.friendly h3 { color: var(--ally); } section.rival h3 { color: var(--riva
 .vote-bar i { display: block; height: 100%; background: var(--signal); transition: width .3s var(--ease); }
 @media (max-width: 900px) { .vote-grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 520px) { .vote-grid { grid-template-columns: 1fr; } .vote-thumb { aspect-ratio: 2 / 1; } }
+
+/* ---------- loading screen (client/boot.js) ---------- */
+.boot { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 42%, #121a21, var(--void) 62%); transition: opacity .6s var(--ease), transform .6s var(--ease); touch-action: none; user-select: none; -webkit-user-select: none; }
+.boot.has-pointer, .boot.has-pointer button { cursor: none; }
+.boot::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(230, 237, 241, .025) 0 1px, transparent 1px 4px); }
+.boot.leaving { opacity: 0; transform: scale(1.06); pointer-events: none; }
+.boot-core { position: relative; z-index: 2; width: min(340px, calc(100vw - 48px)); text-align: center; pointer-events: none; }
+.boot-core button { pointer-events: auto; }
+
+.boot-logo { width: 132px; height: 132px; overflow: visible; fill: none; stroke: var(--frost); stroke-width: 1.5; stroke-linecap: square; transform: perspective(600px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)); transition: transform .2s ease-out; }
+.boot-logo g { transform-box: fill-box; transform-origin: center; }
+.logo-ring { animation: boot-spin 24s linear infinite; }
+.logo-ring circle { stroke: var(--hairline-strong); }
+.logo-mils { stroke: var(--haze); stroke-width: 1; }
+.logo-k { stroke: var(--signal); stroke-width: 5; stroke-linejoin: miter; transition: transform .18s ease-out; filter: drop-shadow(0 0 10px rgba(255, 181, 71, .35)); }
+.logo-k circle { fill: var(--void); stroke-width: 1.5; }
+.boot-logo.kick .logo-k { animation: boot-kick .22s var(--ease); }
+.boot.ready .logo-ring circle { stroke: var(--ally); transition: stroke .4s; }
+.boot.failed .logo-k { stroke: var(--rival); filter: none; }
+
+.boot-word { margin: 22px 0 8px; font: 400 26px/1 var(--display); letter-spacing: .16em; text-transform: uppercase; }
+.boot-word em { color: var(--haze); font-style: normal; }
+.boot-core .eyebrow { margin-bottom: 30px; }
+.boot-steps { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; font: 500 9px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--graphite); }
+.boot-steps li::before { content: '○ '; }
+.boot-steps li.active { color: var(--frost); animation: boot-pulse 1.1s ease-in-out infinite; }
+.boot-steps li.done { color: var(--ally); }
+.boot-steps li.done::before { content: '● '; }
+.boot-steps li.warn { color: var(--signal); }
+.boot-steps li.warn::before { content: '△ '; }
+.boot-meter i { transition: width .5s var(--ease); }
+.boot.failed .boot-meter i { background: var(--rival); }
+.boot-status { min-height: 18px; margin: 12px 0 0; color: var(--haze); font: 400 11px/1.5 var(--mono); letter-spacing: .04em; }
+.boot-enter { margin-top: 18px; border: 1px solid var(--frost); background: var(--frost); color: var(--void); padding: 12px 20px; font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; animation: boot-rise .35s var(--ease); transition: background .15s, border-color .15s; }
+.boot-enter:hover, .boot-enter:focus-visible { background: var(--signal); border-color: var(--signal); }
+.boot-enter span { margin-left: 12px; }
+
+.boot-score { position: absolute; z-index: 2; left: 0; right: 0; bottom: 26px; margin: 0; text-align: center; color: var(--haze); font: 500 10px/1.6 var(--mono); letter-spacing: .16em; pointer-events: none; }
+.boot-score b { color: var(--signal); font-weight: 500; }
+.boot-score small { display: block; color: var(--graphite); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+
+.boot-range { position: absolute; inset: 0; z-index: 1; }
+.boot-plate { position: absolute; border-radius: 50%; border: 1px solid var(--frost); background: radial-gradient(circle, var(--rival) 0 14%, transparent 15% 38%, rgba(230, 237, 241, .5) 39% 42%, transparent 43%), rgba(12, 17, 22, .8); animation: boot-plate 2.6s ease-in-out forwards; }
+.boot-plate.down { animation: boot-down .3s var(--ease) forwards; pointer-events: none; }
+.boot-spark { position: absolute; width: 8px; height: 8px; margin: -4px; border-radius: 50%; border: 1px solid var(--haze); pointer-events: none; animation: boot-spark .45s ease-out forwards; }
+.boot-spark.hit { border-color: var(--signal); box-shadow: 0 0 14px var(--signal); }
+
+.boot-reticle { position: fixed; left: 0; top: 0; z-index: 3; width: 0; height: 0; pointer-events: none; opacity: 0; }
+.boot.has-pointer .boot-reticle { opacity: 1; }
+.boot-reticle i { position: absolute; background: var(--frost); }
+.boot-reticle i:nth-child(1) { left: -.5px; top: -18px; width: 1px; height: 11px; }
+.boot-reticle i:nth-child(2) { left: -.5px; top: 7px; width: 1px; height: 11px; }
+.boot-reticle i:nth-child(3) { top: -.5px; left: -18px; height: 1px; width: 11px; }
+.boot-reticle i:nth-child(4) { top: -.5px; left: 7px; height: 1px; width: 11px; }
+.boot-reticle b { position: absolute; left: -1.5px; top: -1.5px; width: 3px; height: 3px; border-radius: 50%; background: var(--signal); }
+.boot-reticle.kick i, .boot-reticle.kick b { animation: boot-recoil .2s var(--ease); }
+
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+@keyframes boot-kick { 0% { scale: 1; } 35% { scale: .86; } 100% { scale: 1; } }
+@keyframes boot-pulse { 50% { opacity: .45; } }
+@keyframes boot-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes boot-plate { 0% { opacity: 0; transform: scale(.4); } 12% { opacity: 1; transform: scale(1); } 85% { opacity: 1; transform: translateX(var(--drift)) scale(1); } 100% { opacity: 0; transform: translateX(var(--drift)) scale(.4); } }
+@keyframes boot-down { to { opacity: 0; scale: 1.5; filter: brightness(3); } }
+@keyframes boot-spark { to { opacity: 0; transform: scale(5); } }
+@keyframes boot-recoil { 0% { translate: 0 0; } 40% { translate: 0 -9px; } 100% { translate: 0 0; } }

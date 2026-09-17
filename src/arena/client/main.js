@@ -15,6 +15,10 @@ import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, 
 import { mapFingerprint } from '../shared/version.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
+// Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
+const boot = window.__boot;
+boot?.step('engine');
+
 const root = document.querySelector('#game-root');
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 renderer.setSize(innerWidth, innerHeight);
@@ -38,6 +42,7 @@ viewmodel.setLook(game.look.color, game.look.accent);
 const player = new LocalPlayer({ camera, arena, viewmodel, effects, operators, canvas: renderer.domElement });
 const hud = new Hud({ player, arena, operators });
 const soundViz = new SoundViz(camera);
+boot?.step('arena');
 const pauseCard = document.querySelector('#pause-card');
 const settingsCard = document.querySelector('#settings-card');
 const endCard = document.querySelector('#end-card');
@@ -399,6 +404,7 @@ function watchFrameRate(rawDt) {
   toast(`Graphics lowered to ${game.settings.quality} to keep the frame rate up. Change it back in Settings.`, 'info');
 }
 
+let firstFrame = false;
 function frame() {
   requestAnimationFrame(frame);
   const rawDt = clock.getDelta();
@@ -430,10 +436,12 @@ function frame() {
   renderer.render(arena.scene, camera);
   if (game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
   renderPreview();
+  if (!firstFrame) { firstFrame = true; boot?.ready(); }
 }
 
 setVolume(game.settings.volume);
 showScreen('home');
+bus.on('net-status', ({ state }) => { if (state === 'open') boot?.step('link'); else if (state === 'closed') boot?.step('link', 'warn'); });
 net.connect();
 frame();
 window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel };
