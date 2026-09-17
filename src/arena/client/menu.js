@@ -17,6 +17,7 @@ let lobbyTimer = null;
 let endState = null;
 let lobbyLines = [];
 let lobbyRoom = null;
+let lobbyTab = 'rules';
 
 export function toast(text, tone = 'info') {
   const line = document.createElement('div');
@@ -150,68 +151,120 @@ function careerHtml() {
   const history = profile.history.length ? profile.history.slice(0, 8).map((h) => `<div class="history-row ${h.result}"><b>${h.result.toUpperCase()}</b><span>${h.score}</span><span title="${h.botKills ? `${h.playerKills} player, ${h.botKills} bot kills` : ''}">${h.playerKills ?? h.kills}${h.botKills ? `+${h.botKills}` : ''}/${h.deaths}/${h.assists}</span><span>${(h.mode || '').toUpperCase()}${h.mvp ? ' · MVP' : ''}</span><small>${h.rating === null ? '' : `${h.rating >= 0 ? '+' : ''}${h.rating} SR · `}${new Date(h.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('') : '<p class="muted">No matches yet. Your last 25 results land here.</p>';
   const recent = profile.recent.length ? `<p class="recent"><span>RECENT PILOTS</span> ${profile.recent.map(escapeHtml).join(' · ')}</p>` : '';
   return `
-    <div class="panel career"><p class="eyebrow">Career</p>
+    <div class="career-col"><div class="panel career"><p class="eyebrow">Service record</p>
       <div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP to level ${level + 1}</small></div><div class="rank"><span>${rankName(profile.rating, ranked).toUpperCase()}</span><b>${ranked ? profile.rating : '—'}</b><small>SKILL RATING</small></div></div>
       <div class="stat-grid"><div><b>${s.matches}</b><span>MATCHES</span></div><div><b>${winRate}%</b><span>WIN RATE</span></div><div><b>${kd}</b><span>K / D</span></div><div><b>${accuracy}%</b><span>ACCURACY</span></div><div><b>${playerKills}</b><span>PLAYER KILLS</span></div><div><b>${botKills}</b><span>BOT KILLS</span></div><div><b>${s.headshots}</b><span>HEADSHOTS</span></div><div><b>${s.longest} M</b><span>LONGEST KILL</span></div><div><b>${s.assists}</b><span>ASSISTS</span></div><div><b>${s.clutches}</b><span>CLUTCHES</span></div><div><b>${s.mvps}</b><span>MVPS</span></div><div><b>${s.wallbangs || 0}</b><span>WALLBANGS</span></div></div>
     </div>
-    <div class="panel"><p class="eyebrow">Daily contracts <small>reset at 00:00 UTC</small></p>${contracts}</div>
-    <div class="panel tabs"><div class="tab-head"><button type="button" class="tab active" data-tab="history">Match history</button><button type="button" class="tab" data-tab="mastery">Weapon mastery</button></div><div class="tab-body" data-body="history">${history}${recent}</div><div class="tab-body hidden" data-body="mastery">${mastery}</div></div>`;
+    <div class="panel"><p class="eyebrow">Daily contracts <small>reset at 00:00 UTC</small></p>${contracts}</div></div>
+    <div class="career-col"><div class="panel tabs"><div class="tab-head"><button type="button" class="tab active" data-tab="history">Match history</button><button type="button" class="tab" data-tab="mastery">Weapon mastery</button></div><div class="tab-body" data-body="history">${history}${recent}</div><div class="tab-body hidden" data-body="mastery">${mastery}</div></div></div>`;
+}
+
+// Compact pilot card for the Play page: who you are, how far to the next level, today's contracts.
+function pilotHtml() {
+  const profile = game.profile;
+  if (!profile) return `<p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.') : 'Connecting to the relay…'}</p>`;
+  const level = profile.level, base = xpForLevel(level), next = xpForLevel(level + 1);
+  const progress = Math.round(((profile.xp - base) / (next - base)) * 100);
+  const ranked = profile.rankedMatches > 0;
+  const contracts = profile.contracts.map((c) => `<div class="contract${c.done ? ' done' : ''}"><div><span>${escapeHtml(c.text)}</span><em>+${c.xp} XP</em></div><div class="meter"><i style="width:${Math.round((c.progress / c.n) * 100)}%"></i></div></div>`).join('');
+  return `<div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP · ${rankName(profile.rating, ranked).toUpperCase()}</small></div></div>
+    <p class="eyebrow pilot-sub">Today’s contracts</p>${contracts}`;
+}
+
+// The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
+const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['career', 'Career'], ['rooms', 'Rooms']];
+const pageFromHash = () => (HOME_PAGES.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
+let homePage = pageFromHash();
+let pageEntering = true;
+let roomDraft = { code: null, isPublic: false };
+function setHomePage(page) {
+  if (page === homePage) return;
+  homePage = page;
+  pageEntering = true;
+  if (pageFromHash() !== page) history.pushState(null, '', `${location.pathname}${location.search}#${page}`);
+  renderHome();
+}
+addEventListener('popstate', () => { const page = pageFromHash(); if (page !== homePage) { homePage = page; pageEntering = true; if (game.screen === 'home') renderHome(); } });
+addEventListener('hashchange', () => { const page = pageFromHash(); if (page !== homePage) { homePage = page; pageEntering = true; if (game.screen === 'home') renderHome(); } });
+
+function playPageHtml() {
+  const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
+  return `
+    <section class="page-main">
+      <p class="eyebrow">Tactical sniper duels · one life</p>
+      <h1 class="page-title">Pick your <em>fight.</em></h1>
+      <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Casual queue. Bots fill empty seats so you never wait.</span><i class="go">Deploy →</i></button>
+      <div class="mode-grid">
+        <button type="button" class="play-card" data-play="ranked"><small>02 // RANKED</small><strong>Climb the ladder</strong><span>Real rivals only. Skill rating on the line.</span></button>
+        <button type="button" class="play-card" data-play="arcade"><small>03 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
+        <div class="play-card split"><small>04 // BOT MATCH</small><strong>3v3 vs bots</strong><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
+        <button type="button" class="play-card" data-play="range"><small>05 // PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear, moving targets, guided drills.</span></button>
+      </div>
+    </section>
+    <aside class="page-side">
+      <div class="panel pilot"><p class="eyebrow">Pilot</p>${authHtml()}<div class="pilot-body">${pilotHtml()}</div>
+        <div class="link-row"><button type="button" class="ghost-button" data-page="operator">Customise operator</button><button type="button" class="ghost-button" data-page="career">Full career →</button></div>
+      </div>
+      <button type="button" class="panel room-teaser" data-page="rooms"><p class="eyebrow">Rooms</p><strong>${game.publicRooms.length ? `${game.publicRooms.length} live room${game.publicRooms.length === 1 ? '' : 's'}` : 'Play with friends'}</strong><span>Private rooms, custom rules and an invite link.</span></button>
+    </aside>`;
+}
+
+function operatorPageHtml(level) {
+  const nameOfLook = (kind, key) => COSMETICS[kind].find((item) => item.id === game.look[key])?.name || '';
+  const group = (label, kind, key) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, key))}</small></p><div class="swatches">${swatchRow(kind, key, level)}</div></div>`;
+  return `
+    <section class="page-main operator-stage">
+      <p class="eyebrow">Operator</p>
+      <h1 class="page-title">Your <em>silhouette.</em></h1>
+      <div class="stage"><canvas id="operator-preview" width="360" height="460"></canvas><div class="stage-tag"><small>${escapeHtml(game.look.title)}</small><b>${escapeHtml(game.profile?.name || game.name || 'Unnamed pilot')}</b><span>LEVEL ${level}</span></div></div>
+    </section>
+    <aside class="page-side">
+      ${group('Suit', 'suit', 'color')}${group('Visor', 'visor', 'accent')}${group('Tracer', 'tracer', 'tracer')}
+      <div class="panel look-group"><p class="eyebrow">Title</p><select id="title-select">${COSMETICS.title.map((t) => `<option value="${t.id}" ${game.look.title === t.id ? 'selected' : ''} ${level < t.level ? 'disabled' : ''}>${t.name}${level < t.level ? ` — level ${t.level}` : ''}</option>`).join('')}</select><small class="muted">Colours and titles unlock as you level up. Numbers on a swatch show the level it needs.</small></div>
+    </aside>`;
+}
+
+function roomsPageHtml() {
+  const inviteRoom = new URLSearchParams(location.search).get('room') || '';
+  const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms right now. Start one, or warm up against bots.</p>';
+  return `
+    <section class="page-main">
+      <p class="eyebrow">Rooms</p>
+      <h1 class="page-title">Bring your <em>own rivals.</em></h1>
+      <div class="panel private"><p class="eyebrow">Private room</p><div class="room-row-input"><input id="room-input" maxlength="24" placeholder="room-code" value="${escapeHtml(roomDraft.code ?? inviteRoom)}" /><button type="button" id="join-room">Create / join <span>↗</span></button></div><label class="check"><input type="checkbox" id="room-public" ${roomDraft.isPublic ? 'checked' : ''} /> List this room publicly</label>
+        <ul class="feature-list"><li>Type any code — if the room doesn’t exist, it’s created and you host it.</li><li>Hosts set the arena, format, round time, credits, weather and modifier.</li><li>Pick teams, add bots, and share the invite link from the ready room.</li></ul></div>
+    </section>
+    <aside class="page-side"><div class="panel"><p class="eyebrow">Live rooms <small>${game.publicRooms.length}</small></p><div id="room-list">${rooms}</div></div></aside>`;
 }
 
 export function renderHome() {
   const level = game.profile?.level || 1;
-  const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
-  const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms right now. Start one, or warm up against bots.</p>';
-  const inviteRoom = new URLSearchParams(location.search).get('room') || '';
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
-  const keep = { room: $('#room-input')?.value, isPublic: $('#room-public')?.checked, name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
+  if ($('#room-input')) roomDraft = { code: $('#room-input').value, isPublic: $('#room-public').checked };
+  const keep = { name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
+  const pageHtml = homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   home.innerHTML = `
-    <div class="home-grid">
-      <section class="home-left">
-        <p class="eyebrow">Tactical sniper duels · one life</p>
-        <div class="brand-lockup"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="84" height="84" /><h1>Kros<br /><em>shair.</em></h1></div>
-        ${authHtml()}
-        <div class="operator-panel">
-          <canvas id="operator-preview" width="200" height="260"></canvas>
-          <div class="operator-options">
-            <span class="field-label">Suit</span><div class="swatches">${swatchRow('suit', 'color', level)}</div>
-            <span class="field-label">Visor</span><div class="swatches">${swatchRow('visor', 'accent', level)}</div>
-            <span class="field-label">Tracer</span><div class="swatches">${swatchRow('tracer', 'tracer', level)}</div>
-            <span class="field-label">Title</span><select id="title-select">${COSMETICS.title.map((t) => `<option value="${t.id}" ${game.look.title === t.id ? 'selected' : ''} ${level < t.level ? 'disabled' : ''}>${t.name}${level < t.level ? ` — level ${t.level}` : ''}</option>`).join('')}</select>
-          </div>
-        </div>
-        <div class="home-foot"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span><button type="button" id="open-settings" class="ghost-button">Settings</button><button type="button" id="open-controls" class="ghost-button">Controls</button><button type="button" id="open-feedback" class="ghost-button">Feedback</button></div>
-      </section>
-      <section class="home-mid">
-        <button type="button" class="play-card primary" data-play="casual"><small>QUICK PLAY</small><strong>Find a match</strong><span>Casual queue. Bots fill empty seats so you never wait.</span></button>
-        <div class="play-row">
-          <button type="button" class="play-card" data-play="ranked"><small>RANKED</small><strong>Climb the ladder</strong><span>Real rivals only. Skill rating on the line.</span></button>
-          <button type="button" class="play-card" data-play="arcade"><small>ARCADE // TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
-        </div>
-        <div class="play-row">
-          <div class="play-card split"><small>BOT MATCH</small><strong>3v3 vs bots</strong><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
-          <button type="button" class="play-card" data-play="range"><small>PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear, moving targets, guided drills.</span></button>
-        </div>
-        <div class="panel private"><p class="eyebrow">Private room</p><div class="room-row-input"><input id="room-input" maxlength="24" placeholder="room-code" value="${escapeHtml(inviteRoom)}" /><button type="button" id="join-room">Create / join <span>↗</span></button></div><label class="check"><input type="checkbox" id="room-public" /> List this room publicly</label><small class="muted">Custom rules, team select, bots and a shareable invite link.</small></div>
-        <div class="panel"><p class="eyebrow">Live rooms</p><div id="room-list">${rooms}</div></div>
-      </section>
-      <section class="home-right">${careerHtml()}</section>
+    <div class="menu-shell">
+      <header class="menu-bar">
+        <button type="button" class="brand" data-page="play" aria-label="Krosshair — play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
+        <nav class="menu-nav" aria-label="Menu">${HOME_PAGES.map(([id, label], index) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${id === 'rooms' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</nav>
+        <div class="menu-tools"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span><button type="button" id="open-settings" class="ghost-button">Settings</button><button type="button" id="open-controls" class="ghost-button">Controls</button><button type="button" id="open-feedback" class="ghost-button">Feedback</button></div>
+      </header>
+      <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
     </div>`;
-  if (keep.room !== undefined) $('#room-input').value = keep.room;
-  if (keep.isPublic) $('#room-public').checked = true;
+  pageEntering = false;
   if (keep.name !== undefined && $('#name-input')) $('#name-input').value = keep.name;
   if (keep.username !== undefined && $('#auth-username')) {
     $('#auth-username').value = keep.username; $('#auth-password').value = keep.password || '';
     if ($('#auth-confirm')) $('#auth-confirm').value = keep.confirm || '';
     if (keep.status) $('#auth-status').outerHTML = keep.status;
   }
-  if (keep.tab === 'mastery') {
+  if (keep.tab === 'mastery' && home.querySelector('.tab')) {
     home.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === 'mastery'));
     home.querySelectorAll('.tab-body').forEach((body) => body.classList.toggle('hidden', body.dataset.body !== 'mastery'));
   }
   if (keep.focus && home.querySelector(`#${keep.focus}`)) { const field = home.querySelector(`#${keep.focus}`); field.focus(); if (field.setSelectionRange && field.type === 'text') field.setSelectionRange(field.value.length, field.value.length); }
-  ensurePreview($('#operator-preview'));
-  refreshPreviewLook();
+  if ($('#operator-preview')) { ensurePreview($('#operator-preview')); refreshPreviewLook(); }
 }
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
@@ -222,10 +275,10 @@ function play_(payload) {
   if (!ACCOUNTS_ENABLED) {
     const input = $('#name-input');
     if (input) game.name = input.value.trim().slice(0, 16);
-    if (game.name.length < 2) { toast('Choose a callsign with at least 2 characters first.', 'warn'); input?.focus(); play('deny'); return; }
+    if (game.name.length < 2) { toast('Choose a callsign with at least 2 characters first.', 'warn'); setHomePage('play'); $('#name-input')?.focus(); play('deny'); return; }
     store('name', game.name);
     if (!net.identified || game.profile?.name !== game.name) { pendingPlay = payload; play('ready'); net.identify(); return; }
-  } else if (!net.identified) { toast('Log in or sign up to play.', 'warn'); $('#auth-username')?.focus(); play('deny'); return; }
+  } else if (!net.identified) { toast('Log in or sign up to play.', 'warn'); setHomePage('play'); $('#auth-username')?.focus(); play('deny'); return; }
   play('ready');
   net.enter(payload);
 }
@@ -237,7 +290,8 @@ home.addEventListener('click', (event) => {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
     game.look[target.dataset.kind] = target.dataset.value;
     saveLook(); play('ui'); renderHome();
-  } else if (target.dataset.play) play_(target.dataset.play === 'range' ? { action: 'range' } : { action: 'quick', queue: target.dataset.play });
+  } else if (target.dataset.page) { play('ui'); setHomePage(target.dataset.page); }
+  else if (target.dataset.play) play_(target.dataset.play === 'range' ? { action: 'range' } : { action: 'quick', queue: target.dataset.play });
   else if (target.dataset.bots) play_({ action: 'bots', difficulty: target.dataset.bots });
   else if (target.dataset.join) play_({ action: 'join', room: target.dataset.join });
   else if (target.id === 'join-room') {
@@ -316,15 +370,30 @@ export function renderLobby() {
   const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.name)}`;
   const humans = room.players.filter((p) => !p.bot).length;
   const canStart = room.players.some((p) => p.team === 'A') && room.players.some((p) => p.team === 'B');
+  if (!custom || (lobbyTab !== 'rules' && lobbyTab !== 'invite')) lobbyTab = 'rules';
+  const readyCount = room.players.filter((p) => !p.bot && p.ready).length;
+  const inviteHtml = `<div class="panel invite"><p class="eyebrow">Invite link</p><div class="room-row-input"><input readonly value="${escapeHtml(link)}" id="invite-link" /><button type="button" id="copy-invite">Copy</button></div><small class="muted">Anyone with this link lands straight in this room. Room code: <b>${escapeHtml(room.name)}</b></small></div>`;
   lobby.innerHTML = `
-    <div class="lobby-card">
-      <div class="lobby-head"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="Krosshair" width="56" height="56" /><div class="lobby-heading"><p class="eyebrow">${custom ? 'Private room' : 'Matchmaking'} // ${escapeHtml(room.name)}</p><h2 id="lobby-title">${custom ? 'Ready room.' : 'Finding rivals.'}</h2></div><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
-      <p id="lobby-status" class="lobby-status"></p>
-      <div class="teams">${teamColumn('A', 'Alpha')}<div class="versus">VS</div>${teamColumn('B', 'Bravo')}</div>
-      ${rulesHtml}
-      ${custom ? `<div class="panel invite"><p class="eyebrow">Invite link</p><div class="room-row-input"><input readonly value="${escapeHtml(link)}" id="invite-link" /><button type="button" id="copy-invite">Copy</button></div></div>` : ''}
-      <div class="lobby-actions">${custom ? `<button type="button" id="ready-toggle" class="${mine?.ready ? 'secondary-button' : ''}">${mine?.ready ? 'Unready' : 'Ready up'}</button>${host ? `<button type="button" id="start-match" ${canStart ? '' : 'disabled'}>Start match <span>→</span></button>` : '<span class="muted">Waiting for the host to start…</span>'}` : ''}</div>
-      <div class="lobby-chat"><div id="lobby-chat-log">${lobbyLines.join('')}</div><input id="lobby-chat-input" maxlength="140" placeholder="Say something to the room…" /></div>
+    <div class="menu-shell lobby-shell">
+      <header class="menu-bar">
+        <div class="brand"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="Krosshair" width="40" height="40" /><b>Kross<em>hair</em></b></div>
+        <div class="lobby-crumb"><small>${custom ? 'PRIVATE ROOM' : `${room.queue.toUpperCase()} QUEUE`}</small><b>${escapeHtml(room.name)}</b></div>
+        <div class="menu-tools"><span><i class="live-dot"></i>${humans} PILOT${humans === 1 ? '' : 'S'}${custom ? ` · ${readyCount} READY` : ''}</span><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
+      </header>
+      <main class="menu-page lobby-grid">
+        <section class="page-main">
+          <p class="eyebrow">${custom ? 'Ready room' : 'Matchmaking'}</p>
+          <h1 class="page-title" id="lobby-title">${custom ? 'Ready <em>room.</em>' : 'Finding <em>rivals.</em>'}</h1>
+          <p id="lobby-status" class="lobby-status"></p>
+          <div class="teams">${teamColumn('A', 'Alpha')}<div class="versus"><i></i>VS<i></i></div>${teamColumn('B', 'Bravo')}</div>
+          <div class="lobby-actions">${custom ? `<button type="button" id="ready-toggle" class="${mine?.ready ? 'secondary-button' : ''}">${mine?.ready ? 'Unready' : 'Ready up'}</button>${host ? `<button type="button" id="start-match" ${canStart ? '' : 'disabled'}>Start match <span>→</span></button>` : '<span class="muted">Waiting for the host to start…</span>'}` : ''}</div>
+        </section>
+        <aside class="page-side">
+          ${custom ? `<div class="side-tabs"><button type="button" class="tab${lobbyTab === 'rules' ? ' active' : ''}" data-lobby-tab="rules">Match rules</button><button type="button" class="tab${lobbyTab === 'invite' ? ' active' : ''}" data-lobby-tab="invite">Invite</button></div>` : ''}
+          ${lobbyTab === 'invite' ? inviteHtml : rulesHtml}
+          <div class="panel lobby-chat"><p class="eyebrow">Room comms</p><div id="lobby-chat-log">${lobbyLines.join('') || '<span class="muted">No messages yet.</span>'}</div><input id="lobby-chat-input" maxlength="140" placeholder="Say something to the room…" /></div>
+        </aside>
+      </main>
     </div>`;
   const chatInput = $('#lobby-chat-input');
   chatInput.value = draft;
@@ -359,7 +428,8 @@ lobby.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
   play('ui');
-  if (target.id === 'leave-lobby') net.leaveRoom();
+  if (target.dataset.lobbyTab) { lobbyTab = target.dataset.lobbyTab; renderLobby(); }
+  else if (target.id === 'leave-lobby') net.leaveRoom();
   else if (target.id === 'ready-toggle') net.send({ type: 'ready', ready: !game.room.players.find((p) => p.id === game.id)?.ready });
   else if (target.id === 'start-match') net.send({ type: 'start' });
   else if (target.id === 'copy-invite') { navigator.clipboard?.writeText($('#invite-link').value).then(() => toast('Invite link copied.', 'good'), () => toast('Select the link and copy it manually.', 'warn')); }
