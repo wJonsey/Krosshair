@@ -4,6 +4,8 @@ import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIO
 import { zoneAt } from '../shared/map.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
+import { bindsFor, codeLabel, isBound } from './input.js';
+import { crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, announce } from './audio.js';
 import { weaponArt } from './weaponart.js';
 
@@ -48,7 +50,11 @@ export class Hud {
     });
     bus.on('key', (code) => this.onKey(code));
     bus.on('pad-scoreboard', () => this.toggleScoreboard(!this.scoreOpen));
-    addEventListener('keyup', (event) => { if (event.code === 'Tab') this.toggleScoreboard(false); });
+    addEventListener('keyup', (event) => { if (isBound('scoreboard', event.code)) this.toggleScoreboard(false); });
+    addEventListener('mouseup', (event) => { if (isBound('scoreboard', `Mouse${event.button}`)) this.toggleScoreboard(false); });
+    bus.on('settings', () => { this.refreshHints(); this.refreshCrosshair(); });
+    this.refreshHints();
+    this.refreshCrosshair();
     bus.on('spectate', (id) => { this.dom.spectate.classList.toggle('hidden', !id); if (id) this.dom.spectateName.textContent = nameOf(id); });
     bus.on('pov-card', (card) => this.showPovCard(card));
     bus.on('pov-hit', (kind) => this.hitmarker(kind));
@@ -61,13 +67,26 @@ export class Hud {
   show(visible) { this.root.classList.toggle('hidden', !visible); if (!visible) { this.closeBuy(); this.toggleScoreboard(false); this.closeChat(); } }
 
   // ------------------------------------------------------------ keys
+  // The hint bar and the scope's breath label follow whatever the pilot has bound.
+  refreshCrosshair() {
+    const crosshair = currentCrosshair();
+    this.crosshairDynamic = crosshair.dynamic;
+    this.dom.crosshair.innerHTML = crosshairHtml(crosshair);
+  }
+  refreshHints() {
+    const hint = document.querySelector('#controls-hint');
+    if (hint) hint.innerHTML = [['armoury', 'armoury'], [null, 'gadgets'], ['ping', 'ping'], ['radio', 'radio'], ['chat', 'chat'], ['scoreboard', 'scores']].map(([action, text]) => `<span><b>${action ? codeLabel(bindsFor(action)[0] || bindsFor(action)[1]) : `${codeLabel(bindsFor('gadget1')[0])} / ${codeLabel(bindsFor('gadget2')[0])}`}</b> ${text}</span>`).join('');
+    const breath = document.querySelector('.scope-overlay .breath span');
+    if (breath) breath.textContent = `HOLD BREATH // ${codeLabel(bindsFor('walk')[0] || bindsFor('walk')[1])}`;
+  }
+
   onKey(code) {
     if (game.screen !== 'game') return;
-    if (code === 'Tab') this.toggleScoreboard(true);
-    if (code === 'KeyB') { if (this.buyOpen) this.closeBuy(true); else this.openBuy(); }
+    if (isBound('scoreboard', code)) this.toggleScoreboard(true);
+    if (isBound('armoury', code)) { if (this.buyOpen) this.closeBuy(true); else this.openBuy(); }
     if (code === 'Escape' && this.buyOpen) this.closeBuy();
-    if (code === 'Enter' || code === 'KeyY') { this.openChat(code === 'KeyY'); }
-    if (code === 'KeyX') this.toggleQuick(!this.quickOpen);
+    if (isBound('chat', code) || isBound('teamChat', code)) { this.openChat(isBound('teamChat', code)); }
+    if (isBound('radio', code)) this.toggleQuick(!this.quickOpen);
     if (this.quickOpen && code.startsWith('Digit')) {
       const command = QUICK_COMMANDS[Number(code.slice(5)) - 1];
       if (command) net.send({ type: 'quick', id: command.id });
@@ -507,7 +526,7 @@ export class Hud {
     dom.crosshair.classList.toggle('hidden', !showCross);
     if (showCross) {
       const spread = weapon.melee ? 0 : pov ? (pov.scope > 0.9 ? weapon.spread.ads : weapon.spread.hip) : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);
-      dom.crosshair.style.setProperty('--gap', `${Math.round(4 + spread * 5)}px`);
+      dom.crosshair.style.setProperty('--spread', this.crosshairDynamic ? `${Math.round(spread * 5)}px` : '0px');
       dom.crosshair.classList.toggle('dot', Boolean(weapon.melee));
     }
     dom.fxSuppress.style.opacity = String(player.suppression * 0.9);

@@ -2,9 +2,11 @@
 // end-of-match report, share card, tutorial checklist, toasts.
 import * as THREE from 'three';
 import { BOT_DIFFICULTY, COSMETICS, MASTERY_TIERS, MODIFIERS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankName, xpForLevel } from '../shared/constants.js';
-import { bus, game, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
+import { bus, game, graphics, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED } from '../shared/constants.js';
 import { net } from './net.js';
+import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind } from './input.js';
+import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator } from './characters.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
@@ -173,7 +175,8 @@ function pilotHtml() {
 
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
 const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['career', 'Career'], ['rooms', 'Rooms']];
-const pageFromHash = () => (HOME_PAGES.some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
+const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
+const pageFromHash = () => ([...HOME_PAGES, ...TOOL_PAGES].some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
 let homePage = pageFromHash();
 let pageEntering = true;
 let roomDraft = { code: null, isPublic: false };
@@ -242,13 +245,16 @@ export function renderHome() {
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
   if ($('#room-input')) roomDraft = { code: $('#room-input').value, isPublic: $('#room-public').checked };
   const keep = { name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
-  const pageHtml = homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const feedbackDraft = readFeedbackDraft();
+  if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
+  if (homePage !== 'settings' && homePage !== 'controls') listening = null;
+  const pageHtml = homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair — play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
         <nav class="menu-nav" aria-label="Menu">${HOME_PAGES.map(([id, label], index) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${id === 'rooms' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</nav>
-        <div class="menu-tools"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span><button type="button" id="open-settings" class="ghost-button">Settings</button><button type="button" id="open-controls" class="ghost-button">Controls</button><button type="button" id="open-feedback" class="ghost-button">Feedback</button></div>
+        <div class="menu-tools"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="ghost-button${id === homePage ? ' active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
     </div>`;
@@ -265,6 +271,7 @@ export function renderHome() {
   }
   if (keep.focus && home.querySelector(`#${keep.focus}`)) { const field = home.querySelector(`#${keep.focus}`); field.focus(); if (field.setSelectionRange && field.type === 'text') field.setSelectionRange(field.value.length, field.value.length); }
   if ($('#operator-preview')) { ensurePreview($('#operator-preview')); refreshPreviewLook(); }
+  if (feedbackDraft && home.querySelector('#feedback-form')) writeFeedbackDraft(feedbackDraft);
 }
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
@@ -286,6 +293,8 @@ function play_(payload) {
 home.addEventListener('click', (event) => {
   const target = event.target.closest('button');
   if (!target) return;
+  if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
+  if (onSettingsClick(event)) return;
   if (target.dataset.kind) {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
     game.look[target.dataset.kind] = target.dataset.value;
@@ -297,10 +306,7 @@ home.addEventListener('click', (event) => {
   else if (target.id === 'join-room') {
     const code = $('#room-input').value.trim() || `room-${Math.random().toString(36).slice(2, 6)}`;
     play_({ action: 'join', room: code, isPublic: $('#room-public').checked });
-  } else if (target.id === 'open-settings') openSettings();
-  else if (target.id === 'open-controls') openSettings(true);
-  else if (target.id === 'open-feedback') openFeedback();
-  else if (target.dataset.authMode) { authMode = target.dataset.authMode; setAuthStatus(''); renderHome(); $('#auth-username')?.focus(); play('ui'); }
+  } else if (target.dataset.authMode) { authMode = target.dataset.authMode; setAuthStatus(''); renderHome(); $('#auth-username')?.focus(); play('ui'); }
   else if (target.id === 'logout-button') { play('uiBack'); net.auth('logout'); }
   else if (target.dataset.tab) {
     home.querySelectorAll('.tab').forEach((tab) => tab.classList.toggle('active', tab === target));
@@ -453,33 +459,161 @@ lobby.addEventListener('keydown', (event) => {
 });
 
 // ------------------------------------------------------------------ settings
+const SETTINGS_TABS = [['aim', 'Aim'], ['graphics', 'Graphics'], ['audio', 'Audio & HUD'], ['crosshair', 'Crosshair'], ['binds', 'Key binds']];
+let settingsTab = 'aim';
+let listening = null; // { action, slot } while a bind button waits for a key
+const FORMATS = { x2: (v) => Number(v).toFixed(2), x1: (v) => Number(v).toFixed(1), deg: (v) => `${v}°`, pct: (v) => `${Math.round(v * 100)}%`, px: (v) => `${v} px`, int: (v) => String(v) };
+const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights'];
+
+function settingsBodyHtml(tab) {
+  const s = game.settings, g = graphics();
+  const slider = (key, label, min, max, step, format, value = s[key], hint = '') => `<label>${label} <output>${FORMATS[format](value)}</output><input type="range" data-setting="${key}" data-format="${format}" min="${min}" max="${max}" step="${step}" value="${value}" />${hint ? `<small class="hint">${hint}</small>` : ''}</label>`;
+  const toggle = (key, label, hint = '', value = s[key]) => `<label class="check"><input type="checkbox" data-setting="${key}" ${value ? 'checked' : ''} /> <span>${label}${hint ? `<small class="hint">${hint}</small>` : ''}</span></label>`;
+  const select = (key, label, options, value = s[key], hint = '') => `<label>${label}<select data-setting="${key}">${options.map(([v, text]) => `<option value="${v}" ${String(v) === String(value) ? 'selected' : ''}>${text}</option>`).join('')}</select>${hint ? `<small class="hint">${hint}</small>` : ''}</label>`;
+
+  if (tab === 'graphics') {
+    const presets = [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']];
+    return `<div class="settings-cols">
+      <div class="panel"><p class="eyebrow">Preset</p><div class="segmented preset-row">${presets.map(([id, label]) => `<button type="button" data-preset="${id}" class="${s.quality === id ? 'active' : ''}" ${id === 'custom' ? 'disabled' : ''}>${label}</button>`).join('')}</div><small class="hint">Pick a preset, or change anything under Detail and it becomes Custom.</small>
+        <p class="eyebrow sub">Detail</p>
+        ${slider('renderScale', 'Render scale', 0.5, 2, 0.05, 'pct', g.renderScale, 'Share of your screen’s resolution. The biggest lever on frame rate; above 100% supersamples for cleaner edges.')}
+        ${select('shadows', 'Shadows', [['off', 'Off — fastest'], ['low', 'Low — 1K map'], ['high', 'High — 2K map'], ['ultra', 'Ultra — 4K map']], g.shadows)}
+        ${toggle('streetLights', 'Street and interior lights', 'Extra light sources around the arena.', g.streetLights)}</div>
+      <div class="panel"><p class="eyebrow">View</p>
+        ${slider('fov', 'Field of view', 60, 105, 1, 'deg')}
+        ${slider('brightness', 'Brightness', 0.6, 1.6, 0.05, 'pct', s.brightness, 'Lifts dark corners on Night Fog and Storm Front without washing out the sky.')}
+        <p class="eyebrow sub">Performance</p>
+        ${select('fpsCap', 'Frame rate cap', [[0, 'Unlimited (screen refresh)'], [30, '30 FPS'], [60, '60 FPS'], [120, '120 FPS'], [144, '144 FPS'], [240, '240 FPS']], s.fpsCap, 'A cap saves battery and heat on laptops.')}
+        ${toggle('showFps', 'Show FPS counter', 'Frame rate, slowest frame and ping in the top-right corner.')}
+        ${toggle('autoQuality', 'Lower graphics automatically', 'Steps the preset down if the frame rate stays under 38 for a few seconds.')}</div></div>`;
+  }
+  if (tab === 'audio') {
+    return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Audio</p>${slider('volume', 'Master volume', 0, 1, 0.05, 'pct')}${toggle('announcer', 'Announcer voice', 'Uses your browser’s speech voice, so it sounds different per system.')}</div>
+      <div class="panel"><p class="eyebrow">HUD</p>${toggle('visualizeSound', 'Visualize sound effects', 'Draws footsteps and gunfire as on-screen markers.')}${toggle('showFps', 'Show FPS counter')}</div></div>`;
+  }
+  if (tab === 'crosshair') {
+    const c = currentCrosshair();
+    const xh = (path, label, min, max, step, format) => { const [group, field] = path.split('.'); return `<label>${label} <output>${FORMATS[format](c[group][field])}</output><input type="range" data-xh="${path}" data-format="${format}" min="${min}" max="${max}" step="${step}" value="${c[group][field]}" /></label>`; };
+    const xhToggle = (path, label) => { const [group, field] = path.split('.'); const value = field ? c[group][field] : c[group]; return `<label class="check"><input type="checkbox" data-xh="${path}" ${value ? 'checked' : ''} /> <span>${label}</span></label>`; };
+    const lines = (group, title) => `<div class="panel"><p class="eyebrow">${title}</p>${xhToggle(`${group}.on`, 'Show')}${xh(`${group}.opacity`, 'Opacity', 0, 1, 0.05, 'pct')}${xh(`${group}.length`, 'Length', 0, 30, 1, 'px')}${xh(`${group}.thickness`, 'Thickness', 1, 10, 1, 'px')}${xh(`${group}.offset`, 'Offset', 0, 40, 1, 'px')}</div>`;
+    return `<div class="xh-editor">
+      <div class="xh-side"><div class="xh-preview" id="xh-preview">${['sky', 'wall', 'dark'].map((bg) => `<div class="xh-bg xh-${bg}"><div class="crosshair">${crosshairHtml(c)}</div></div>`).join('')}</div>
+        <div class="panel"><p class="eyebrow">Presets</p><div class="xh-presets">${CROSSHAIR_PRESETS.map(([name, preset], index) => `<button type="button" data-xh-preset="${index}" title="${name}"><span class="crosshair">${crosshairHtml(preset)}</span><small>${name}</small></button>`).join('')}</div></div>
+        <div class="panel"><p class="eyebrow">Share code</p><div class="room-row-input"><input id="xh-code" value="${escapeHtml(crosshairCode(c))}" spellcheck="false" autocomplete="off" /><button type="button" id="xh-copy">Copy</button><button type="button" id="xh-import" class="secondary-button">Import</button></div><small class="hint">Paste a friend’s code and press Import.</small></div></div>
+      <div class="xh-controls">
+        <div class="panel"><p class="eyebrow">Colour</p><div class="swatches xh-colors">${CROSSHAIR_COLORS.map((color) => `<button type="button" class="swatch${c.color === color ? ' selected' : ''}" data-xh-color="${color}" style="--swatch:${color}" aria-label="${color}"></button>`).join('')}<input type="color" data-xh="color" value="${c.color}" aria-label="Custom colour" /></div>
+          ${xhToggle('outline.on', 'Outline')}${xh('outline.opacity', 'Outline opacity', 0, 1, 0.05, 'pct')}${xh('outline.thickness', 'Outline thickness', 1, 6, 1, 'px')}</div>
+        <div class="panel"><p class="eyebrow">Centre dot</p>${xhToggle('dot.on', 'Show')}${xh('dot.size', 'Size', 1, 12, 1, 'px')}${xh('dot.opacity', 'Opacity', 0, 1, 0.05, 'pct')}
+          <p class="eyebrow sub">Behaviour</p>${xhToggle('dynamic', 'Open up with movement and recoil')}${xhToggle('tee', 'T-shape (no top line)')}</div>
+        ${lines('inner', 'Inner lines')}${lines('outer', 'Outer lines')}
+      </div></div>`;
+  }
+  if (tab === 'binds') {
+    const groups = [...new Set(ACTIONS.map((action) => action.group))];
+    const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS A KEY…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
+    return `<div class="bind-cols">${groups.map((group) => `<div class="panel"><p class="eyebrow">${group}</p>${ACTIONS.filter((action) => action.group === group).map((action) => `<div class="bind-row"><span>${action.label}</span>${slot(action, 0)}${slot(action, 1)}</div>`).join('')}</div>`).join('')}</div>
+      <p class="hint bind-help">Click a slot, then press a key or mouse button. <b>Esc</b> cancels, <b>Backspace</b> clears the slot. A key can only do one thing, so binding it here takes it off whatever had it. The mouse wheel always zooms scopes and switches weapons.</p>
+      <div class="panel"><p class="eyebrow">Gamepad</p><div class="controls-list"><div><b>GAMEPAD</b><span>Sticks move/aim · RT fire · LT scope · X reload · Y swap · B crouch · LB/RB gadgets</span></div></div></div>`;
+  }
+  return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Sensitivity</p>${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, 'x2')}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, 'x2', s.scopeSensitivity, 'Multiplier while aiming down a sight or scope.')}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, 'x1')}</div>
+    <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press once to aim, again to lower — instead of holding.')}${toggle('toggleCrouch', 'Toggle crouch')}</div></div>`;
+}
+function settingsShellHtml(tab) {
+  const resets = { binds: ['reset-binds', 'Reset key binds'], crosshair: ['reset-crosshair', 'Reset crosshair'] }[tab] || ['reset-settings', 'Reset settings'];
+  return `<div class="settings-shell"><nav class="settings-tabs" aria-label="Settings sections">${SETTINGS_TABS.map(([id, label]) => `<button type="button" data-settings-tab="${id}" class="${id === tab ? 'active' : ''}">${label}</button>`).join('')}</nav>
+    <div class="settings-body">${settingsBodyHtml(tab)}</div>
+    <div class="button-row"><button type="button" id="${resets[0]}" class="ghost-button">${resets[1]}</button><span class="muted">Changes save as you make them.</span></div></div>`;
+}
+// On the menu, Controls is simply Settings opened on the key binds.
+function settingsPageHtml(tab = settingsTab) {
+  const titles = { aim: 'Fine <em>tune.</em>', graphics: 'Looks and <em>frames.</em>', audio: 'Sound and <em>HUD.</em>', crosshair: 'Your <em>crosshair.</em>', binds: 'Your <em>keys.</em>' };
+  return `<section class="page-wide settings-page"><p class="eyebrow">${tab === 'binds' ? 'Controls' : 'Settings'}</p><h1 class="page-title">${titles[tab]}</h1>${settingsShellHtml(tab)}</section>`;
+}
+const controlsPageHtml = () => settingsPageHtml('binds');
+
 export function openSettings(controlsOnly = false) {
-  const s = game.settings;
-  const slider = (key, label, min, max, step, format) => `<label>${label} <output>${format(s[key])}</output><input type="range" data-setting="${key}" min="${min}" max="${max}" step="${step}" value="${s[key]}" /></label>`;
-  const toggle = (key, label) => `<label class="check"><input type="checkbox" data-setting="${key}" ${s[key] ? 'checked' : ''} /> ${label}</label>`;
-  const controls = [['W A S D', 'Move'], ['SHIFT', 'Walk quietly · hold breath when scoped'], ['CTRL / C', 'Crouch (silent)'], ['SPACE', 'Jump'], ['LMB / RMB', 'Fire / scope'], ['WHEEL', 'Scope zoom · switch weapon'], ['1 2 3', 'Primary · sidearm · blade'], ['R', 'Reload'], ['Q / E', 'Gadgets'], ['B', 'Armoury (buy phase)'], ['Z / MMB', 'Ping location'], ['X', 'Radio commands'], ['ENTER / Y', 'Chat all / team'], ['TAB', 'Scoreboard'], ['GAMEPAD', 'Sticks move/aim · RT fire · LT scope · X reload · Y swap · B crouch · LB/RB gadgets']];
-  settingsCard.innerHTML = `<p class="eyebrow">${controlsOnly ? 'Field manual' : 'Combat settings'}</p><h2>${controlsOnly ? 'Controls.' : 'Fine tune.'}</h2>
-    ${controlsOnly ? '' : `${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, (v) => Number(v).toFixed(2))}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, (v) => Number(v).toFixed(2))}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, (v) => Number(v).toFixed(1))}${slider('fov', 'Field of view', 60, 105, 1, (v) => `${v}°`)}${slider('volume', 'Master volume', 0, 1, 0.05, (v) => `${Math.round(v * 100)}%`)}
-    <label>Graphics quality<select data-setting="quality"><option value="high" ${s.quality === 'high' ? 'selected' : ''}>High — 4K shadows, full resolution</option><option value="medium" ${s.quality === 'medium' ? 'selected' : ''}>Medium — balanced</option><option value="low" ${s.quality === 'low' ? 'selected' : ''}>Low — no shadows, fastest</option></select></label>
-    <div class="check-grid">${toggle('announcer', 'Announcer voice')}${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope')}${toggle('toggleCrouch', 'Toggle crouch')}${toggle('visualizeSound', 'Visualize sound effects')}</div>`}
-    <div class="controls-list${controlsOnly ? '' : ' compact'}">${controls.map(([k, v]) => `<div><b>${k}</b><span>${v}</span></div>`).join('')}</div>
-    <div class="button-row"><button type="button" id="close-settings">Done</button>${controlsOnly ? '' : '<button type="button" id="reset-settings" class="ghost-button">Reset</button>'}</div>`;
+  if (controlsOnly) settingsTab = 'binds';
+  settingsCard.innerHTML = `<p class="eyebrow">Settings</p><h2>${SETTINGS_TABS.find(([id]) => id === settingsTab)[1]}.</h2><div class="settings-page">${settingsShellHtml(settingsTab)}</div><div class="button-row"><button type="button" id="close-settings">Done</button></div>`;
   settingsCard.classList.remove('hidden');
   document.exitPointerLock?.();
 }
-settingsCard.addEventListener('input', (event) => {
-  const key = event.target.dataset.setting;
+const settingsOverlayOpen = () => !settingsCard.classList.contains('hidden');
+function refreshSettings() { if (settingsOverlayOpen()) openSettings(); else if (game.screen === 'home') renderHome(); }
+
+function applySetting(event) {
+  const input = event.target;
+  const output = input.closest('label')?.querySelector('output');
+  if (input.dataset.xh) {
+    const crosshair = currentCrosshair();
+    const [group, field] = input.dataset.xh.split('.');
+    const value = input.type === 'checkbox' ? input.checked : input.type === 'range' ? Number(input.value) : input.value;
+    if (field) crosshair[group][field] = value; else crosshair[group] = value;
+    game.settings.crosshair = crosshair;
+    if (output) output.textContent = FORMATS[input.dataset.format](value);
+    document.querySelectorAll('#xh-preview .crosshair').forEach((node) => { node.innerHTML = crosshairHtml(crosshair); });
+    if ($('#xh-code')) $('#xh-code').value = crosshairCode(crosshair);
+    saveSettings();
+    return;
+  }
+  const key = input.dataset.setting;
   if (!key) return;
-  const value = event.target.type === 'checkbox' ? event.target.checked : event.target.type === 'range' ? Number(event.target.value) : event.target.value;
+  let value = input.type === 'checkbox' ? input.checked : input.type === 'range' ? Number(input.value) : input.value;
+  if (key === 'fpsCap') value = Number(value);
+  // Fine graphics controls start from whatever the preset was showing, then the preset becomes Custom.
+  if (GRAPHICS_KEYS.includes(key) && game.settings.quality !== 'custom') { const g = graphics(); GRAPHICS_KEYS.forEach((k) => { game.settings[k] = g[k]; }); game.settings.quality = 'custom'; }
   game.settings[key] = value;
-  const output = event.target.closest('label')?.querySelector('output');
-  if (output) output.textContent = key === 'fov' ? `${value}°` : key === 'volume' ? `${Math.round(value * 100)}%` : Number(value).toFixed(key === 'padSensitivity' ? 1 : 2);
+  if (output) output.textContent = FORMATS[input.dataset.format || 'x2'](value);
   if (key === 'volume') setVolume(value);
   saveSettings();
-});
+}
+// Things that change what else is on screen redraw once the control is released.
+function onSettingsChange(event) { if (GRAPHICS_KEYS.includes(event.target.dataset.setting)) refreshSettings(); }
+function onSettingsClick(event) {
+  const target = event.target.closest('button');
+  if (!target) return false;
+  if (target.dataset.settingsTab) {
+    listening = null; settingsTab = target.dataset.settingsTab; play('ui');
+    if (settingsOverlayOpen()) openSettings(); else { pageEntering = true; setHomePage(settingsTab === 'binds' ? 'controls' : 'settings'); renderHome(); }
+  } else if (target.dataset.preset) { game.settings.quality = target.dataset.preset; saveSettings(); play('ui'); refreshSettings(); }
+  else if (target.dataset.bind) { listening = { action: target.dataset.bind, slot: Number(target.dataset.slot) }; play('ui'); refreshSettings(); }
+  else if (target.dataset.xhPreset) { game.settings.crosshair = cleanCrosshair(CROSSHAIR_PRESETS[Number(target.dataset.xhPreset)][1]); saveSettings(); play('ui'); refreshSettings(); }
+  else if (target.dataset.xhColor) { game.settings.crosshair = { ...currentCrosshair(), color: target.dataset.xhColor }; saveSettings(); play('ui'); refreshSettings(); }
+  else if (target.id === 'xh-copy') navigator.clipboard?.writeText($('#xh-code').value).then(() => toast('Crosshair code copied.', 'good'), () => toast('Select the code and copy it manually.', 'warn'));
+  else if (target.id === 'xh-import') {
+    const parsed = crosshairFromCode($('#xh-code').value);
+    if (!parsed) { toast('That is not a Krosshair crosshair code — they start with K1;', 'warn'); play('deny'); return true; }
+    game.settings.crosshair = parsed; saveSettings(); play('buy'); toast('Crosshair imported.', 'good'); refreshSettings();
+  } else if (target.id === 'reset-settings') { const keep = { binds: game.settings.binds, crosshair: game.settings.crosshair }; Object.assign(game.settings, DEFAULT_SETTINGS, keep); saveSettings(); setVolume(game.settings.volume); play('uiBack'); refreshSettings(); }
+  else if (target.id === 'reset-binds') { resetBinds(); play('uiBack'); refreshSettings(); }
+  else if (target.id === 'reset-crosshair') { game.settings.crosshair = null; saveSettings(); play('uiBack'); refreshSettings(); }
+  else return false;
+  return true;
+}
+// While a bind slot is waiting, the next key or mouse button goes to it and nowhere else.
+function captureBind(event) {
+  if (!listening) return;
+  event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+  const code = event.type === 'keydown' ? event.code : `Mouse${event.button}`;
+  const { action, slot } = listening;
+  if (code === 'Escape') { listening = null; play('uiBack'); return refreshSettings(); }
+  if (RESERVED.includes(code)) { toast(`${codeLabel(code)} is reserved by the game or the browser.`, 'warn'); play('deny'); return; }
+  listening = null;
+  const displaced = setBind(action, slot, code === 'Backspace' || code === 'Delete' ? null : code);
+  if (displaced) toast(`${codeLabel(code)} was taken off “${displaced}”.`, 'info');
+  play('ready');
+  // The click that follows this mouse press must not land on whatever is under the cursor.
+  if (event.type === 'mousedown') addEventListener('click', (click) => { click.preventDefault(); click.stopPropagation(); }, { capture: true, once: true });
+  refreshSettings();
+}
+addEventListener('keydown', captureBind, true);
+addEventListener('mousedown', captureBind, true);
+home.addEventListener('input', applySetting);
+home.addEventListener('change', onSettingsChange);
+settingsCard.addEventListener('input', applySetting);
+settingsCard.addEventListener('change', onSettingsChange);
 settingsCard.addEventListener('click', (event) => {
-  if (event.target.id === 'close-settings') { settingsCard.classList.add('hidden'); play('uiBack'); bus.emit('settings-closed'); }
-  if (event.target.id === 'reset-settings') { Object.assign(game.settings, DEFAULT_SETTINGS); saveSettings(); setVolume(game.settings.volume); openSettings(); }
+  if (event.target.id === 'close-settings') { listening = null; settingsCard.classList.add('hidden'); play('uiBack'); bus.emit('settings-closed'); return; }
+  onSettingsClick(event);
 });
 
 // ------------------------------------------------------------------ feedback
@@ -492,24 +626,53 @@ let feedbackKind = 'bug';
 let feedbackPending = false;
 function sentReports() { try { return JSON.parse(localStorage.getItem('krosshair:feedback') || '[]'); } catch { return []; } }
 
+function feedbackFormHtml() {
+  const copy = FEEDBACK_COPY[feedbackKind];
+  return `<form id="feedback-form" novalidate>
+        <div class="segmented" role="radiogroup" aria-label="Type">${Object.entries({ bug: 'Bug', suggestion: 'Suggestion' }).map(([id, label]) => `<button type="button" role="radio" aria-checked="${id === feedbackKind}" class="${id === feedbackKind ? 'active' : ''}" data-kind="${id}">${label}</button>`).join('')}</div>
+        <label class="field">Title<input name="title" maxlength="90" required placeholder="${copy.title}" autocomplete="off" /></label>
+        <label class="field">Details<textarea name="details" maxlength="3000" rows="7" required placeholder="${copy.details}"></textarea><small class="counter"><span id="feedback-count">0</span> / 3000</small></label>
+        <label class="check"><input type="checkbox" name="device" checked /> Include browser, screen size and graphics settings</label>
+        <div class="feedback-actions"><button type="submit" id="feedback-send">${copy.send}</button><p id="feedback-status" class="feedback-status" role="status"></p></div>
+      </form>`;
+}
+function feedbackSentHtml() {
+  const sent = sentReports();
+  return sent.length ? `<section class="feedback-sent"><h3>Sent from this browser</h3>${sent.slice(0, 5).map((r) => `<div><span class="kind ${r.kind}">${r.kind === 'bug' ? 'Bug' : 'Idea'}</span><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.ref)} · ${new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('')}</section>` : '';
+}
+function feedbackPageHtml() {
+  return `<section class="page-main feedback-page"><p class="eyebrow">Feedback</p><h1 class="page-title">Tell us what <em>broke.</em></h1><div class="panel">${feedbackFormHtml()}</div></section>
+    <aside class="page-side"><div class="panel"><p class="eyebrow">What helps most</p><ul class="feature-list plain"><li>One report per problem — it’s easier to track.</li><li>For bugs: what you did, what happened, what you expected.</li><li>The arena, mode and weapon if it happened in a match.</li></ul></div>${feedbackSentHtml() ? `<div class="panel">${feedbackSentHtml()}</div>` : ''}</aside>`;
+}
+// What is typed survives re-renders (the menu redraws whenever the profile or room list changes) and type switches.
+function readFeedbackDraft() { const form = $('#feedback-form'); return form ? { title: form.title.value, details: form.details.value, device: form.device.checked, status: $('#feedback-status')?.outerHTML, focus: document.activeElement?.name } : null; }
+function writeFeedbackDraft(draft) {
+  const form = $('#feedback-form');
+  if (!form || !draft) return;
+  form.title.value = draft.title; form.details.value = draft.details; form.device.checked = draft.device;
+  $('#feedback-count').textContent = draft.details.length;
+  if (draft.status) $('#feedback-status').outerHTML = draft.status;
+}
+const feedbackOnPage = () => Boolean(home.querySelector('#feedback-form'));
+function switchFeedbackKind(kind) {
+  if (!FEEDBACK_COPY[kind] || kind === feedbackKind) return;
+  const draft = readFeedbackDraft();
+  feedbackKind = kind;
+  if (feedbackOnPage()) renderHome(); else openFeedback(kind);
+  writeFeedbackDraft({ ...draft, status: null });
+  play('ui');
+}
+
 export function openFeedback(kind = feedbackKind) {
   feedbackKind = kind;
-  const copy = FEEDBACK_COPY[kind];
-  const sent = sentReports();
   feedbackCard.innerHTML = `
     <div class="feedback-card">
       <header class="feedback-head">
         <div><p class="eyebrow">Feedback</p><h2 id="feedback-title">Report a bug or suggest an idea</h2></div>
         <button type="button" class="ghost-button" data-feedback-close>Close <kbd>Esc</kbd></button>
       </header>
-      <form id="feedback-form" novalidate>
-        <div class="segmented" role="radiogroup" aria-label="Type">${Object.entries({ bug: 'Bug', suggestion: 'Suggestion' }).map(([id, label]) => `<button type="button" role="radio" aria-checked="${id === kind}" class="${id === kind ? 'active' : ''}" data-kind="${id}">${label}</button>`).join('')}</div>
-        <label class="field">Title<input name="title" maxlength="90" required placeholder="${copy.title}" autocomplete="off" /></label>
-        <label class="field">Details<textarea name="details" maxlength="3000" rows="7" required placeholder="${copy.details}"></textarea><small class="counter"><span id="feedback-count">0</span> / 3000</small></label>
-        <label class="check"><input type="checkbox" name="device" checked /> Include browser, screen size and graphics settings</label>
-        <div class="feedback-actions"><button type="submit" id="feedback-send">${copy.send}</button><p id="feedback-status" class="feedback-status" role="status"></p></div>
-      </form>
-      ${sent.length ? `<section class="feedback-sent"><h3>Sent from this browser</h3>${sent.slice(0, 5).map((r) => `<div><span class="kind ${r.kind}">${r.kind === 'bug' ? 'Bug' : 'Idea'}</span><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.ref)} · ${new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('')}</section>` : ''}
+      ${feedbackFormHtml()}
+      ${feedbackSentHtml()}
     </div>`;
   feedbackCard.classList.remove('hidden');
   document.exitPointerLock?.();
@@ -525,19 +688,14 @@ function setFeedbackStatus(text, tone = '') { const status = $('#feedback-status
 feedbackCard.addEventListener('click', (event) => {
   if (event.target === feedbackCard || event.target.closest('[data-feedback-close]')) { play('uiBack'); return closeFeedback(); }
   const kind = event.target.closest('[data-kind]')?.dataset.kind;
-  if (!kind || kind === feedbackKind) return;
-  // Switch type without losing what has been typed.
-  const form = $('#feedback-form');
-  const draft = { title: form.title.value, details: form.details.value, device: form.device.checked };
-  openFeedback(kind);
-  Object.assign($('#feedback-form').title, { value: draft.title });
-  $('#feedback-form').details.value = draft.details;
-  $('#feedback-form').device.checked = draft.device;
-  $('#feedback-count').textContent = draft.details.length;
+  if (kind) switchFeedbackKind(kind);
 });
-feedbackCard.addEventListener('input', (event) => { if (event.target.name === 'details') $('#feedback-count').textContent = event.target.value.length; });
+const countFeedback = (event) => { if (event.target.name === 'details' && $('#feedback-count')) $('#feedback-count').textContent = event.target.value.length; };
+feedbackCard.addEventListener('input', countFeedback);
+home.addEventListener('input', countFeedback);
 feedbackCard.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Escape') closeFeedback(); });
-feedbackCard.addEventListener('submit', (event) => {
+function submitFeedback(event) {
+  if (event.target.id !== 'feedback-form') return;
   event.preventDefault();
   if (feedbackPending) return;
   const form = event.target;
@@ -554,7 +712,9 @@ feedbackCard.addEventListener('submit', (event) => {
   setFeedbackStatus('Sending…');
   net.send({ type: 'feedback', kind: feedbackKind, title, details, device });
   setTimeout(() => { if (feedbackPending && feedbackPending.title === title) { feedbackPending = false; const send = $('#feedback-send'); if (send) send.disabled = false; setFeedbackStatus('No answer from the server. Try sending again.', 'warn'); } }, 8000);
-});
+}
+feedbackCard.addEventListener('submit', submitFeedback);
+home.addEventListener('submit', submitFeedback);
 net.on('feedback-result', (message) => {
   const pending = feedbackPending;
   feedbackPending = false;
@@ -564,10 +724,9 @@ net.on('feedback-result', (message) => {
   const sent = [{ ...pending, ref: message.ref, at: Date.now() }, ...sentReports()].slice(0, 20);
   try { localStorage.setItem('krosshair:feedback', JSON.stringify(sent)); } catch { /* private mode */ }
   play('buy');
-  openFeedback(feedbackKind);
+  if (feedbackOnPage()) { home.querySelector('#feedback-form').reset(); renderHome(); } else openFeedback(feedbackKind);
   setFeedbackStatus(`Sent — thanks. Reference ${message.ref}.`, 'good');
 });
-if (location.hash === '#feedback') setTimeout(() => openFeedback(), 0);
 
 // ------------------------------------------------------------------ end of match
 export function showEnd(message) {
@@ -655,20 +814,20 @@ function buildShareCard() {
 }
 
 // ------------------------------------------------------------------ range tutorial
-const DRILLS = [['move', 'Move with W A S D'], ['crouch', 'Crouch with CTRL or C — crouched steps are silent'], ['scope', 'Hold RIGHT MOUSE to scope in'], ['fire', 'Fire with LEFT MOUSE'], ['hit', 'Hit a target'], ['headshot', 'Land a headshot'], ['reload', 'Reload with R'], ['wallbang', 'Shoot a target through the wooden wall'], ['buy', 'Open the armoury with B'], ['gadget', 'Use a gadget with Q or E']];
+const drills = () => [['move', `Move with ${['forward', 'left', 'back', 'right'].map((id) => codeLabel(bindsFor(id)[0])).join(' ')}`], ['crouch', `Crouch with ${bindLabel('crouch')} — crouched steps are silent`], ['scope', `${game.settings.toggleScope ? 'Press' : 'Hold'} ${bindLabel('scope')} to scope in`], ['fire', `Fire with ${bindLabel('fire')}`], ['hit', 'Hit a target'], ['headshot', 'Land a headshot'], ['reload', `Reload with ${bindLabel('reload')}`], ['wallbang', 'Shoot a target through the wooden wall'], ['buy', `Open the armoury with ${bindLabel('armoury')}`], ['gadget', `Use a gadget with ${codeLabel(bindsFor('gadget1')[0])} or ${codeLabel(bindsFor('gadget2')[0])}`]];
 const drillsDone = new Set();
 export function renderTutorial(show) {
   const panel = $('#tutorial');
   panel.classList.toggle('hidden', !show);
   if (!show) return;
-  panel.innerHTML = `<p class="eyebrow">Range drills <small>${drillsDone.size}/${DRILLS.length}</small></p>${DRILLS.map(([id, text]) => `<div class="drill${drillsDone.has(id) ? ' done' : ''}"><i></i>${text}</div>`).join('')}<small class="muted">Scoped: hold SHIFT to steady your breath, scroll to change zoom. ESC → Leave when you are ready for a real match.</small>`;
+  panel.innerHTML = `<p class="eyebrow">Range drills <small>${drillsDone.size}/${drills().length}</small></p>${drills().map(([id, text]) => `<div class="drill${drillsDone.has(id) ? ' done' : ''}"><i></i>${text}</div>`).join('')}<small class="muted">Scoped: hold SHIFT to steady your breath, scroll to change zoom. ESC → Leave when you are ready for a real match.</small>`;
 }
 bus.on('tutorial', (id) => {
   if (game.room?.mode !== 'range' || drillsDone.has(id)) return;
   drillsDone.add(id);
   play('ready');
   renderTutorial(true);
-  if (drillsDone.size === DRILLS.length && !game.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); uploadPrefs(0); toast('Drills complete. You are cleared for live matches.', 'good'); }
+  if (drillsDone.size === drills().length && !game.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); uploadPrefs(0); toast('Drills complete. You are cleared for live matches.', 'good'); }
 });
 
 // ------------------------------------------------------------------ screens + connection banner

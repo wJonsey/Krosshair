@@ -2,8 +2,9 @@
 // and runs the frame loop.
 import * as THREE from 'three';
 import { GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
-import { bus, game, isEnemy, nameOf, saveSettings } from './state.js';
+import { bus, game, graphics, isEnemy, nameOf, saveSettings } from './state.js';
 import { net } from './net.js';
+import { bindLabel } from './input.js';
 import { Arena } from './world.js';
 import { Operators } from './characters.js';
 import { Effects } from './effects.js';
@@ -33,7 +34,7 @@ camera.rotation.order = 'YXZ';
 const arena = new Arena(renderer);
 arena.loadMap('yard');
 arena.setVariant('dusk');
-arena.setQuality(game.settings.quality);
+arena.setGraphics(graphics());
 arena.scene.add(camera);
 const operators = new Operators(arena.scene, () => arena.physics);
 const effects = new Effects(arena.scene);
@@ -54,7 +55,7 @@ let inviteHandled = false;
 let currentVariant = null;
 let pendingEnd = null;
 bus.on('look', () => viewmodel.setLook(game.look.color, game.look.accent));
-bus.on('settings', () => { arena.setQuality(game.settings.quality); });
+bus.on('settings', () => { arena.setGraphics(graphics()); fpsBox.classList.toggle('hidden', !game.settings.showFps); });
 arena.onThunder = (delay) => { hud.flash(); setTimeout(() => play('thunder', { volume: 0.9 }), delay * 1000); };
 addEventListener('pointerdown', unlockAudio, { capture: true });
 addEventListener('keydown', unlockAudio, { capture: true });
@@ -394,26 +395,47 @@ let orbit = 0;
 let heartbeat = 0;
 // Step graphics down automatically when a machine cannot hold a playable frame rate.
 let slowTime = 0;
+const STEP_DOWN = { ultra: 'high', high: 'medium', medium: 'low', custom: 'medium' };
 function watchFrameRate(rawDt) {
-  if (game.screen !== 'game' || document.hidden || game.settings.quality === 'low') { slowTime = 0; return; }
+  if (game.screen !== 'game' || document.hidden || !game.settings.autoQuality || !STEP_DOWN[game.settings.quality]) { slowTime = 0; return; }
   slowTime = rawDt > 1 / 38 ? slowTime + rawDt : Math.max(0, slowTime - rawDt * 2);
   if (slowTime < 4) return;
   slowTime = 0;
-  game.settings.quality = game.settings.quality === 'high' ? 'medium' : 'low';
+  game.settings.quality = STEP_DOWN[game.settings.quality];
   saveSettings();
   toast(`Graphics lowered to ${game.settings.quality} to keep the frame rate up. Change it back in Settings.`, 'info');
 }
 
+// FPS readout: frames over the last half second, plus the slowest frame in that window and the ping.
+const fpsBox = document.querySelector('#fps-counter');
+fpsBox.classList.toggle('hidden', !game.settings.showFps);
+const fpsWindow = { frames: 0, time: 0, worst: 0 };
+function countFrame(rawDt) {
+  if (!game.settings.showFps) return;
+  fpsWindow.frames += 1; fpsWindow.time += rawDt; fpsWindow.worst = Math.max(fpsWindow.worst, rawDt);
+  if (fpsWindow.time < 0.5) return;
+  const fps = Math.round(fpsWindow.frames / fpsWindow.time);
+  fpsBox.innerHTML = `<b>${fps}</b> FPS <i>${(fpsWindow.worst * 1000).toFixed(1)} ms max</i>${net.connected ? ` <i>${net.rtt} ms ping</i>` : ''}`;
+  fpsBox.dataset.tone = fps >= 55 ? 'good' : fps >= 30 ? 'ok' : 'bad';
+  fpsWindow.frames = 0; fpsWindow.time = 0; fpsWindow.worst = 0;
+}
+
 let firstFrame = false;
-function frame() {
+let lastFrameAt = 0;
+function frame(now = 0) {
   requestAnimationFrame(frame);
+  // Frame cap: skip this tick if the previous frame was drawn too recently (small tolerance so 60 on a 60 Hz screen is not halved).
+  const cap = game.settings.fpsCap;
+  if (cap > 0 && now - lastFrameAt < 1000 / cap - 1.5) return;
+  lastFrameAt = now;
   const rawDt = clock.getDelta();
   watchFrameRate(rawDt);
+  countFrame(rawDt);
   const dt = Math.min(rawDt, 0.05); // simulation step
   const wallDt = Math.min(rawDt, 0.3); // cinematic timers (death cam, replays) follow the wall clock even on slow machines
   if (game.screen === 'game') {
     player.update(dt, wallDt);
-    if (game.room?.phase === 'buy' && player.alive && !hud.buyOpen) hud.prompt('B — OPEN ARMOURY'); else if (game.room?.phase !== 'range') hud.prompt('');
+    if (game.room?.phase === 'buy' && player.alive && !hud.buyOpen) hud.prompt(`${bindLabel('armoury')} — OPEN ARMOURY`); else if (game.room?.phase !== 'range') hud.prompt('');
     if (player.alive && game.you && game.you.hp < 35) { heartbeat -= dt; if (heartbeat <= 0) { heartbeat = 0.9; play('heartbeat', { volume: 0.8 }); } }
   } else {
     // Slow cinematic drift over the yard behind the menus.

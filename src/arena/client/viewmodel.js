@@ -17,6 +17,34 @@ const tube = (r, length, seg = 10) => new THREE.CylinderGeometry(r, r, length, s
 const ALONG = [Math.PI / 2, 0, 0];
 
 
+// Open optics you actually look through: the housing frames the target and the HUD only adds the reticle.
+// Both sit on a rail whose top is at `rail` and return the height of the window centre, which is what
+// aiming down the sight lines up with the eye.
+const LENS = new THREE.MeshBasicMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide });
+function redDot(g, m, rail, z) {
+  const r = 0.03, centre = rail + 0.016 + r;
+  const shell = new THREE.MeshStandardMaterial({ color: '#1b222a', roughness: 0.45, metalness: 0.4, side: THREE.DoubleSide });
+  part(g, box(0.044, 0.016, 0.085), m.dark, [0, rail + 0.008, z]);
+  part(g, new THREE.CylinderGeometry(r, r, 0.075, 20, 1, true), shell, [0, centre, z], ALONG);
+  part(g, new THREE.TorusGeometry(r, 0.0045, 6, 20), m.dark, [0, centre, z - 0.0375]);
+  part(g, new THREE.TorusGeometry(r, 0.0045, 6, 20), m.dark, [0, centre, z + 0.0375]);
+  part(g, box(0.014, 0.012, 0.02), m.grey, [0, centre + r + 0.006, z]);
+  part(g, new THREE.CircleGeometry(r - 0.002, 20), LENS, [0, centre, z - 0.03]);
+  return centre;
+}
+function holoSight(g, m, rail, z) {
+  const w = 0.058, h = 0.046, centre = rail + 0.018 + h / 2;
+  part(g, box(w + 0.012, 0.018, 0.11), m.dark, [0, rail + 0.009, z]);
+  part(g, box(0.006, h, 0.05), m.dark, [w / 2 + 0.003, centre, z - 0.025]);
+  part(g, box(0.006, h, 0.05), m.dark, [-w / 2 - 0.003, centre, z - 0.025]);
+  part(g, box(w + 0.012, 0.007, 0.06), m.dark, [0, centre + h / 2 + 0.0035, z - 0.025]);
+  part(g, box(0.02, 0.014, 0.03), m.grey, [w / 2 + 0.012, rail + 0.016, z + 0.03]);
+  part(g, new THREE.PlaneGeometry(w, h), LENS, [0, centre, z - 0.04]);
+  return centre;
+}
+// Eye relief when aimed: the back of the housing ends up about a hand's width from the camera.
+const OPTIC_ADS_Z = -0.055;
+
 // Shared builder for the newer long guns: receiver, barrel, stock, grip, magazine, optic.
 // o: { len, barrel, bore, guard, stock, wood, mag: [kind, h], optic, brake, bipod, suppressor, hip, ads, reach }
 function longGun(g, o, m) {
@@ -33,6 +61,7 @@ function longGun(g, o, m) {
   const [kind, h = 0.16] = o.mag || ['box'];
   const magZ = 0.08 - o.len * 0.62;
   let mag = null;
+  let sightLine = null;
   if (kind === 'box') mag = part(g, box(0.04, h, 0.07), m.dark, [0, -0.05 - h / 2, magZ], [0.12, 0, 0]);
   if (kind === 'drum') mag = part(g, new THREE.CylinderGeometry(0.075, 0.075, 0.06, 16), m.dark, [0, -0.1, magZ], [0, 0, Math.PI / 2]);
   if (kind === 'belt') { mag = part(g, box(0.1, 0.11, 0.14), m.dark, [0.02, -0.1, magZ]); part(g, box(0.02, 0.03, 0.12), m.grey, [0.045, 0.02, magZ]); }
@@ -44,15 +73,9 @@ function longGun(g, o, m) {
     part(g, box(0.03, 0.04, 0.05), m.grey, [0, 0.058, 0.08 - o.len * 0.3]);
     part(g, box(0.03, 0.04, 0.05), m.grey, [0, 0.058, 0.08 - o.len * 0.62]);
   } else if (o.optic === 'holo') {
-    // Holographic sight: open window on a base, reticle glass at the back.
-    part(g, box(0.05, 0.016, 0.1), m.dark, [0, 0.058, -0.15]);
-    part(g, box(0.008, 0.05, 0.03), m.dark, [0.025, 0.09, -0.12]);
-    part(g, box(0.008, 0.05, 0.03), m.dark, [-0.025, 0.09, -0.12]);
-    part(g, box(0.058, 0.01, 0.1), m.dark, [0, 0.118, -0.15]);
-    part(g, box(0.042, 0.038, 0.003), m.glow, [0, 0.09, -0.19]);
+    sightLine = holoSight(g, m, (o.height || 0.09) / 2, -0.15);
   } else if (o.optic === 'dot') {
-    part(g, box(0.05, 0.05, 0.08), m.dark, [0, 0.085, -0.14]);
-    part(g, box(0.04, 0.034, 0.004), m.glow, [0, 0.094, -0.18]);
+    sightLine = redDot(g, m, (o.height || 0.09) / 2, -0.15);
   } else {
     // Iron sights: thin front post, rear notch with a gap to look through.
     part(g, box(0.004, 0.024, 0.008), m.grey, [0, 0.062, front + 0.03]);
@@ -61,7 +84,7 @@ function longGun(g, o, m) {
   }
   if (o.bipod) { part(g, tube(0.008, 0.26, 6), m.grey, [0.03, -0.12, guardEnd - 0.05], [0.4, 0, 0.3]); part(g, tube(0.008, 0.26, 6), m.grey, [-0.03, -0.12, guardEnd - 0.05], [0.4, 0, -0.3]); }
   part(g, box(0.006, 0.01, o.len * 0.7), m.glow, [0.031, 0, 0.08 - o.len / 2]);
-  return { mag, muzzle };
+  return { mag, muzzle, sightLine };
 }
 
 // Front post and rear notch on a pistol slide whose top sits at y ≈ 0.048.
@@ -118,25 +141,23 @@ export function buildWeapon(id, accent) {
     part(g, box(0.05, 0.085, 0.24), dark, [0, -0.015, 0.2]);
     part(g, box(0.04, 0.12, 0.055), dark, [0, -0.1, 0.0], [-0.28, 0, 0]);
     part(g, box(0.02, 0.012, 0.36), grey, [0, 0.055, -0.22]);
-    part(g, box(0.05, 0.05, 0.08), dark, [0, 0.09, -0.16]);
-    part(g, box(0.042, 0.036, 0.004), glow, [0, 0.1, -0.2]);
+    const talonSight = redDot(g, { dark, grey }, 0.061, -0.16);
     part(g, box(0.006, 0.01, 0.34), glow, [0.031, 0.0, -0.2]);
     data.mag = part(g, box(0.04, 0.17, 0.07), dark, [0, -0.12, -0.24], [0.2, 0, 0]);
     data.muzzle.set(0, 0.01, -0.95);
     data.hip = [0.18, -0.2, -0.4];
-    data.ads = [0, -0.1, -0.24];
+    data.ads = [0, -talonSight, OPTIC_ADS_Z];
   } else if (id === 'wasp') {
     part(g, box(0.06, 0.1, 0.36), steel, [0, 0, -0.16]);
     part(g, tube(0.02, 0.18), dark, [0, 0.0, -0.42], ALONG);
     part(g, box(0.04, 0.12, 0.055), dark, [0, -0.1, 0.0], [-0.25, 0, 0]);
     part(g, box(0.035, 0.035, 0.22), grey, [0, 0.0, 0.12]);
-    part(g, box(0.04, 0.05, 0.06), dark, [0, 0.075, -0.16]);
-    part(g, box(0.012, 0.012, 0.012), glow, [0, 0.085, -0.13]);
+    const waspSight = redDot(g, { dark, grey }, 0.05, -0.16);
     part(g, box(0.006, 0.01, 0.28), glow, [0.032, 0.02, -0.16]);
     data.mag = part(g, box(0.035, 0.2, 0.05), dark, [0, -0.14, -0.2]);
     data.muzzle.set(0, 0, -0.52);
     data.hip = [0.17, -0.19, -0.36];
-    data.ads = [0, -0.1, -0.28];
+    data.ads = [0, -waspSight, OPTIC_ADS_Z];
   } else if (id === 'breaker') {
     part(g, box(0.06, 0.09, 0.34), steel, [0, 0, -0.08]);
     part(g, tube(0.02, 0.6), grey, [0, 0.025, -0.52], ALONG);
@@ -172,7 +193,7 @@ export function buildWeapon(id, accent) {
     data.mag = built.mag;
     data.muzzle.set(0, 0.01, built.muzzle);
     if (spec.hip) data.hip = spec.hip;
-    data.ads = spec.ads;
+    data.ads = built.sightLine ? [0, -built.sightLine, OPTIC_ADS_Z] : spec.ads;
     data.adsHide = Boolean(spec.adsHide);
     data.reach = spec.reach;
     if (spec.bolt) {
@@ -331,13 +352,14 @@ export class ViewModel {
     const bx = Math.cos(this.bob) * 0.011 * bobScale, by = Math.abs(Math.sin(this.bob)) * -0.014 * bobScale;
     const idle = Math.sin(performance.now() / 900) * 0.0025 * (1 - ads);
     const ease = 1 - (1 - this.equip) ** 3;
-    const x = THREE.MathUtils.lerp(data.hip[0], data.ads[0], ads) + bx + this.swayX;
-    // Dots, holos and prisms: the housing drops just below the aim point and the HUD draws the sight picture.
-    const clear = ({ dot: 0.075, holo: 0.09 }[data.sight] || 0) * ads * ads;
-    const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0) - clear;
-    const z = THREE.MathUtils.lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085;
+    // Dots and holos: the housing comes up to the eye and frames the HUD reticle, so it moves less once aimed.
+    const open = data.sight === 'dot' || data.sight === 'holo';
+    const steady = open ? 1 - ads * 0.7 : 1;
+    const x = THREE.MathUtils.lerp(data.hip[0], data.ads[0], ads) + bx + this.swayX * steady;
+    const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY * steady + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0) * (1 - ads);
+    const z = THREE.MathUtils.lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085 * steady;
     model.position.set(x, y, z);
-    model.rotation.set(this.kickRot * 0.13 + (1 - ease) * 0.9 + this.swayY * 1.5, -0.035 * (1 - ads) + this.swayX * 2, -this.swayX * 1.4);
+    model.rotation.set((this.kickRot * 0.13 + this.swayY * 1.5) * steady + (1 - ease) * 0.9, -0.035 * (1 - ads) + this.swayX * 2 * steady, -this.swayX * 1.4 * steady);
 
     // Reload: tip the weapon, drop the magazine, slap a new one in.
     if (this.reloadTime > 0) {

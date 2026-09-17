@@ -5,6 +5,7 @@ import { BODY, FLAG, GADGETS, INTERP_DELAY, WEAPONS, clamp } from '../shared/con
 import { SpreadTracker, applySpread, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
+import { actionsFor, bindsFor, held, mouseCode } from './input.js';
 import { net } from './net.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
 
@@ -44,36 +45,45 @@ export class LocalPlayer {
   get canAct() { return this.alive && this.mode === 'play' && !this.uiBlocked(); }
   get combatOpen() { const phase = game.room?.phase; return phase === 'live' || phase === 'overtime' || phase === 'range'; }
 
+  // One entry point for keys and mouse buttons, so anything can be bound to anything.
+  press(code) {
+    this.keys.add(code);
+    bus.emit('key', code);
+    const actions = actionsFor(code);
+    if (!this.canAct) { if (this.mode === 'killcam' && actions.includes('jump')) this.skipKillcam(); return; }
+    for (const action of actions) {
+      if (action === 'fire') this.fireHeld = false;
+      if (action === 'scope' && game.settings.toggleScope) this.scopeToggle = !this.scopeToggle;
+      if (action === 'reload') this.reload();
+      if (action === 'primary' || action === 'sidearm' || action === 'melee') this.switchTo(action);
+      if (action === 'gadget1') this.useGadget(0);
+      if (action === 'gadget2') this.useGadget(1);
+      if (action === 'ping') this.ping();
+      if (action === 'crouch' && game.settings.toggleCrouch) this.crouchToggle = !this.crouchToggle;
+    }
+  }
+  releaseTriggers() { for (const code of [...bindsFor('fire'), ...bindsFor('scope')]) this.keys.delete(code); }
+
   bind() {
     addEventListener('keydown', (event) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
       if (game.screen !== 'game') return;
-      if (['Tab', 'Space', 'ControlLeft', 'KeyC'].includes(event.code) || (event.ctrlKey && ['KeyW', 'KeyS', 'KeyD', 'KeyA'].includes(event.code))) event.preventDefault();
+      // Stop the browser acting on anything the pilot has bound (Tab, Space, Ctrl+W …).
+      if (['Tab', 'Space'].includes(event.code) || (actionsFor(event.code).length && !event.metaKey) || (event.ctrlKey && actionsFor(event.code).length)) event.preventDefault();
       if (event.repeat) return;
-      this.keys.add(event.code);
-      bus.emit('key', event.code);
-      if (!this.canAct) { if (this.mode === 'killcam' && event.code === 'Space') this.skipKillcam(); return; }
-      if (event.code === 'KeyR') this.reload();
-      if (event.code === 'Digit1') this.switchTo('primary');
-      if (event.code === 'Digit2') this.switchTo('sidearm');
-      if (event.code === 'Digit3') this.switchTo('melee');
-      if (event.code === 'KeyQ') this.useGadget(0);
-      if (event.code === 'KeyE') this.useGadget(1);
-      if (event.code === 'KeyZ') this.ping();
-      if ((event.code === 'KeyC' || event.code === 'ControlLeft') && game.settings.toggleCrouch) this.crouchToggle = !this.crouchToggle;
+      this.press(event.code);
     });
     addEventListener('keyup', (event) => this.keys.delete(event.code));
-    addEventListener('blur', () => { this.keys.clear(); this.buttons.fire = false; this.buttons.scope = false; });
+    addEventListener('blur', () => { this.keys.clear(); });
     addEventListener('mousedown', (event) => {
       if (game.screen !== 'game' || this.uiBlocked() || event.target !== this.canvas) return;
       if (!this.locked) { this.lock(); return; }
       if (this.mode === 'spectate') { this.cycleSpectate(event.button === 2 ? -1 : 1); return; }
       if (this.mode === 'drone') { if (event.button === 0) net.send({ type: 'drone-end' }); return; }
-      if (event.button === 0) { this.buttons.fire = true; this.fireHeld = false; }
-      if (event.button === 2) { if (game.settings.toggleScope) this.scopeToggle = !this.scopeToggle; else this.buttons.scope = true; }
-      if (event.button === 1) { event.preventDefault(); this.ping(); }
+      if (event.button !== 0 && event.button !== 2) event.preventDefault();
+      this.press(mouseCode(event));
     });
-    addEventListener('mouseup', (event) => { if (event.button === 0) this.buttons.fire = false; if (event.button === 2) this.buttons.scope = false; });
+    addEventListener('mouseup', (event) => this.keys.delete(mouseCode(event)));
     addEventListener('contextmenu', (event) => { if (game.screen === 'game') event.preventDefault(); });
     addEventListener('mousemove', (event) => {
       if (!this.locked) return;
@@ -141,7 +151,7 @@ export class LocalPlayer {
     this.alive = false;
     this.mode = 'dead';
     this.deathTime = 0;
-    this.scopeAmount = 0; this.buttons.fire = false; this.buttons.scope = false;
+    this.scopeAmount = 0; this.releaseTriggers();
     this.viewmodel.hidden = true;
     this.pendingKillcam = killcam || this.pendingKillcam;
     this.endDrone();
@@ -191,7 +201,7 @@ export class LocalPlayer {
     this.endPov();
     this.pendingKillcam = null;
     this.mode = 'replay';
-    this.scopeAmount = 0; this.buttons.fire = false; this.buttons.scope = false; this.scopeToggle = false;
+    this.scopeAmount = 0; this.releaseTriggers(); this.scopeToggle = false;
     this.operators.hidden = replay.killer;
     const from = Math.max(0, replay.duration - 3);
     this.operators.startReplay(replay, () => {
@@ -410,25 +420,25 @@ export class LocalPlayer {
     const keys = blocked ? new Set() : this.keys;
     // --- stance
     // crouchToggle is driven by the keyboard in toggle mode and always by the gamepad's B button.
-    const wantCrouch = this.crouchToggle || (!game.settings.toggleCrouch && (keys.has('KeyC') || keys.has('ControlLeft')));
+    const wantCrouch = this.crouchToggle || (!game.settings.toggleCrouch && held(keys, 'crouch'));
     if (wantCrouch && !this.crouching) { this.crouching = true; body.height = BODY.crouchHeight; } else if (!wantCrouch && this.crouching) {
       if (this.arena.physics.bodyFree(body.x, body.y, body.z, body.radius, BODY.height)) { this.crouching = false; body.height = BODY.height; }
     }
     this.crouchAmount += ((this.crouching ? 1 : 0) - this.crouchAmount) * Math.min(1, dt * 12);
     // --- scope
     const canScope = !weapon.melee && !this.reloadEnd && now >= this.equipUntil && !blocked;
-    const wantScope = canScope && (this.buttons.scope || this.pad.scope || this.scopeToggle);
+    const wantScope = canScope && ((!game.settings.toggleScope && held(keys, 'scope')) || this.pad.scope || this.scopeToggle);
     const before = this.scopeAmount;
     this.scopeAmount = clamp(this.scopeAmount + (wantScope ? dt : -dt * 1.6) / (weapon.scopeTime || 0.15), 0, 1);
     if (before === 0 && this.scopeAmount > 0) { play('scope'); bus.emit('tutorial', 'scope'); }
     if (!wantScope && before > 0 && this.scopeAmount === 0) this.zoomIndex = 0;
     // --- breath
-    const walkKey = keys.has('ShiftLeft') || keys.has('ShiftRight') || this.pad.walk;
+    const walkKey = held(keys, 'walk') || this.pad.walk;
     this.holdingBreath = walkKey && this.scopeAmount > 0.9 && Boolean(weapon.scope?.[0] < 40) && !this.winded;
     if (this.holdingBreath) { this.breath = Math.max(0, this.breath - dt * 0.3); if (this.breath === 0) { this.winded = true; } } else { this.breath = Math.min(1, this.breath + dt * 0.22); if (this.winded && this.breath > 0.45) this.winded = false; }
     // --- movement
     let mx = pad.mx, mz = pad.mz;
-    if (keys.has('KeyW')) mz -= 1; if (keys.has('KeyS')) mz += 1; if (keys.has('KeyA')) mx -= 1; if (keys.has('KeyD')) mx += 1;
+    if (held(keys, 'forward')) mz -= 1; if (held(keys, 'back')) mz += 1; if (held(keys, 'left')) mx -= 1; if (held(keys, 'right')) mx += 1;
     const length = Math.hypot(mx, mz);
     if (length > 1) { mx /= length; mz /= length; }
     let maxSpeed = BODY.runSpeed * (weapon.speed || 1);
@@ -439,7 +449,7 @@ export class LocalPlayer {
     const accel = body.onGround ? 14 : 2.5;
     const k = Math.min(1, accel * dt);
     this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
-    const jump = !blocked && (keys.has('Space') || this.pad.jump);
+    const jump = !blocked && (held(keys, 'jump') || this.pad.jump);
     if (jump && body.onGround && !this.crouching) { body.vy = BODY.jumpVelocity; body.onGround = false; play('jump'); bus.emit('tutorial', 'jump'); }
     const gravity = BODY.gravity * this.gravityScale;
     body.vy = Math.max(-40, body.vy - gravity * dt);
@@ -472,7 +482,7 @@ export class LocalPlayer {
         play('reloadDone');
       }
     }
-    const firing = (this.buttons.fire || this.pad.fire) && !blocked;
+    const firing = (held(this.keys, 'fire') || this.pad.fire) && !blocked;
     if (firing) this.tryFire(now); else this.fireHeld = false;
 
     // --- camera
@@ -505,8 +515,8 @@ export class LocalPlayer {
     // Mouse look steers the drone while piloting.
     drone.yaw = this.yaw; drone.pitch = this.pitch;
     let mx = pad.mx, mz = pad.mz, my = 0;
-    if (keys.has('KeyW')) mz -= 1; if (keys.has('KeyS')) mz += 1; if (keys.has('KeyA')) mx -= 1; if (keys.has('KeyD')) mx += 1;
-    if (keys.has('Space')) my += 1; if (keys.has('ControlLeft') || keys.has('KeyC')) my -= 1;
+    if (held(keys, 'forward')) mz -= 1; if (held(keys, 'back')) mz += 1; if (held(keys, 'left')) mx -= 1; if (held(keys, 'right')) mx += 1;
+    if (held(keys, 'jump')) my += 1; if (held(keys, 'crouch')) my -= 1;
     const sin = Math.sin(drone.yaw), cos = Math.cos(drone.yaw);
     const speed = 8.5;
     const body = drone.body;

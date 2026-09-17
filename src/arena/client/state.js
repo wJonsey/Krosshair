@@ -19,7 +19,21 @@ try {
   if (!session) { session = crypto.randomUUID(); sessionStorage.setItem('krosshair:session', session); }
 } catch { session = `${Date.now()}-${Math.random()}`; }
 
-export const DEFAULT_SETTINGS = { sensitivity: 1, scopeSensitivity: 0.7, fov: 78, quality: 'high', volume: 0.8, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false, visualizeSound: false };
+export const DEFAULT_SETTINGS = {
+  sensitivity: 1, scopeSensitivity: 0.7, fov: 78, volume: 0.8, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false, visualizeSound: false,
+  // Graphics: `quality` is a preset; touching any of the fine controls below turns it into 'custom'.
+  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, brightness: 1, fpsCap: 0, autoQuality: true, showFps: false,
+  binds: {},        // action → [primary, secondary]; anything missing falls back to DEFAULT_BINDS (input.js)
+  crosshair: null,  // null = the default in crosshair.js
+};
+// What each graphics preset means. 'custom' leaves the fine controls alone.
+export const GRAPHICS_PRESETS = {
+  low: { renderScale: 0.75, shadows: 'off', streetLights: false },
+  medium: { renderScale: 0.85, shadows: 'low', streetLights: true },
+  high: { renderScale: 1, shadows: 'high', streetLights: true },
+  ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true },
+};
+export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
   name: stored('name', legacyName),

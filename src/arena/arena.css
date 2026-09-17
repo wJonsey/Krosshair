@@ -260,14 +260,12 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 .controls { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; gap: 18px; color: var(--haze); font-size: 8px; white-space: nowrap; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
 .controls b { color: var(--frost); margin-right: 4px; font-weight: 500; }
 
-.crosshair { position: absolute; left: 50%; top: 50%; --gap: 6px; }
-.crosshair i { position: absolute; background: var(--frost); box-shadow: 0 0 2px rgba(0, 0, 0, .8); transition: transform .08s linear; }
-.crosshair i:nth-child(1), .crosshair i:nth-child(2) { width: 1px; height: 8px; left: 0; }
-.crosshair i:nth-child(1) { bottom: var(--gap); } .crosshair i:nth-child(2) { top: var(--gap); }
-.crosshair i:nth-child(3), .crosshair i:nth-child(4) { width: 8px; height: 1px; top: 0; }
-.crosshair i:nth-child(3) { right: var(--gap); } .crosshair i:nth-child(4) { left: var(--gap); }
-.crosshair b { position: absolute; left: -1px; top: -1px; width: 3px; height: 3px; border-radius: 50%; background: var(--signal); }
-.crosshair.dot i { display: none; }
+.crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; --spread: 0px; }
+.crosshair .xl { transition: top .08s linear, bottom .08s linear, left .08s linear, right .08s linear; }
+.crosshair.dot .xl { display: none; } .crosshair.dot .xd { display: block !important; }
+.fps-counter { position: fixed; z-index: 50; top: 8px; right: 10px; padding: 5px 9px; background: rgba(6, 9, 12, .7); color: var(--haze); font: 500 10px/1.4 var(--mono); letter-spacing: .08em; pointer-events: none; }
+.fps-counter b { color: var(--ally); font-size: 13px; font-weight: 500; } .fps-counter i { margin-left: 8px; color: var(--graphite); font-style: normal; }
+.fps-counter[data-tone='ok'] b { color: var(--signal); } .fps-counter[data-tone='bad'] b { color: var(--rival); }
 .hitmarker { position: absolute; left: 50%; top: 50%; width: 26px; height: 26px; transform: translate(-50%, -50%) rotate(45deg); opacity: 0; --hit: var(--frost); }
 .hitmarker::before, .hitmarker::after { content: ''; position: absolute; background: linear-gradient(90deg, var(--hit) 30%, transparent 30%, transparent 70%, var(--hit) 70%); }
 .hitmarker::before { left: 0; right: 0; top: 12px; height: 2px; }
@@ -296,10 +294,9 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 .sight .reticle { position: relative; display: block; }
 .sight-label { position: absolute; left: 50%; top: calc(50% + 150px); transform: translateX(-50%); color: var(--haze); font-size: 9px; text-shadow: 0 1px 3px #000; }
 /* Red dot: a short tube seen end-on, faint tint, glowing dot. */
-.sight-dot .sight-glass { width: 150px; height: 150px; border-radius: 50%; border: 9px solid rgba(12, 16, 20, .88); background: radial-gradient(circle, rgba(120, 200, 255, .04), rgba(120, 200, 255, .1)); box-shadow: inset 0 0 18px rgba(0, 0, 0, .55), 0 0 0 1px rgba(230, 237, 241, .12); }
+.sight-dot .sight-glass, .sight-holo .sight-glass { width: 0; height: 0; }
 .sight-dot .reticle { width: 5px; height: 5px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 4px #ff3b3b, 0 0 10px rgba(255, 59, 59, .7); }
 /* Holographic: rectangular window under a hood, ring-and-dot reticle. */
-.sight-holo .sight-glass { width: 230px; height: 150px; border: 8px solid rgba(12, 16, 20, .88); border-top-width: 14px; border-radius: 6px 6px 3px 3px; background: linear-gradient(rgba(140, 220, 255, .09), rgba(140, 220, 255, .04)); box-shadow: inset 0 0 20px rgba(0, 0, 0, .5), 0 0 0 1px rgba(230, 237, 241, .12); }
 .sight-holo .reticle { width: 46px; height: 46px; border-radius: 50%; border: 1.5px solid rgba(255, 70, 70, .9); box-shadow: 0 0 6px rgba(255, 59, 59, .6); }
 .sight-holo .reticle::after { content: ''; position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; transform: translate(-50%, -50%); border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 5px #ff3b3b; }
 /* Prism (ACOG-style): magnified lens with a heavy ring, amber chevron and drop ticks. */
@@ -704,3 +701,70 @@ button.room-teaser:hover { --tick: var(--signal); background: rgba(20, 27, 34, .
   .play-card .go { position: static; }
 }
 body[data-screen='home'] .toasts, body[data-screen='lobby'] .toasts { top: 82px; }
+
+/* settings / controls / feedback pages */
+.menu-tools button.active { color: var(--frost) !important; border-color: var(--signal) !important; }
+.settings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.settings-grid .panel { margin: 0; height: 100%; }
+.settings-page label, .settings-page .check-grid { margin: 16px 0; }
+.settings-page label { display: block; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.settings-page output { float: right; color: var(--signal); font: 500 11px var(--mono); }
+.settings-page input[type='range'] { width: 100%; margin-top: 10px; accent-color: var(--signal); }
+.settings-page select { width: 100%; margin-top: 6px; border: 1px solid var(--hairline-strong); background: var(--void); padding: 8px; font-size: 12px; border-radius: 0; }
+.settings-page .check { display: flex; font: 400 13px var(--body); letter-spacing: 0; text-transform: none; margin: 10px 0; }
+.settings-page .check-grid { grid-template-columns: 1fr; }
+.controls-page .controls-list { grid-template-columns: 1fr; margin-top: 0; padding-top: 0; border-top: 0; font-size: 13px; gap: 0; }
+.controls-page .controls-list div { padding: 10px 0; border-top: 1px solid var(--hairline); align-items: baseline; }
+.controls-page .controls-list b { min-width: 96px; padding: 3px 0; color: var(--signal); }
+.pad-panel { margin-top: 12px; }
+.feedback-page .panel { padding: 26px; }
+.feature-list.plain { margin-top: 0; padding-top: 0; border-top: 0; }
+.page-side .feedback-sent { margin-top: 0; padding-top: 0; border-top: 0; }
+@media (max-width: 1020px) { .settings-grid { grid-template-columns: 1fr; } }
+.sight-dot .reticle, .sight-holo .reticle { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+
+/* settings: tabs, graphics, crosshair editor, key binds (menu page and in-match overlay share these) */
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--hairline); }
+.settings-tabs button { padding: 12px 16px !important; border: 0 !important; border-bottom: 2px solid transparent !important; margin-bottom: -1px; background: transparent !important; color: var(--haze) !important; font: 500 10px/1 var(--mono) !important; letter-spacing: .14em !important; }
+.settings-tabs button:hover { color: var(--frost) !important; }
+.settings-tabs button.active { color: var(--frost) !important; border-bottom-color: var(--signal) !important; }
+.settings-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+.settings-cols .panel, .xh-editor .panel, .bind-cols .panel { margin: 0; }
+.settings-page .eyebrow.sub { margin: 26px 0 0; padding-top: 18px; border-top: 1px solid var(--hairline); }
+.settings-page .hint { display: block; margin-top: 7px; color: var(--graphite); font: 400 12px/1.5 var(--body); letter-spacing: 0; text-transform: none; }
+.settings-page .check span { flex: 1; }
+.settings-page .preset-row { display: flex; margin-bottom: 4px; }
+.settings-page .preset-row button { flex: 1; padding: 10px 6px !important; }
+.settings-page .preset-row button:disabled { opacity: 1 !important; cursor: default; color: var(--graphite) !important; }
+.settings-page .preset-row button.active:disabled { color: var(--void) !important; }
+.settings-card { width: min(920px, calc(100% - 32px)); }
+.settings-card .panel { background: rgba(230, 237, 241, .03); }
+
+.xh-editor { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 12px; align-items: start; }
+.xh-side { display: grid; gap: 12px; position: sticky; top: 84px; }
+.xh-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.xh-preview { display: grid; grid-template-columns: repeat(3, 1fr); height: 170px; border: 1px solid var(--hairline-strong); }
+.xh-bg { position: relative; overflow: hidden; }
+.xh-sky { background: linear-gradient(#2b6cb3, #cfe3f2); } .xh-wall { background: linear-gradient(#8a6a4c, #5d4632); } .xh-dark { background: linear-gradient(#0d131a, #05080b); }
+.xh-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.xh-presets button { position: relative; display: grid; align-content: end; justify-items: center; height: 84px; padding: 0 0 8px !important; border: 1px solid var(--hairline) !important; background: linear-gradient(#3a4652, #1a222b) !important; color: var(--frost) !important; }
+.xh-presets button:hover { border-color: var(--signal) !important; }
+.xh-presets button .crosshair { top: 36px; margin: 0 !important; }
+.xh-presets small { font: 500 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.xh-colors { align-items: center; gap: 9px; margin: 0 0 8px; }
+.xh-colors .swatch { width: 24px; height: 24px; }
+.xh-colors input[type='color'] { width: 34px; height: 26px; padding: 0; border: 1px solid var(--hairline-strong); background: transparent; cursor: pointer; }
+.xh-side .room-row-input { align-items: center; gap: 6px; }
+.xh-side .room-row-input input { font: 400 11px var(--mono); }
+.xh-side .room-row-input button { padding: 9px 10px !important; font-size: 9px !important; }
+
+.bind-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; margin-bottom: 12px; }
+.bind-row { display: grid; grid-template-columns: minmax(0, 1fr) 92px 92px; gap: 6px; align-items: center; padding: 7px 0; border-top: 1px solid var(--hairline); font-size: 13px; color: var(--haze); }
+.bind-row:first-of-type { border-top: 0; }
+button.bind { padding: 9px 4px !important; border: 1px solid var(--hairline-strong) !important; background: rgba(230, 237, 241, .04) !important; color: var(--frost) !important; font: 500 10px/1 var(--mono) !important; letter-spacing: .08em !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.bind:hover { border-color: var(--signal) !important; color: var(--signal) !important; }
+button.bind.waiting { border-color: var(--signal) !important; background: var(--signal) !important; color: var(--void) !important; font-size: 8px !important; animation: boot-pulse 1s ease-in-out infinite; }
+.bind-help { margin: 0 0 12px !important; } .bind-help b { color: var(--frost); font-weight: 500; }
+@media (max-width: 1020px) { .settings-cols, .xh-editor, .bind-cols { grid-template-columns: 1fr; } .xh-side { position: static; } }
+@media (max-width: 620px) { .xh-controls { grid-template-columns: 1fr; } }
+body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { top: auto; bottom: 8px; }

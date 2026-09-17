@@ -368,8 +368,9 @@ export class Arena {
     this.sun.color.set(v.sun); this.sun.intensity = v.sunPower;
     const u = this.sky.material.uniforms;
     u.top.value.set(v.top); u.horizon.value.set(v.horizon); u.sunDir.value.set(...v.sunDir).normalize(); u.sunColor.value.set(v.sun).multiplyScalar(v.sunPower / 2.6); u.stars.value = v.stars;
-    this.renderer.toneMappingExposure = v.exposure;
-    this.lamps.forEach((lamp) => { lamp.intensity = lamp.userData.base * (0.35 + v.lamps); });
+    this.baseExposure = v.exposure;
+    this.renderer.toneMappingExposure = v.exposure * (this.brightness || 1);
+    this.lamps.forEach((lamp) => { lamp.intensity = lamp.userData.base * (0.35 + v.lamps); lamp.visible = this.lampsOn !== false; });
     this.glows.forEach((glow) => { glow.material.opacity = Math.min(1, 0.15 + v.lamps * 0.6); });
     if (this.skylineMaterial) {
       const uniforms = this.skylineMaterial.userData.uniforms;
@@ -383,12 +384,17 @@ export class Arena {
     for (const key of ['neonCyan', 'neonOrange', 'neonPink', 'lamp']) if (this.materials.has(key)) this.materials.get(key).emissiveIntensity = MATERIALS[key].emissive * (0.5 + v.lamps * 0.9);
   }
 
-  setQuality(quality) {
-    const size = quality === 'high' ? 4096 : 2048;
-    this.sun.castShadow = quality !== 'low';
-    if (this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
-    this.lamps.forEach((lamp) => { lamp.visible = quality !== 'low'; });
-    this.renderer.setPixelRatio(quality === 'high' ? Math.min(devicePixelRatio, 2) : quality === 'medium' ? Math.min(devicePixelRatio, 1.25) : 1);
+  // g: { renderScale, shadows: off|low|high|ultra, streetLights, brightness } — see graphics() in state.js.
+  setGraphics(g) {
+    const size = { low: 1024, high: 2048, ultra: 4096 }[g.shadows] || 0;
+    this.sun.castShadow = size > 0;
+    if (size && this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
+    this.lampsOn = g.streetLights !== false;
+    this.lamps.forEach((lamp) => { lamp.visible = this.lampsOn; });
+    // Render scale is a share of the screen's own resolution; above 1 supersamples.
+    this.renderer.setPixelRatio(Math.max(0.4, Math.min(devicePixelRatio * g.renderScale, 3)));
+    this.brightness = g.brightness || 1;
+    this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * this.brightness;
   }
 
   resetRound() {
