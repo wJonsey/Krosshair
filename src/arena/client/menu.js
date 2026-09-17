@@ -393,12 +393,24 @@ home.addEventListener('submit', (event) => {
   setAuthStatus(authMode === 'signup' ? 'Creating your account…' : 'Logging in…');
   net.auth(authMode, { username, password, legacyToken: authMode === 'signup' ? game.token : undefined });
 });
+function showDiscordPrompt() {
+  document.querySelector('#discord-prompt')?.remove();
+  const card = document.createElement('div');
+  card.id = 'discord-prompt';
+  card.className = 'pause-card discord-prompt';
+  card.setAttribute('role', 'dialog');
+  card.innerHTML = `<p class="eyebrow">One more thing</p><h2>Join the squad.</h2><p>Find teammates, hear about updates first and report bugs straight to us in the Krosshair Discord.</p><div class="button-row"><a class="discord-button" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">${DISCORD_MARK}<span>Join the Discord</span></a><button type="button" class="ghost-button">Not now</button></div>`;
+  card.addEventListener('click', (event) => { if (event.target.closest('a, button')) { card.remove(); play('ui'); } });
+  document.querySelector('#arena-shell').append(card);
+}
 bus.on('config', () => { if (game.screen === 'home') renderHome(); });
 bus.on('signed-in', () => {
   // Set by the Discord callback page on its way back to the menu.
   let viaDiscord = null;
   try { viaDiscord = sessionStorage.getItem('krosshair:discord'); sessionStorage.removeItem('krosshair:discord'); } catch { /* private mode */ }
-  if (viaDiscord && game.username) toast(viaDiscord === 'joined' ? `Signed in as ${game.username}. You’re in the Krosshair Discord too.` : `Signed in as ${game.username}. Join the Krosshair Discord from the Pilot panel.`, 'good');
+  if (viaDiscord && game.username) toast(viaDiscord === 'joined' ? `Signed in as ${game.username}. You’re in the Krosshair Discord too.` : `Signed in as ${game.username}.`, 'good');
+  // The server could not add them itself (no bot token, or Discord refused): ask once, one click to the invite.
+  if (viaDiscord === 'in' && game.username) showDiscordPrompt();
   if (pendingPlay) { const payload = pendingPlay; pendingPlay = null; net.enter(payload); }
   if (authPending === 'signup') { toast(`Welcome, ${game.username}. Your progress now saves to your account.`, 'good'); game.token = null; store('token', null); }
   else if (authPending === 'login') toast(`Welcome back, ${game.username}.`, 'good');

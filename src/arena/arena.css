@@ -841,3 +841,4 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .board-teaser .board-row { grid-template-columns: 20px 28px minmax(0, 1fr) auto; gap: 10px; }
 @media (max-width: 900px) { .board-list { columns: 1; } .podium { grid-template-columns: 1fr; } }
 .page-play .page-title { font-size: clamp(28px, 2.9vw, 50px); }
+.discord-prompt { z-index: 20; } .discord-prompt .discord-button { padding: 13px 18px; }
