@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="refresh" content="0; url=src/arena/index.html" />
   <title>Sniper Shootout</title>
 </head>
 <body>
   <p>Launching <a href="src/arena/index.html">Sniper Shootout</a>...</p>
+  <script>
+    location.replace(`src/arena/index.html${location.search}${location.hash}`);
+  </script>
 </body>
 </html>
