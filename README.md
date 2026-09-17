@@ -2,7 +2,7 @@
 
 A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and five hand-built arenas from a 1v1 gallery to a canyon-sized sniper range. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
 
-No accounts, no asset downloads: every model, texture and sound is generated in code.
+No asset downloads: every model, texture and sound is generated in code. Log in with Discord to play; your progress follows you to any device.
 
 ## Play now
 
@@ -24,6 +24,19 @@ To play with friends, create a private room and send them the invite link shown 
 `krosshair.online` runs off a single dedicated machine: `npm run server` behind a Cloudflare Tunnel (`cloudflared`) routes the domain straight to the Node process on port 4174 — Cloudflare terminates HTTPS and there is no port-forwarding or reverse proxy involved. The game process is managed by systemd (`krosshair.service`) so it restarts on crash and on boot.
 
 A systemd timer (`krosshair-deploy.timer`) polls `origin/main` every few minutes; when it finds a new commit it pulls, reinstalls dependencies if `package.json`/`package-lock.json` changed, and restarts `krosshair.service`. In practice: push to `main` and the live site updates itself within a few minutes, no manual deploy step required.
+
+## Discord login
+
+A Discord login is required to play: the menu shows **Log in / sign up with Discord** and the server turns away anyone who has not logged in, including for bot matches and the practice range. (Until the server has its Discord keys nobody could log in, so it falls back to guest callsigns and says so in its log at start-up.) There is no email and no password: the first Discord login creates the account (and adopts the guest progress already in that browser), later logins find it again by Discord ID, so progress follows the pilot to any device. Each login also adds them to the [Krosshair Discord](https://discord.gg/uFVygVtKzt) — Discord shows "Join servers for you" on its consent screen first.
+
+Login switches on, and becomes mandatory, once the server has Discord keys. One-time setup, by whoever owns the Discord server:
+
+1. Create an application at https://discord.com/developers/applications.
+2. **OAuth2 → Redirects:** add `https://krosshair.online/auth/discord/callback` (and `http://localhost:4174/auth/discord/callback` for local testing).
+3. **Bot:** create the bot and copy its token. Invite it to the Krosshair server with the **Create Invite** permission — without the bot in the server, logins still work but nobody is auto-joined.
+4. On the game machine, copy `.env.example` to `.env`, fill in the client ID, client secret and bot token, and restart `krosshair.service`. `.env` is git-ignored; never commit these values.
+
+The only scopes requested are `identify` and `guilds.join`. Sessions are stored the same way as before (the file keeps a SHA-256 of the token, in `data/accounts.json`).
 
 ## How a match plays
 
@@ -107,7 +120,8 @@ src/arena/
 │   ├── room.js                  # Match state machine, authoritative combat, gadgets
 │   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
 │   ├── bots.js, nav.js          # Bot AI and the generated navigation grid
-│   └── profiles.js              # JSON profile store
+│   ├── profiles.js              # JSON profile store
+│   └── accounts.js, discord.js  # Accounts and "Log in with Discord"
 ├── client/                      # Three.js client (world, characters, viewmodel, HUD, menus, audio)
 └── tests/                       # `npm test`
 backend/                         # Separate Python Call of Duty profile API (unrelated to the arena)

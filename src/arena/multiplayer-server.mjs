@@ -3,13 +3,21 @@ import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, MAX_PLAYERS, dailyModifier, dateKey } from './shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
+import { DiscordAuth, callbackPage } from './server/discord.js';
 import { Room, now } from './server/room.js';
 
-const port = Number(process.env.ARENA_PORT || 4174);
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
+// Secrets (Discord keys) can live in a git-ignored .env next to package.json.
+try { process.loadEnvFile?.(path.join(root, '.env')); } catch { /* no .env */ }
+const port = Number(process.env.ARENA_PORT || 4174);
+const discord = new DiscordAuth();
+// Playing needs an account whenever there is a way to get one. Without Discord keys nobody could log in,
+// so the server falls back to guest callsigns rather than locking everyone out.
+const LOGIN_REQUIRED = ACCOUNTS_ENABLED || discord.enabled;
+if (!LOGIN_REQUIRED) console.warn('Discord keys are not set (see .env.example): login is NOT enforced and pilots play as guests.');
 const profiles = new ProfileStore(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json'));
 await profiles.load();
 const accounts = new AccountStore(process.env.ARENA_ACCOUNTS || path.join(path.dirname(profiles.file), 'accounts.json'));
@@ -74,14 +82,19 @@ function signIn(socket, account, message, session = null) {
   profile.name = account.username;
   profiles.scheduleSave();
   if (socket.player) { socket.player.name = account.username; socket.room.pushRoom(); }
-  send(socket, { type: 'identity', username: account.username, session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
+  send(socket, { type: 'identity', username: account.username, avatar: account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null, session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
 }
 
 async function handleAuth(socket, message) {
   const fail = (text) => send(socket, { type: 'auth-error', action: message.action, message: text });
   if (message.action === 'resume') {
     const account = accounts.resume(message.session);
-    return account ? signIn(socket, account, message) : send(socket, { type: 'auth-required', expired: true });
+    if (!account) return send(socket, { type: 'auth-required', expired: true });
+    if (account.claimOpen) {
+      const legacy = typeof message.legacyToken === 'string' && message.legacyToken.length >= 16 && message.legacyToken.length <= 64 && profiles.profiles.has(ProfileStore.key(message.legacyToken)) ? message.legacyToken : null;
+      if (accounts.claim(account, legacy)) console.log(`account ${account.username} kept guest progress`);
+    }
+    return signIn(socket, account, message);
   }
   if (message.action === 'logout') {
     accounts.logout(message.session);
@@ -89,6 +102,7 @@ async function handleAuth(socket, message) {
     Object.assign(socket, { identified: false, token: null, name: null, account: null });
     return send(socket, { type: 'logged-out' });
   }
+  if (!ACCOUNTS_ENABLED) return fail('Password accounts are switched off. Log in with Discord or play with a callsign.');
   if (socket.authBusy) return;
   const t = now();
   socket.authAttempts = (socket.authAttempts || []).filter((at) => t - at < 60);
@@ -139,6 +153,25 @@ function findQuickRoom(queue) {
 const allowed = [/^\/index\.html$/, /^\/src\/arena\/(?!server\/|tests\/|multiplayer-server)[\w./-]+$/, /^\/node_modules\/three\/build\/three\.(module|core)(\.min)?\.js$/];
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
+async function discordRoute(request, response, url) {
+  const page = (status, body) => { response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); response.end(callbackPage(body)); };
+  if (!discord.enabled) return page(503, { error: 'Discord login is not set up on this server yet.' });
+  if (url.pathname === '/auth/discord') {
+    const target = discord.start(request);
+    if (!target) return page(503, { error: 'Too many logins in progress. Try again in a minute.' });
+    response.writeHead(302, { Location: target, 'Cache-Control': 'no-store' });
+    return response.end();
+  }
+  if (url.searchParams.get('error')) return page(400, { error: 'Discord login was cancelled.' });
+  try {
+    const { user, joined } = await discord.finish(request, url.searchParams.get('code') || '', url.searchParams.get('state') || '');
+    const result = accounts.discordSignIn(user);
+    if (!result) return page(400, { error: 'Discord sent back an account we could not read.' });
+    console.log(`discord ${result.created ? 'signup' : 'login'}: ${result.account.username}${joined ? ' (in the server)' : ''}`);
+    page(200, { session: result.session, joined });
+  } catch (error) { page(400, { error: error.message }); }
+}
+
 const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://arena.local');
   if (url.pathname === '/api/status') {
@@ -146,6 +179,7 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) }));
     return;
   }
+  if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback') return void discordRoute(request, response, url);
   const requested = decodeURIComponent(url.pathname);
   // Relative asset paths only resolve from the real page URL, so send bare visits there.
   if (requested === '/' || requested === '/index.html' || requested === '/src/arena/' || requested === '/src/arena') {
@@ -203,6 +237,7 @@ function enter(socket, message) {
 
 wss.on('connection', (socket) => {
   sockets.add(socket);
+  send(socket, { type: 'config', discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE });
   socket.identified = false;
   socket.room = null;
   socket.player = null;
@@ -222,15 +257,17 @@ wss.on('connection', (socket) => {
         return send(socket, { type: 'pong', c: message.c, s: now() });
       }
       if (message.type === 'auth') {
-        if (!ACCOUNTS_ENABLED) return send(socket, { type: 'auth-error', action: message.action, message: 'Accounts are switched off for now. Play with a callsign instead.' });
+        if (!ACCOUNTS_ENABLED && !discord.enabled) return send(socket, { type: 'auth-error', action: message.action, message: 'Accounts are switched off for now. Play with a callsign instead.' });
         return void handleAuth(socket, message);
       }
       if (message.type === 'identify') {
-        if (ACCOUNTS_ENABLED) return send(socket, { type: 'auth-required' });
+        if (LOGIN_REQUIRED) return send(socket, { type: 'auth-required' });
         // Guest play: a callsign plus a device token the browser keeps.
         const name = cleanName(message.name);
         if (name.length < 2) return send(socket, { type: 'error', message: 'Choose a callsign with at least 2 characters.' });
         socket.token = typeof message.token === 'string' && message.token.length >= 16 && message.token.length <= 64 ? message.token : ProfileStore.newToken();
+        // Progress that now belongs to an account is only reachable by logging in to it.
+        if (accounts.ownsProfile(socket.token)) socket.token = ProfileStore.newToken();
         socket.session = typeof message.tab === 'string' ? message.tab.slice(0, 64) : ProfileStore.newToken();
         socket.name = name;
         socket.identified = true;

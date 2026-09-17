@@ -223,6 +223,8 @@ export const WEAPONS = {
 // pilots play as guests with a callsign, and progress stays tied to their browser.
 // Flip to true to bring back login and sign-up (server/accounts.js keeps working either way).
 export const ACCOUNTS_ENABLED = false;
+// Community server. Logging in with Discord adds pilots to it; this link is for everyone else.
+export const DISCORD_INVITE = 'https://discord.gg/uFVygVtKzt';
 
 // Sight types (weapon.sight): scope = full scope overlay, prism = magnified lens, dot = red dot,
 // holo = holographic window, iron = iron sights on the model, bead = shotgun bead.

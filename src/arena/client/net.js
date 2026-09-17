@@ -1,6 +1,5 @@
 // WebSocket transport: identify, clock sync, automatic reconnect.
-import { bus, game, store } from './state.js';
-import { ACCOUNTS_ENABLED } from '../shared/constants.js';
+import { bus, game, store, stored } from './state.js';
 
 const handlers = new Map();
 let socket = null;
@@ -19,6 +18,8 @@ function remember(name) {
 
 export const net = {
   connected: false,
+  // Discord login stores its session on the server's own origin, so it only works when the page is served from there.
+  sameOrigin: serverOrigin === location,
   identified: false,
   rtt: 0,
   offset: 0,
@@ -61,7 +62,6 @@ function connect() {
     setTimeout(ping, 250);
     setTimeout(ping, 600);
     pingTimer = setInterval(ping, 2000);
-    if (!ACCOUNTS_ENABLED) { if (game.name.trim().length >= 2) net.identify(); } else if (game.authSession) net.auth('resume'); else bus.emit('auth-required', {});
   });
   socket.addEventListener('message', (event) => {
     let message;
@@ -70,14 +70,26 @@ function connect() {
     if (message.type === 'identity') {
       if (message.session) { game.authSession = message.session; store('authSession', message.session); }
       if (message.token) { game.token = message.token; store('token', message.token); }
-      if (message.username) { game.username = message.username; game.name = message.username; }
+      if (message.username) { game.username = message.username; game.name = message.username; game.avatar = message.avatar || null; }
       net.identified = true;
       if (wantRoom) net.send({ type: 'enter', action: 'rejoin', room: wantRoom, look: game.look });
     }
     if (message.type === 'rejoin-failed') remember(null);
+    // First thing the server says. It decides how this browser introduces itself: a saved login wins,
+    // then a guest callsign if the server still allows guests, otherwise the menu asks for a login.
+    if (message.type === 'config') {
+      game.discord = { enabled: Boolean(message.discord), invite: message.invite || '' };
+      game.loginRequired = Boolean(message.loginRequired);
+      if (game.authSession) net.auth('resume', { legacyToken: game.token || undefined });
+      else if (!game.loginRequired) { if (game.name.trim().length >= 2) net.identify(); }
+      else bus.emit('auth-required', {});
+      bus.emit('config');
+    }
     if (message.type === 'auth-required' || message.type === 'logged-out') {
       game.authSession = null; store('authSession', null);
-      game.username = null; game.profile = null; net.identified = false;
+      game.username = null; game.avatar = null; game.profile = null; net.identified = false;
+      // Back to guest play: the callsign this browser used before logging in.
+      if (!game.loginRequired) { game.name = stored('name', ''); if (game.name.trim().length >= 2) net.identify(); }
     }
     handlers.get(message.type)?.(message);
   });

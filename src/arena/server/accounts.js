@@ -1,4 +1,4 @@
-// Username + password accounts. No email, no verification.
+// Accounts: username + password, or Discord. No email, no verification.
 // Passwords are never stored: each account keeps a random salt and an scrypt hash.
 // Login hands the browser a random session token; the file only keeps its SHA-256,
 // so a copy of data/accounts.json can't be used to sign in. data/ is git-ignored.
@@ -22,6 +22,7 @@ export class AccountStore {
     this.file = file;
     this.accounts = new Map(); // lower-case username → account
     this.sessions = new Map(); // session hash → lower-case username
+    this.discord = new Map();  // Discord user id → lower-case username
     this.saveTimer = null;
   }
 
@@ -31,6 +32,7 @@ export class AccountStore {
       for (const account of Object.values(data.accounts || {})) {
         const key = account.username.toLowerCase();
         this.accounts.set(key, account);
+        if (account.discordId) this.discord.set(account.discordId, key);
         for (const session of account.sessions || []) this.sessions.set(session.hash, key);
       }
     } catch { /* first boot */ }
@@ -78,6 +80,7 @@ export class AccountStore {
   async login(username, password) {
     const account = typeof username === 'string' ? this.accounts.get(username.toLowerCase()) : null;
     if (typeof password !== 'string' || password.length > 128) return null;
+    if (account && !account.hash) return null; // Discord-only account: there is no password to check
     // Unknown usernames still pay for a hash so response time doesn't reveal which names exist.
     const salt = account ? Buffer.from(account.salt, 'base64') : randomBytes(16);
     const derived = await derive(password, salt, account?.kdf);
@@ -85,6 +88,40 @@ export class AccountStore {
     const expected = Buffer.from(account.hash, 'base64');
     if (expected.length !== derived.length || !timingSafeEqual(expected, derived)) return null;
     return { account, session: this.openSession(account) };
+  }
+
+  // A callsign from a Discord name: same alphabet as typed usernames, never one that is taken.
+  freeUsername(wanted) {
+    let base = String(wanted || '').normalize('NFKD').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 16);
+    if (base.length < 3) base = 'Pilot';
+    if (!this.taken(base)) return base;
+    for (let n = 2; n < 10000; n += 1) { const name = `${base.slice(0, 16 - String(n).length)}${n}`; if (!this.taken(name)) return name; }
+    return `Pilot${randomBytes(4).toString('hex')}`;
+  }
+
+  // Sign-up and login are the same step with Discord: the first visit creates the account.
+  discordSignIn(user) {
+    if (!user || !/^\d{5,25}$/.test(user.id)) return null;
+    let account = this.accounts.get(this.discord.get(user.id));
+    const created = !account;
+    if (!account) {
+      // claimOpen: the browser's guest progress may be attached once, on its first connection (see claim()).
+      account = { username: this.freeUsername(user.globalName || user.username), discordId: user.id, created: Date.now(), profileToken: randomUUID(), claimOpen: true, sessions: [] };
+      this.accounts.set(account.username.toLowerCase(), account);
+      this.discord.set(user.id, account.username.toLowerCase());
+    }
+    account.discordName = String(user.username || '').slice(0, 40);
+    account.avatar = /^[a-z0-9_]{1,64}$/i.test(user.avatar || '') ? user.avatar : null;
+    return { account, created, session: this.openSession(account) };
+  }
+  // A brand-new Discord account adopts the guest profile this browser was already playing on.
+  claim(account, profileToken) {
+    if (!account.claimOpen) return false;
+    account.claimOpen = false;
+    this.scheduleSave();
+    if (!profileToken || this.ownsProfile(profileToken)) return false;
+    account.profileToken = profileToken;
+    return true;
   }
 
   openSession(account) {

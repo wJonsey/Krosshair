@@ -5,7 +5,7 @@ export const bus = {
   emit(type, payload) { listeners.get(type)?.forEach((handler) => handler(payload)); },
 };
 
-function stored(key, fallback) {
+export function stored(key, fallback) {
   try { const value = localStorage.getItem(`krosshair:${key}`); return value === null ? fallback : JSON.parse(value); } catch { return fallback; }
 }
 export function store(key, value) {
@@ -40,6 +40,9 @@ export const game = {
   token: stored('token', null), // pre-accounts guest progress, claimed on sign-up
   authSession: stored('authSession', null),
   username: null,
+  avatar: null,
+  discord: { enabled: false, invite: '' }, // from the server's 'config' message
+  loginRequired: false, // set by the server's 'config' message: true once it can offer a login
   session,
   look: stored('look', { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' }),
   settings: { ...DEFAULT_SETTINGS, ...stored('settings', {}) },

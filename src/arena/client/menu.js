@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { BOT_DIFFICULTY, COSMETICS, MASTERY_TIERS, MODIFIERS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankName, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
-import { ACCOUNTS_ENABLED } from '../shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE } from '../shared/constants.js';
 import { net } from './net.js';
 import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind } from './input.js';
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
@@ -43,11 +43,23 @@ let applyingPrefs = false;
 let prefsTimer = null;
 
 let pendingPlay = null;
+const DISCORD_MARK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.6 5.2A17 17 0 0 0 15.4 4l-.5 1a15.700 15.700 0 0 0-5.800 0L8.600 4a17 17 0 0 0-4.200 1.200C1.700 9.200 1 13.100 1.300 17a17.100 17.100 0 0 0 5.200 2.600l1.100-1.800a11 11 0 0 1-1.700-.8l.4-.3a12.200 12.200 0 0 0 11.400 0l.4.3c-.5.300-1.100.600-1.700.8l1.100 1.800a17 17 0 0 0 5.200-2.600c.4-4.500-.7-8.400-3.100-11.800ZM8.700 14.600c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Zm6.600 0c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Z"/></svg>';
+function accountRowHtml() {
+  const avatar = game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="36" height="36" referrerpolicy="no-referrer" />` : '';
+  return `<div class="account-row">${avatar}<div><span class="field-label">${game.avatar || !ACCOUNTS_ENABLED ? 'Signed in with Discord' : 'Signed in as'}</span><b>${escapeHtml(game.username)}</b></div><button type="button" id="logout-button" class="ghost-button">Log out</button></div>`;
+}
+// Sign-up and login are the same button. When the server requires a login there is no guest callsign at all.
+function discordHtml() {
+  const canLogin = game.discord.enabled && net.sameOrigin;
+  const required = game.loginRequired && !ACCOUNTS_ENABLED;
+  const login = canLogin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'You need a Discord login to play. ' : ''}No email or password. Your progress follows you to any device, and you’re added to the Krosshair Discord — Discord asks you to approve that first.</small>` : required ? '<p class="muted">This server needs a Discord login, which only works from the game’s own address. Open the game there to play.</p>' : '';
+  return `<div class="discord-block${required ? ' required' : ''}">${login}<a class="discord-link" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">${canLogin && !required ? 'Just want to look around? Join the Discord →' : 'Join the Krosshair Discord →'}</a></div>`;
+}
 function authHtml() {
-  if (!ACCOUNTS_ENABLED) return `<label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label>`;
-  if (game.username) {
-    return `<div class="account-row"><div><span class="field-label">Signed in as</span><b>${escapeHtml(game.username)}</b></div><button type="button" id="logout-button" class="ghost-button">Log out</button></div>`;
-  }
+  if (game.username) return accountRowHtml();
+  if (!net.connected && !game.discord.enabled) return '<p class="muted">Connecting to the relay…</p>';
+  if (game.loginRequired && !ACCOUNTS_ENABLED) return discordHtml();
+  if (!ACCOUNTS_ENABLED) return `<label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label>${discordHtml()}`;
   const signup = authMode === 'signup';
   return `<form class="auth" id="auth-form" novalidate>
     <div class="segmented" role="tablist" aria-label="Account">${[['login', 'Log in'], ['signup', 'Sign up']].map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === authMode}" class="${id === authMode ? 'active' : ''}" data-auth-mode="${id}">${label}</button>`).join('')}</div>
@@ -133,7 +145,7 @@ function swatchRow(kind, key, level) {
 
 function careerHtml() {
   const profile = game.profile;
-  if (!profile) return `<div class="panel"><p class="eyebrow">Career</p><p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.') : 'Connecting to the relay…'}</p></div>`;
+  if (!profile) return `<div class="panel"><p class="eyebrow">Career</p><p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : (game.loginRequired ? 'Log in with Discord to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.')) : 'Connecting to the relay…'}</p></div>`;
   const level = profile.level, base = xpForLevel(level), next = xpForLevel(level + 1);
   const progress = Math.round(((profile.xp - base) / (next - base)) * 100);
   const s = profile.stats;
@@ -164,7 +176,7 @@ function careerHtml() {
 // Compact pilot card for the Play page: who you are, how far to the next level, today's contracts.
 function pilotHtml() {
   const profile = game.profile;
-  if (!profile) return `<p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.') : 'Connecting to the relay…'}</p>`;
+  if (!profile) return `<p class="muted">${net.connected ? (ACCOUNTS_ENABLED ? 'Log in or sign up to load your career, contracts and unlocks.' : (game.loginRequired ? 'Log in with Discord to load your career, contracts and unlocks.' : 'Enter a callsign to load your career, contracts and unlocks.')) : 'Connecting to the relay…'}</p>`;
   const level = profile.level, base = xpForLevel(level), next = xpForLevel(level + 1);
   const progress = Math.round(((profile.xp - base) / (next - base)) * 100);
   const ranked = profile.rankedMatches > 0;
@@ -279,7 +291,9 @@ function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({
 function play_(payload) {
   unlockAudio();
   if (!net.connected) { toast('Still connecting to the relay… start the server with npm run arena.', 'warn'); return; }
-  if (!ACCOUNTS_ENABLED) {
+  if (game.loginRequired && !ACCOUNTS_ENABLED) {
+    if (!net.identified) { toast('Log in with Discord to play.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
+  } else if (!ACCOUNTS_ENABLED) {
     const input = $('#name-input');
     if (input) game.name = input.value.trim().slice(0, 16);
     if (game.name.length < 2) { toast('Choose a callsign with at least 2 characters first.', 'warn'); setHomePage('play'); $('#name-input')?.focus(); play('deny'); return; }
@@ -332,7 +346,12 @@ home.addEventListener('submit', (event) => {
   setAuthStatus(authMode === 'signup' ? 'Creating your account…' : 'Logging in…');
   net.auth(authMode, { username, password, legacyToken: authMode === 'signup' ? game.token : undefined });
 });
+bus.on('config', () => { if (game.screen === 'home') renderHome(); });
 bus.on('signed-in', () => {
+  // Set by the Discord callback page on its way back to the menu.
+  let viaDiscord = null;
+  try { viaDiscord = sessionStorage.getItem('krosshair:discord'); sessionStorage.removeItem('krosshair:discord'); } catch { /* private mode */ }
+  if (viaDiscord && game.username) toast(viaDiscord === 'joined' ? `Signed in as ${game.username}. You’re in the Krosshair Discord too.` : `Signed in as ${game.username}.`, 'good');
   if (pendingPlay) { const payload = pendingPlay; pendingPlay = null; net.enter(payload); }
   if (authPending === 'signup') { toast(`Welcome, ${game.username}. Your progress now saves to your account.`, 'good'); game.token = null; store('token', null); }
   else if (authPending === 'login') toast(`Welcome back, ${game.username}.`, 'good');
