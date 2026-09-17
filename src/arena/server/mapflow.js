@@ -7,8 +7,7 @@ import { World } from '../shared/physics.js';
 import { NavGrid } from './nav.js';
 
 const now = () => performance.now() / 1000;
-const VOTE_SECONDS = 15;
-const VOTE_CHOICES = 3;
+const VOTE_SECONDS = 25; // every arena is on the ballot, so give people time to look
 const navCache = new Map();
 let variantCursor = Math.floor(Math.random() * 97);
 
@@ -60,12 +59,6 @@ export function setRoomMap(room, id) {
   room.lastKill = null;
 }
 
-function shuffled(list) {
-  const copy = [...list];
-  for (let i = copy.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [copy[i], copy[j]] = [copy[j], copy[i]]; }
-  return copy;
-}
-
 function randomMap(room) {
   // Never the same arena twice in a row once a room has played a match.
   const pool = room.mapPlayed ? MAP_IDS.filter((id) => id !== room.map.id) : MAP_IDS;
@@ -99,7 +92,7 @@ function startVote(room) {
   room.mapVotes.clear();
   room.rematch.clear();
   room.autoStartAt = 0;
-  room.mapChoices = shuffled(MAP_IDS).slice(0, VOTE_CHOICES);
+  room.mapChoices = [...MAP_IDS];
   room.broadcast({ type: 'phase', phase: 'mapvote', phaseEnds: room.phaseEnds });
   room.pushRoom();
 }

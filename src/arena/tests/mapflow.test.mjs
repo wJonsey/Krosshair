@@ -44,15 +44,15 @@ test('host can pin a map, and the match starts on it with pilots inside their sp
   }
 });
 
-test('a vote offers three arenas, counts ballots and starts the winner early once everyone has voted', () => {
+test('a vote offers every arena, counts ballots and starts the winner early once everyone has voted', () => {
   const room = makeRoom();
   const a = fakeSocket(), b = fakeSocket();
   const host = room.join(a, { token: 'tok-host-1234567890', session: 's1', name: 'Host' }, look);
   const guest = room.join(b, { token: 'tok-guest-123456789', session: 's2', name: 'Guest' }, look);
   room.handle(host, { type: 'start' });
   assert.equal(room.phase, 'mapvote');
-  assert.equal(room.mapChoices.length, 3);
-  assert.equal(new Set(room.mapChoices).size, 3);
+  assert.equal(room.mapChoices.length, MAP_IDS.length);
+  assert.equal(new Set(room.mapChoices).size, MAP_IDS.length);
   const pick = room.mapChoices[1];
   room.handle(host, { type: 'map-vote', id: pick });
   room.handle(guest, { type: 'map-vote', id: 'not-a-map' });

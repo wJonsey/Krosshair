@@ -13,95 +13,160 @@ function mat(color, options = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness: options.rough ?? 0.6, metalness: options.metal ?? 0.1, emissive: options.emissive ?? '#000000', emissiveIntensity: options.glow ?? 0 });
 }
 
-// Builds a 1.8 m operator. Returns the root group; animated parts live in userData.
+// Geometry is shared by every operator in the match; only materials are per pilot.
+const GEO = {};
+const geo = (key, make) => (GEO[key] ||= make());
+const UP = new THREE.Vector3(0, 1, 0);
+// A limb segment between two points: a capsule whose round ends read as joints.
+function bone(group, from, to, radius, material) {
+  const a = new THREE.Vector3(...from), c = new THREE.Vector3(...to);
+  const length = a.distanceTo(c);
+  const mesh = new THREE.Mesh(geo(`bone:${radius}:${length.toFixed(3)}`, () => new THREE.CapsuleGeometry(radius, length, 4, 10)), material);
+  mesh.position.copy(a).add(c).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(UP, c.sub(a).normalize());
+  group.add(mesh);
+  return mesh;
+}
+function block(group, key, size, material, position, rotation = null) {
+  const mesh = new THREE.Mesh(geo(`box:${key}`, () => new THREE.BoxGeometry(...size)), material);
+  mesh.position.set(...position);
+  if (rotation) mesh.rotation.set(...rotation);
+  group.add(mesh);
+  return mesh;
+}
+
+// Builds a 1.8 m operator: fatigues, plate carrier, helmet with a wrap-around visor, jointed arms on
+// the rifle. The pilot's suit colour is on the sleeves, shoulders, thighs and helmet stripe so it reads
+// at range; the visor carries the accent; white strips take the team colour. Animated parts live in
+// userData. Proportions follow the hit zones in shared/combat.js (head centre 1.6 m, torso 0.9–1.4 m).
 export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const root = new THREE.Group();
-  const suit = mat(color, { rough: 0.55 });
-  const dark = mat('#1d242c', { rough: 0.7 });
-  const gear = mat('#2b343e', { rough: 0.5, metal: 0.3 });
-  const visorMat = mat(accent, { emissive: accent, glow: 1.4, rough: 0.2 });
+  const suit = mat(color, { rough: 0.6 });
+  const dark = mat('#2b333c', { rough: 0.85 });
+  const gear = mat('#3d4853', { rough: 0.55, metal: 0.2 });
+  const plate = mat('#56636f', { rough: 0.5, metal: 0.25 });
+  const skin = mat('#c99a7c', { rough: 0.85 });
+  const visorMat = mat(accent, { emissive: accent, glow: 1.4, rough: 0.15, metal: 0.4 });
   const teamMat = mat('#ffffff', { emissive: '#ffffff', glow: 1.8 });
 
+  // --- hips and legs ---------------------------------------------------------------------------
   const hips = new THREE.Group();
-  hips.position.y = 0.95;
+  hips.position.y = 0.96;
   root.add(hips);
-  const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.24, 0.26), dark);
-  hips.add(pelvis);
+  block(hips, 'pelvis', [0.38, 0.22, 0.25], dark, [0, 0, 0]);
+  block(hips, 'belt', [0.41, 0.07, 0.28], gear, [0, 0.09, 0]);
+  block(hips, 'buckle', [0.07, 0.05, 0.02], plate, [0, 0.09, -0.145]);
+  block(hips, 'holster', [0.07, 0.2, 0.13], gear, [0.215, -0.1, 0.0]);
+  block(hips, 'pouch', [0.08, 0.13, 0.12], gear, [-0.215, -0.02, 0.03]);
+  block(hips, 'dump', [0.16, 0.13, 0.07], gear, [0.06, -0.01, 0.16]);
   const legs = [-1, 1].map((side) => {
     const pivot = new THREE.Group();
-    pivot.position.set(side * 0.12, -0.05, 0);
-    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.095, 0.3, 4, 8), dark);
-    thigh.position.y = -0.24;
+    pivot.position.set(side * 0.105, -0.06, 0);
+    bone(pivot, [0, 0, 0], [side * 0.01, -0.4, 0], 0.088, dark);
+    block(pivot, 'thighPanel', [0.11, 0.2, 0.025], suit, [side * 0.01, -0.2, -0.085]);
     const knee = new THREE.Group();
-    knee.position.y = -0.46;
-    const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.082, 0.3, 4, 8), dark);
-    shin.position.y = -0.2;
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.3), gear);
-    boot.position.set(0, -0.42, -0.05);
-    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.12, 0.06), suit);
-    pad.position.set(0, 0, -0.09);
-    knee.add(shin, boot, pad);
-    pivot.add(thigh, knee);
+    knee.position.set(side * 0.01, -0.44, 0);
+    bone(knee, [0, 0, 0], [0, -0.36, 0.01], 0.07, dark);
+    block(knee, 'kneePad', [0.13, 0.13, 0.06], plate, [0, 0.0, -0.075]);
+    block(knee, 'kneeStripe', [0.13, 0.025, 0.065], suit, [0, -0.02, -0.078]);
+    const foot = new THREE.Group();
+    foot.position.set(0, -0.4, 0);
+    block(foot, 'boot', [0.125, 0.12, 0.27], gear, [0, -0.01, -0.05]);
+    block(foot, 'sole', [0.135, 0.035, 0.29], dark, [0, -0.075, -0.05]);
+    block(foot, 'cuff', [0.13, 0.08, 0.15], dark, [0, 0.07, 0.0]);
+    knee.add(foot);
+    pivot.add(knee);
     hips.add(pivot);
-    return { pivot, knee };
+    return { pivot, knee, foot };
   });
 
+  // --- torso ----------------------------------------------------------------------------------------
   const spine = new THREE.Group();
   spine.position.y = 0.1;
   hips.add(spine);
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.28, 4, 10), suit);
-  torso.position.y = 0.27;
-  torso.scale.set(1.08, 1, 0.8);
-  const vest = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.36, 0.34), gear);
-  vest.position.set(0, 0.3, 0);
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.14), dark);
-  pack.position.set(0, 0.32, 0.22);
-  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.02), teamMat);
-  strip.position.set(0, 0.42, 0.295);
-  const chestStrip = strip.clone();
-  chestStrip.position.set(0, 0.44, -0.18);
-  spine.add(torso, vest, pack, strip, chestStrip);
+  const belly = new THREE.Mesh(geo('belly', () => new THREE.CapsuleGeometry(0.155, 0.12, 4, 10)), dark);
+  belly.position.y = 0.1; belly.scale.set(1.08, 1, 0.78);
+  const chest = new THREE.Mesh(geo('chest', () => new THREE.CapsuleGeometry(0.185, 0.16, 4, 12)), suit);
+  chest.position.y = 0.31; chest.scale.set(1.12, 1, 0.74);
+  spine.add(belly, chest);
+  // Plate carrier: front and back plates, cummerbund, three magazine pouches, a radio.
+  block(spine, 'plateF', [0.31, 0.3, 0.05], plate, [0, 0.31, -0.15], [0.06, 0, 0]);
+  block(spine, 'plateB', [0.31, 0.32, 0.05], plate, [0, 0.31, 0.15], [-0.04, 0, 0]);
+  block(spine, 'cummer', [0.43, 0.13, 0.27], gear, [0, 0.19, 0]);
+  for (const x of [-0.1, 0, 0.1]) block(spine, 'mag', [0.082, 0.13, 0.05], gear, [x, 0.2, -0.185], [0.08, 0, 0]);
+  block(spine, 'radio', [0.06, 0.13, 0.05], dark, [-0.13, 0.36, -0.185]);
+  block(spine, 'strapL', [0.06, 0.04, 0.3], gear, [-0.12, 0.47, 0]);
+  block(spine, 'strapL', [0.06, 0.04, 0.3], gear, [0.12, 0.47, 0]);
+  // Pack with a whip antenna.
+  block(spine, 'pack', [0.28, 0.3, 0.13], dark, [0, 0.31, 0.24]);
+  block(spine, 'packTop', [0.22, 0.08, 0.1], gear, [0, 0.49, 0.22]);
+  const antenna = new THREE.Mesh(geo('antenna', () => new THREE.CylinderGeometry(0.006, 0.009, 0.42, 5)), dark);
+  antenna.position.set(0.1, 0.7, 0.26); antenna.rotation.x = 0.12;
+  spine.add(antenna);
+  // Team strips: chest, back and both shoulders, so a side is readable from any angle.
+  block(spine, 'stripF', [0.2, 0.035, 0.015], teamMat, [0.02, 0.42, -0.18], [0.06, 0, 0]);
+  block(spine, 'stripB', [0.22, 0.04, 0.015], teamMat, [0, 0.41, 0.31]);
+  for (const side of [-1, 1]) {
+    const pad = new THREE.Mesh(geo('shoulder', () => new THREE.SphereGeometry(0.105, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55)), suit);
+    pad.position.set(side * 0.235, 0.43, 0); pad.rotation.z = -side * 0.35; pad.scale.set(1, 0.9, 1.1);
+    spine.add(pad);
+    block(spine, 'stripS', [0.02, 0.03, 0.12], teamMat, [side * 0.305, 0.42, 0]);
+  }
 
+  // --- head: centre at 1.62 m ---------------------------------------------------------------------------
   const head = new THREE.Group();
-  head.position.y = 0.66;
-  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.15, 14, 10), mat('#d9a98a', { rough: 0.8 }));
-  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.175, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.62), gear);
-  helmet.position.y = 0.02;
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.07, 0.04), visorMat);
-  visor.position.set(0, 0.01, -0.15);
-  const helmetLight = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.03), teamMat);
-  helmetLight.position.set(0, 0.13, -0.13);
-  head.add(skull, helmet, visor, helmetLight);
+  head.position.y = 0.56;
+  bone(head, [0, -0.13, 0.01], [0, -0.03, 0], 0.055, skin);
+  const face = new THREE.Mesh(geo('face', () => new THREE.SphereGeometry(0.128, 14, 10)), skin);
+  face.scale.set(0.92, 1.08, 1);
+  const balaclava = new THREE.Mesh(geo('balaclava', () => new THREE.SphereGeometry(0.133, 14, 10, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48)), dark);
+  balaclava.scale.set(0.95, 1.08, 1.02);
+  const helmet = new THREE.Mesh(geo('helmet', () => new THREE.SphereGeometry(0.168, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.56)), gear);
+  helmet.position.y = 0.025; helmet.scale.set(1, 0.98, 1.1);
+  const stripe = new THREE.Mesh(geo('helmetStripe', () => new THREE.BoxGeometry(0.05, 0.02, 0.3)), suit);
+  stripe.position.set(0, 0.185, 0.0);
+  block(head, 'brim', [0.2, 0.025, 0.06], gear, [0, 0.075, -0.17], [0.25, 0, 0]);
+  // Wrap-around visor: a slice of a cylinder rather than a flat bar.
+  const visor = new THREE.Mesh(geo('visor', () => new THREE.CylinderGeometry(0.139, 0.139, 0.062, 18, 1, true, Math.PI - 1.05, 2.1)), visorMat);
+  visor.material.side = THREE.DoubleSide;
+  visor.position.set(0, 0.02, 0.0);
+  for (const side of [-1, 1]) { const cup = new THREE.Mesh(geo('earCup', () => new THREE.CylinderGeometry(0.052, 0.052, 0.04, 10)), gear); cup.rotation.z = Math.PI / 2; cup.position.set(side * 0.158, 0.0, 0.015); head.add(cup); }
+  block(head, 'nvgMount', [0.05, 0.05, 0.04], plate, [0, 0.135, -0.165]);
+  const helmetLight = block(head, 'helmetLight', [0.05, 0.025, 0.02], teamMat, [0, 0.105, -0.183]);
+  block(head, 'rearLight', [0.06, 0.025, 0.02], teamMat, [0, 0.06, 0.185]);
+  head.add(face, balaclava, helmet, stripe, visor);
   spine.add(head);
 
-  // Arms + rifle pitch together around the shoulders.
+  // --- arms and weapon pitch together about the shoulders -----------------------------------------------------
   const aim = new THREE.Group();
-  aim.position.y = 0.46;
+  aim.position.y = 0.44;
   spine.add(aim);
   const gun = new THREE.Group();
-  const gunBody = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.1, 0.62), gear);
-  gunBody.position.set(0, 0, -0.36);
-  const gunBarrel = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.55, 6), dark);
-  gunBarrel.rotation.x = Math.PI / 2;
-  gunBarrel.position.set(0, 0.02, -0.9);
-  const gunScope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.24, 8), dark);
-  gunScope.rotation.x = Math.PI / 2;
-  gunScope.position.set(0, 0.09, -0.36);
-  const gunStock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.26), dark);
-  gunStock.position.set(0, -0.02, 0.06);
-  gun.add(gunBody, gunBarrel, gunScope, gunStock);
-  gun.position.set(0.12, -0.06, -0.1);
-  const armGeometry = new THREE.CapsuleGeometry(0.06, 0.42, 4, 8);
-  const rightArm = new THREE.Mesh(armGeometry, suit);
-  rightArm.position.set(0.22, -0.1, -0.16);
-  rightArm.rotation.set(-1.15, 0, -0.18);
-  const leftArm = new THREE.Mesh(armGeometry, suit);
-  leftArm.position.set(-0.1, -0.08, -0.34);
-  leftArm.rotation.set(-1.35, 0, 0.62);
-  aim.add(gun, rightArm, leftArm);
+  gun.position.set(0.11, -0.07, -0.1);
+  const gunBody = block(gun, 'gunBody', [0.055, 0.095, 0.5], gear, [0, 0, -0.3]);
+  block(gun, 'gunGuard', [0.06, 0.07, 0.24], dark, [0, -0.005, -0.62]);
+  block(gun, 'gunGrip', [0.04, 0.11, 0.05], dark, [0, -0.09, -0.1], [-0.3, 0, 0]);
+  const gunMag = block(gun, 'gunMag', [0.04, 0.15, 0.065], dark, [0, -0.11, -0.34], [0.15, 0, 0]);
+  const gunBarrel = new THREE.Mesh(geo('gunBarrel', () => new THREE.CylinderGeometry(0.015, 0.015, 0.5, 8)), dark);
+  gunBarrel.rotation.x = Math.PI / 2; gunBarrel.position.set(0, 0.015, -0.95);
+  const gunScope = new THREE.Mesh(geo('gunScope', () => new THREE.CylinderGeometry(0.028, 0.028, 0.26, 10)), dark);
+  gunScope.rotation.x = Math.PI / 2; gunScope.position.set(0, 0.088, -0.34);
+  const gunStock = block(gun, 'gunStock', [0.045, 0.11, 0.26], dark, [0, -0.02, 0.06]);
+  gun.add(gunBarrel, gunScope);
+  // Right hand on the grip, left hand forward on the guard; elbows out like someone who has done this before.
+  const arms = new THREE.Group();
+  bone(arms, [0.215, -0.01, 0.0], [0.29, -0.22, -0.06], 0.058, suit);
+  bone(arms, [0.29, -0.22, -0.06], [0.125, -0.15, -0.2], 0.05, suit);
+  block(arms, 'glove', [0.075, 0.075, 0.09], gear, [0.115, -0.15, -0.21]);
+  bone(arms, [-0.215, -0.01, 0.0], [-0.24, -0.2, -0.3], 0.058, suit);
+  bone(arms, [-0.24, -0.2, -0.3], [0.06, -0.12, -0.66], 0.05, suit);
+  block(arms, 'glove', [0.075, 0.075, 0.09], gear, [0.085, -0.115, -0.69]);
+  for (const x of [0.29, -0.24]) block(arms, 'elbowPad', [0.085, 0.085, 0.085], plate, [x, x > 0 ? -0.22 : -0.2, x > 0 ? -0.06 : -0.3]);
+  aim.add(gun, arms);
 
   root.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
-  root.userData = { hips, spine, head, aim, legs, gun, gunBarrel, gunScope, suit, visorMat, teamMat, phase: Math.random() * 6, crouch: 0, materials: [suit, dark, gear, visorMat, teamMat] };
+  antenna.castShadow = false;
+  root.userData = { hips, spine, head, aim, legs, gun, gunBody, gunBarrel, gunScope, gunStock, gunMag, helmetLight, suit, visorMat, teamMat, phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0, materials: [suit, dark, gear, plate, skin, visorMat, teamMat] };
   return root;
 }
 
@@ -112,27 +177,48 @@ export function styleOperator(root, { color, accent, team }) {
   if (team) { data.teamMat.color.set(TEAM_COLORS[team]); data.teamMat.emissive.set(TEAM_COLORS[team]); }
 }
 
+const GUN_SHAPES = { sniper: [1, true], marksman: [0.95, true], lmg: [1, true], rifle: [0.85, true], shotgun: [0.95, true], smg: [0.68, true], pistol: [0.42, false] };
 // pose: { speed, crouch, pitch, weapon, dt }
 export function animateOperator(root, pose) {
   const data = root.userData;
   data.crouch += ((pose.crouch ? 1 : 0) - data.crouch) * Math.min(1, pose.dt * 12);
   const c = data.crouch;
-  data.phase += pose.dt * Math.min(pose.speed, 7) * 1.9;
+  const pace = Math.min(pose.speed, 7);
+  data.phase += pose.dt * pace * 1.9;
+  data.idle += pose.dt;
   const stride = Math.min(1, pose.speed / 5) * (1 - c * 0.4);
-  const swing = Math.sin(data.phase) * 0.75 * stride;
-  data.hips.position.y = 0.95 - c * 0.42 + Math.abs(Math.cos(data.phase)) * 0.035 * stride;
-  data.legs.forEach(({ pivot, knee }, index) => {
+  data.lean += (stride - data.lean) * Math.min(1, pose.dt * 8);
+  const swing = Math.sin(data.phase) * 0.78 * stride;
+  const breath = Math.sin(data.idle * 1.7) * (1 - stride);
+  // Hips: bob twice per stride, sway side to side, and drop for the crouch.
+  data.hips.position.y = 0.96 - c * 0.42 + Math.abs(Math.cos(data.phase)) * 0.04 * stride;
+  data.hips.position.x = Math.sin(data.phase) * 0.018 * stride;
+  data.hips.rotation.y = Math.sin(data.phase) * 0.16 * stride;
+  data.hips.rotation.z = Math.sin(data.phase) * 0.03 * stride;
+  data.legs.forEach(({ pivot, knee, foot }, index) => {
     const s = index === 0 ? swing : -swing;
     pivot.rotation.x = s - c * 1.15;
-    knee.rotation.x = Math.max(0, -s) * 0.9 + c * 1.9 + stride * 0.25;
+    knee.rotation.x = Math.max(0, -s) * 1.05 + c * 1.9 + stride * 0.22;
+    // Heel strike and toe-off, and flat on the ground when crouched.
+    foot.rotation.x = -(pivot.rotation.x + knee.rotation.x) * (c > 0.5 ? 1 : 0.35) + Math.max(0, s) * 0.3 * stride;
   });
-  data.spine.rotation.x = c * 0.28 + stride * 0.08;
+  // Shoulders counter-rotate against the hips; the torso leans into a run and breathes when still.
+  data.spine.rotation.x = c * 0.28 + data.lean * 0.13;
+  data.spine.rotation.y = -Math.sin(data.phase) * 0.24 * stride;
+  data.spine.position.y = 0.1 + breath * 0.004;
   data.aim.rotation.x = pose.pitch - data.spine.rotation.x;
-  data.head.rotation.x = pose.pitch * 0.6;
+  data.aim.rotation.y = Math.sin(data.phase) * 0.1 * stride;
+  data.aim.position.y = 0.44 + breath * 0.005 + Math.abs(Math.sin(data.phase)) * 0.012 * stride;
+  data.head.rotation.x = pose.pitch * 0.6 - data.lean * 0.08;
+  data.head.rotation.y = Math.sin(data.phase) * 0.12 * stride;
+  // The weapon in their hands matches what they are carrying.
   const weapon = WEAPONS[pose.weapon] || WEAPONS.m44;
+  const [length, long] = weapon.melee ? [0.3, false] : GUN_SHAPES[weapon.slot === 'sidearm' && weapon.family !== 'shotgun' ? 'pistol' : weapon.family] || GUN_SHAPES.pistol;
+  data.gun.scale.z = length;
   data.gunBarrel.visible = !weapon.melee;
+  data.gunStock.visible = long;
+  data.gunMag.visible = !weapon.melee && weapon.action !== 'bolt' && weapon.family !== 'shotgun';
   data.gunScope.visible = Boolean(weapon.scope && weapon.scope[0] < 40);
-  data.gun.scale.z = weapon.slot === 'sidearm' ? 0.45 : { sniper: 1, marksman: 0.95, lmg: 1, shotgun: weapon.pellets > 1 ? 0.95 : 1, rifle: 0.85, smg: 0.7 }[weapon.family] || 0.45;
 }
 
 function nameTag(text, color) {

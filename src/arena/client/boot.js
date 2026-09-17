@@ -53,8 +53,9 @@
     el.classList.add('ready');
     // Coming back into a live match (refresh / reconnect) should not wait on a click.
     let rejoining = false;
-    try { rejoining = Boolean(sessionStorage.getItem('krosshair:room')); } catch { /* private mode */ }
-    if (rejoining || new URLSearchParams(location.search).has('skipintro')) { close(); return; }
+    let refreshed = false; // set by net.js when the page reloads itself to pick up a new deploy
+    try { rejoining = Boolean(sessionStorage.getItem('krosshair:room')); refreshed = Boolean(sessionStorage.getItem('krosshair:skipintro')); sessionStorage.removeItem('krosshair:skipintro'); } catch { /* private mode */ }
+    if (rejoining || refreshed || new URLSearchParams(location.search).has('skipintro')) { close(); return; }
     enter.classList.remove('hidden');
     enter.focus({ preventScroll: true });
   }

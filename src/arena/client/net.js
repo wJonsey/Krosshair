@@ -6,6 +6,7 @@ let socket = null;
 let offsetSamples = [];
 let retry = 0;
 let pingTimer = null;
+let build = null; // the server's build stamp when this page loaded
 const pagesBackend = 'https://sturdy-couscous-wr4gp496w77g25jpp-4174.app.github.dev';
 const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.KROSSHAIR_SERVER_URL || (location.hostname.endsWith('github.io') ? pagesBackend : '');
 const serverOrigin = configuredServer ? new URL(configuredServer, location.href) : location;
@@ -77,7 +78,17 @@ function connect() {
     if (message.type === 'rejoin-failed') remember(null);
     // First thing the server says. It decides how this browser introduces itself: a saved login wins,
     // then a guest callsign if the server still allows guests, otherwise the menu asks for a login.
+    if (message.type === 'menu') { game.online = message.online; game.publicRooms = message.rooms; bus.emit('menu'); }
     if (message.type === 'config') {
+      // A different build stamp means the server was redeployed while this page was open: pick up the new
+      // files straight away, and come back to the same menu page without the loading screen's Enter button.
+      if (build && message.build && message.build !== build) {
+        bus.emit('net-status', { state: 'updating' });
+        try { sessionStorage.setItem('krosshair:skipintro', '1'); } catch { /* private mode */ }
+        setTimeout(() => location.reload(), 900);
+        return;
+      }
+      build = message.build || build;
       game.discord = { enabled: Boolean(message.discord), invite: message.invite || '' };
       game.loginRequired = Boolean(message.loginRequired);
       if (game.authSession) net.auth('resume', { legacyToken: game.token || undefined });

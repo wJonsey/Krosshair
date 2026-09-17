@@ -11,6 +11,8 @@ const thumbs = new Map();
 const PALETTES = {
   yard: ['#11171d', '#3c4a57', '#93a7b8'], atrium: ['#15181c', '#57595c', '#e6e2d6'], campanile: ['#1c1712', '#7a5a3c', '#e0b57e'],
   frostbite: ['#9fb0bf', '#5f7486', '#ffffff'], dustline: ['#7d633d', '#a27f4f', '#f0d39c'],
+  foundry: ['#1b1614', '#5a3a2a', '#d8762a'], breakwater: ['#1d2329', '#2f6c70', '#cfd6db'], saffron: ['#5a5348', '#b0714f', '#f0c98a'],
+  timberline: ['#24402c', '#5d5a4c', '#c9b48a'], line9: ['#15191d', '#3f474d', '#cfd6db'], terrace: ['#2a2f35', '#4a565f', '#9fd8e6'], ravelin: ['#a88c5c', '#8a6f48', '#f2ddb0'],
 };
 
 export function mapInfo(id) { return MAP_INFO.find((info) => info.id === id) || MAP_INFO[0]; }
@@ -67,7 +69,7 @@ export function mapRuleOptions() {
 
 // One-line summary shown under the rules.
 export function mapRuleSummary(rule) {
-  if (rule === 'vote') return 'Arena: everyone votes between three maps before each match.';
+  if (rule === 'vote') return `Arena: everyone votes between all ${MAP_INFO.length} maps before each match.`;
   if (rule === 'random') return 'Arena: picked at random before each match, never the same twice running.';
   const info = mapInfo(rule);
   return `Arena: ${info.title} (${info.size.toLowerCase()}, ${info.players}) — ${info.blurb}`;
@@ -83,17 +85,17 @@ export function renderMapVote(container, room) {
   const cast = Object.keys(room.mapVotes || {}).length;
   const card = (id) => {
     const random = id === 'random';
-    const info = random ? { title: 'Surprise me', size: 'Any size', players: '', style: 'One of the three, picked for you', blurb: 'Counts as a vote for whatever the dice say.' } : mapInfo(id);
+    const info = random ? { title: 'Surprise me', size: 'Any size', players: '', style: 'Any arena, picked for you', blurb: 'Counts as a vote for whatever the dice say.' } : mapInfo(id);
     const votes = room.mapTally?.[id] || 0;
     const variants = random ? '' : getMap(id).env.variants.map((v) => VARIANT_NAMES[v]).join(' · ');
     return `<button type="button" class="vote-card${mine === id ? ' chosen' : ''}${random ? ' random' : ''}" data-map-vote="${id}" aria-pressed="${mine === id}">
-      <span class="vote-thumb"${random ? '' : ` style="background-image:url(${mapThumb(id)})"`}>${random ? '?' : ''}</span>
+      <span class="vote-thumb"${random ? '' : ` style="background-image:url(${mapThumb(id, 160)})"`}>${random ? '?' : ''}</span>
       <span class="vote-body"><small>${escapeHtml(info.size)}${info.players ? ` · ${escapeHtml(info.players)}` : ''}</small><strong>${escapeHtml(info.title)}</strong><em>${escapeHtml(info.style)}</em><span>${escapeHtml(info.blurb)}</span>${variants ? `<i>${escapeHtml(variants)}</i>` : ''}</span>
       <span class="vote-count"><b>${votes}</b>${votes === 1 ? 'vote' : 'votes'}</span>
       <span class="vote-bar"><i style="width:${humans ? Math.round((votes / humans) * 100) : 0}%"></i></span>
     </button>`;
   };
-  container.innerHTML = `<div class="lobby-card vote-screen">
+  container.innerHTML = `<div class="lobby-card vote-screen vote-all">
       <div class="lobby-head"><div><p class="eyebrow">Arena vote // ${escapeHtml(room.name)}</p><h2>Pick the ground.</h2></div><div class="vote-clock"><b id="vote-seconds">–</b><small>SECONDS</small></div></div>
       <p class="lobby-status ok" id="vote-status">${cast}/${humans} pilots have voted${mine ? ' — you can still change yours.' : '. Ties are broken at random.'}</p>
       <div class="vote-grid">${(room.mapChoices || []).map(card).join('')}${card('random')}</div>

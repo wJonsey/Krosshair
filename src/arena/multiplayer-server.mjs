@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -200,6 +200,29 @@ function leaderboardFor(socket) {
   return boards;
 }
 
+// Build stamp: the newest change to anything the browser loads. Pages that were opened before a deploy
+// see a different stamp when they reconnect to the restarted server, and refresh themselves.
+function newestChange(dir) {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === 'server' || entry.name === 'tests' || entry.name.startsWith('.')) continue;
+    const full = path.join(dir, entry.name);
+    newest = Math.max(newest, entry.isDirectory() ? newestChange(full) : statSync(full).mtimeMs);
+  }
+  return newest;
+}
+const BUILD = Math.round(newestChange(path.join(root, 'src', 'arena'))).toString(36);
+
+// Menus stay live: anyone not in a room gets the online count and the public room list whenever they change.
+let lastMenu = '';
+setInterval(() => {
+  const menu = { type: 'menu', online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms() };
+  const text = JSON.stringify(menu);
+  if (text === lastMenu) return;
+  lastMenu = text;
+  for (const socket of sockets) if (!socket.room && socket.readyState === 1) socket.send(text);
+}, 2000).unref();
+
 function publicRooms() {
   return [...rooms.values()].filter((room) => room.isPublic && room.mode === 'match').map((room) => room.info()).filter((info) => info.players > 0);
 }
@@ -316,7 +339,7 @@ function enter(socket, message) {
 
 wss.on('connection', (socket) => {
   sockets.add(socket);
-  send(socket, { type: 'config', discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE });
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE });
   socket.identified = false;
   socket.room = null;
   socket.player = null;

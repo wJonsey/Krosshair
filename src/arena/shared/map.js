@@ -8,6 +8,13 @@ import { buildAtrium } from './maps/atrium.js';
 import { buildCampanile } from './maps/campanile.js';
 import { buildFrostbite } from './maps/frostbite.js';
 import { buildDustline } from './maps/dustline.js';
+import { buildFoundry } from './maps/foundry.js';
+import { buildBreakwater } from './maps/breakwater.js';
+import { buildSaffron } from './maps/saffron.js';
+import { buildTimberline } from './maps/timberline.js';
+import { buildLine9 } from './maps/line9.js';
+import { buildTerrace } from './maps/terrace.js';
+import { buildRavelin } from './maps/ravelin.js';
 
 function buildYard() {
   const b = createBuilder();
@@ -347,10 +354,17 @@ export const MAP_INFO = [
   { id: 'atrium', title: 'Halcyon Atrium', size: 'Small', players: '1v1 – 2v2', style: 'Glass-and-marble gallery', blurb: 'Two mezzanines, a skybridge and glass railings that do not stay intact for long.' },
   { id: 'campanile', title: 'Campanile', size: 'Small – medium', players: '2v2 – 3v3', style: 'Old-town piazza', blurb: 'A bell tower over the square, arcades, a balcony house and a sunken canal walk.' },
   { id: 'frostbite', title: 'Frostbite Station', size: 'Medium – large', players: '3v3 – 4v4', style: 'Arctic research base', blurb: 'A helipad on stilts, lab roofs, snow berms and an ice trench under the pipes.' },
+  { id: 'foundry', title: 'Foundry 4', size: 'Small – medium', players: '2v2 – 3v3', style: 'Steel mill floor', blurb: 'A dead furnace, catwalks down both sides, two bridges and sheet metal that stops nothing.' },
+  { id: 'saffron', title: 'Saffron Market', size: 'Small – medium', players: '2v2 – 3v3', style: 'Covered souk', blurb: 'Cloth and plank stalls that stop nothing, two flat roofs to climb and a kiosk in the square.' },
+  { id: 'breakwater', title: 'Breakwater', size: 'Medium – large', players: '3v3 – 4v4', style: 'Container quay', blurb: 'Long lanes between the stacks and a walkway across the crane beam.' },
+  { id: 'line9', title: 'Line 9', size: 'Small', players: '1v1 – 2v2', style: 'Underground station', blurb: 'Two platforms, two parked trains to run through and a track bed down the middle.' },
+  { id: 'terrace', title: 'Skyline Terrace', size: 'Medium', players: '2v2 – 4v4', style: 'Tower rooftop', blurb: 'A glass greenhouse that will not stay glass, water tanks to climb and plant rooms on both flanks.' },
+  { id: 'ravelin', title: 'Ravelin', size: 'Large', players: '3v3 – 4v4', style: 'Desert fort', blurb: 'Crenellated ramparts down both walls, a keep in the courtyard and a lot of open stone.' },
+  { id: 'timberline', title: 'Timberline', size: 'Large', players: '3v3 – 4v4', style: 'Mountain logging camp', blurb: 'A lodge, a watchtower each, rock that stops everything and hedgerows that stop nothing.' },
   { id: 'dustline', title: 'Dustline Pass', size: 'Large', players: '3v3 – 4v4', style: 'Desert canyon outpost', blurb: 'One stone bridge, a dry riverbed beneath it, watchtowers and a climbable mesa.' },
 ];
 export const MAP_IDS = MAP_INFO.map((info) => info.id);
-const BUILDERS = { yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline };
+const BUILDERS = { yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline, foundry: buildFoundry, breakwater: buildBreakwater, saffron: buildSaffron, timberline: buildTimberline, line9: buildLine9, terrace: buildTerrace, ravelin: buildRavelin };
 
 const cache = new Map();
 export function getMap(id = 'yard') {

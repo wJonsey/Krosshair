@@ -842,3 +842,17 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 @media (max-width: 900px) { .board-list { columns: 1; } .podium { grid-template-columns: 1fr; } }
 .page-play .page-title { font-size: clamp(28px, 2.9vw, 50px); }
 .discord-prompt { z-index: 20; } .discord-prompt .discord-button { padding: 13px 18px; }
+
+/* vote between every arena: compact cards, the whole ballot visible at once */
+.vote-screen.vote-all { max-width: 1500px; }
+.vote-all .vote-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.vote-all .vote-card { gap: 8px; padding-bottom: 10px !important; }
+.vote-all .vote-thumb { aspect-ratio: 16 / 10; background-size: cover; }
+.vote-all .vote-body { padding: 0 11px; gap: 2px; }
+.vote-all .vote-body strong { font-size: 12px; }
+.vote-all .vote-body em { font-size: 11px; }
+.vote-all .vote-body > span, .vote-all .vote-body i { display: none; }
+.vote-all .vote-count { padding: 0 11px; }
+.vote-screen .lobby-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.vote-screen .lobby-head h2 { margin: 0; font: 400 clamp(26px, 3vw, 40px)/1.1 var(--display); text-transform: uppercase; }
+#lobby .vote-screen { margin-top: clamp(16px, 4vh, 48px); }

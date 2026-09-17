@@ -148,3 +148,41 @@ export function mirrorPoints(points) {
 export function teamSpawns(xs, z, y = 0) {
   return { A: xs.map((x) => ({ x, y, z, yaw: 0 })), B: xs.map((x) => ({ x, y, z: -z, yaw: Math.PI })) };
 }
+
+// The part every walled arena shares: ground, perimeter, and a spawn lobby at each end behind a wall
+// with gates. Returns the pieces of the map object that follow from it.
+// o: { halfW, halfL, lobby (depth), gates [[x1,x2],…], floor, wallMat, wallH, lobbyMat, gateH, spawnXs }
+export function arenaShell(b, o) {
+  const { add } = b;
+  const { halfW, halfL, lobby = 9, gates, floor, wallMat, wallH = 9, lobbyMat = o.wallMat, gateH = 3.7, lobbyH = 5 } = o;
+  const zWall = halfL - lobby; // inner face of the lobby wall
+  add(-halfW - 2, -halfL - 2, halfW + 2, halfL + 2, -0.5, 0, floor);
+  add(-halfW - 2, -halfL - 2, -halfW, halfL + 2, 0, wallH, wallMat);
+  add(halfW, -halfL - 2, halfW + 2, halfL + 2, 0, wallH, wallMat);
+  add(-halfW - 2, halfL, halfW + 2, halfL + 2, 0, wallH, wallMat, SYM);
+  let cursor = -halfW;
+  for (const [x1, x2] of [...gates].sort((m, n) => m[0] - n[0])) {
+    if (x1 > cursor) add(cursor, zWall, x1, zWall + 1, 0, lobbyH, lobbyMat, SYM);
+    add(x1, zWall, x2, zWall + 1, gateH, lobbyH, lobbyMat, SYM);
+    add(x1, zWall - 0.1, x2, zWall, gateH - 0.25, gateH, 'neonCyan', { ...DECO, sym: true, mirrorMat: 'neonOrange' });
+    cursor = x2;
+  }
+  if (cursor < halfW) add(cursor, zWall, halfW, zWall + 1, 0, lobbyH, lobbyMat, SYM);
+  return {
+    zWall,
+    bounds: { minX: -halfW, maxX: halfW, minZ: -halfL, maxZ: halfL, minY: -1, maxY: 14 },
+    barriers: gateBarriers(gates, zWall + 0.35, zWall + 0.65, gateH),
+    spawnZones: { A: [-halfW, zWall - 0.1, halfW, halfL], B: [-halfW, -halfL, halfW, -zWall + 0.1] },
+    spawns: teamSpawns(o.spawnXs || [-6, -2, 2, 6], halfL - lobby / 2 + 0.5),
+    lobbyZone: { name: 'A Lobby', box: [-halfW, -1, zWall + 1, halfW, 20, halfL] },
+  };
+}
+
+// A flight of steps 2.2 m wide that bots can climb: 0.6 m runs, a third of a metre per riser.
+// dir: +1 rises toward +axis, -1 toward -axis. Returns the coordinate where the top step ends.
+export function flight(b, axis, start, dir, l1, l2, yTop, mat, opts = {}) {
+  const steps = Math.ceil(yTop / 0.334);
+  const end = start + dir * steps * 0.6;
+  b.stairs(axis, start, end, l1, l2, 0, yTop, steps, mat, opts);
+  return end;
+}

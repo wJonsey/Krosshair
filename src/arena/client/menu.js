@@ -110,7 +110,8 @@ function ensurePreview(canvas) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(canvas.clientWidth || 200, canvas.clientHeight || 260, false);
   const scene = new THREE.Scene();
-  scene.add(new THREE.HemisphereLight('#bcd3f0', '#1b1f26', 1.3));
+  scene.add(new THREE.HemisphereLight('#cfe0f5', '#3a4048', 2.4));
+  const fill = new THREE.DirectionalLight('#ffffff', 1.2); fill.position.set(1.5, 1.2, 3); scene.add(fill);
   const key = new THREE.DirectionalLight('#ffd2a1', 2.4); key.position.set(-2, 3, 2); scene.add(key);
   const rim = new THREE.DirectionalLight('#6ce6d1', 1.8); rim.position.set(2, 1.5, -2.5); scene.add(rim);
   const camera = new THREE.PerspectiveCamera(30, (canvas.clientWidth || 200) / (canvas.clientHeight || 260), 0.1, 20);
@@ -918,7 +919,18 @@ export function showScreen(name) {
   if (name === 'lobby') renderLobby();
   document.body.dataset.screen = name;
 }
+// Live menu: the online count changes in place; the room list redraws only when it actually changed.
+let shownRooms = '';
+bus.on('menu', () => {
+  const label = $('#online-count');
+  if (label) label.innerHTML = `<i class="live-dot"></i>${onlineLabel()}`;
+  const rooms = JSON.stringify(game.publicRooms);
+  if (rooms === shownRooms) return;
+  shownRooms = rooms;
+  if (game.screen === 'home' && (homePage === 'rooms' || homePage === 'play')) renderHome();
+});
 bus.on('net-status', ({ state, rejoining }) => {
+  if (state === 'updating') { toast('New version of Krosshair — updating…', 'good'); return; }
   const label = $('#online-count');
   if (label) label.innerHTML = `<i class="live-dot"></i>${onlineLabel(state)}`;
   if (state === 'open' && game.screen === 'home' && !game.profile) renderHome();

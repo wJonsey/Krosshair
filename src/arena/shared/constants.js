@@ -289,10 +289,12 @@ export const MODIFIERS = {
 };
 export const VARIANTS = ['dusk', 'night', 'storm', 'noon'];
 export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm Front', noon: 'High Noon', snow: 'Whiteout', haze: 'Dust Haze' };
+// A level is a centre point, not a spec: every bot rolls its own personality around it (server/bots.js),
+// so three Veterans are three different players. reaction/aimTime in seconds, error in degrees.
 export const BOT_DIFFICULTY = {
-  recruit: { name: 'Recruit', reaction: 0.95, aimTime: 1.0, error: 2.1, headBias: 0.08, fov: 95 },
-  veteran: { name: 'Veteran', reaction: 0.6, aimTime: 0.7, error: 1.0, headBias: 0.2, fov: 110 },
-  elite: { name: 'Elite', reaction: 0.36, aimTime: 0.45, error: 0.6, headBias: 0.38, fov: 125 },
+  recruit: { name: 'Recruit', reaction: 1.1, aimTime: 1.15, error: 2.5, headBias: 0.04, fov: 90 },
+  veteran: { name: 'Veteran', reaction: 0.75, aimTime: 0.85, error: 1.4, headBias: 0.12, fov: 105 },
+  elite: { name: 'Elite', reaction: 0.48, aimTime: 0.55, error: 0.85, headBias: 0.25, fov: 118 },
 };
 export const BOT_NAMES = ['Halcyon', 'Mako', 'Juno', 'Rook', 'Sable', 'Vesper', 'Onyx', 'Tundra', 'Piper', 'Echo', 'Marrow', 'Quill', 'Basil', 'Nova', 'Flint', 'Wren'];
 

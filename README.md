@@ -1,6 +1,6 @@
 # Krosshair
 
-A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and five hand-built arenas from a 1v1 gallery to a canyon-sized sniper range. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
+A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and twelve hand-built arenas from a 1v1 subway platform to a canyon-sized sniper range. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
 
 No asset downloads: every model, texture and sound is generated in code. Log in with Discord to play; your progress follows you to any device.
 
@@ -68,7 +68,7 @@ Radar Pulse · Recon Drone (pilotable) · Decoy Hologram · Deploy Shield · Sil
 
 ### Arenas
 
-Every arena is mirrored so both teams play the same ground, names its locations on the HUD, and gives bots a generated navigation grid. Hosts choose **Lobby vote** (three candidates plus "surprise me", 15 seconds, ties broken at random), **Random each match** (never the same map twice running, weighted by lobby size), or pin one arena. Matchmade queues rotate at random.
+Every arena is mirrored so both teams play the same ground, names its locations on the HUD, and gives bots a generated navigation grid. Hosts choose **Lobby vote** (every arena is on the ballot plus "surprise me", 25 seconds, ties broken at random), **Random each match** (never the same map twice running, weighted by lobby size), or pin one arena. Matchmade queues rotate at random.
 
 | Arena | Size | Style | What defines it |
 | --- | --- | --- | --- |
@@ -76,6 +76,13 @@ Every arena is mirrored so both teams play the same ground, names its locations 
 | Halcyon Atrium | Small · 1v1–2v2 | Glass-and-marble gallery | Two mezzanines with breakable glass railings, a skybridge, shoot-through exhibit panels |
 | Campanile | Small–medium · 2v2–3v3 | Old-town piazza | A climbable bell tower, arcades, a balcony house per side, a sunken canal walk |
 | Frostbite Station | Medium–large · 3v3–4v4 | Arctic research base | Helipad on stilts, lab roofs, snow berms (thin ones stop nothing), an ice trench |
+| Foundry 4 | Small–medium · 2v2–3v3 | Steel mill floor | A dead furnace, catwalks down both sides, two bridges, sheet metal that stops nothing |
+| Saffron Market | Small–medium · 2v2–3v3 | Covered souk | Shoot-through cloth and plank stalls, two flat roofs to climb, a kiosk in the square |
+| Line 9 | Small · 1v1–2v2 | Underground station | Two platforms, two parked trains to run through, a track bed down the middle |
+| Skyline Terrace | Medium · 2v2–4v4 | Tower rooftop | A breakable glass greenhouse, water tanks on stilts, plant rooms on both flanks |
+| Breakwater | Medium–large · 3v3–4v4 | Container quay | Long lanes between the stacks and a walkway across the crane beam |
+| Timberline | Large · 3v3–4v4 | Mountain logging camp | A lodge, a watchtower each, rock that stops everything and hedgerows that stop nothing |
+| Ravelin | Large · 3v3–4v4 | Desert fort | Crenellated ramparts down both walls, a keep in the courtyard, open stone between |
 | Dustline Pass | Large · 3v3–4v4 | Desert canyon outpost | One stone bridge over a dry riverbed, plank crossings, a watchtower, a roof-terrace house, a climbable mesa |
 
 Each arena has its own set of conditions: Dusk, Night Fog, Storm Front and High Noon, plus **Whiteout** (snowfall, 90 m visibility) on Frostbite and **Dust Haze** on Dustline.
@@ -87,7 +94,7 @@ Each arena has its own set of conditions: Dusk, Night Fog, Storm Front and High 
 | Quick play | Casual queue. Bots fill seats and hand them to humans who join later. |
 | Ranked | Humans only. Skill rating (Elo) moves when people face people. |
 | Arcade | The day's modifier: Headhunter, One Tap, Low Orbit or Sidearms Only. |
-| Bot match | 3v3 against Recruit, Veteran or Elite bots. |
+| Bot match | 3v3 against Recruit, Veteran or Elite bots. The level is a centre point: every bot rolls its own skill and habits around it, so no two play alike. |
 | Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
 | Private room | Room code + invite link, team select, bots, custom rules (arena vote / random / fixed, format, round time, credits, weather, modifier, friendly fire, sudden death). |
 
@@ -128,7 +135,7 @@ src/arena/
 │   ├── constants.js             # Weapons, gadgets, economy, rules, progression
 │   ├── map.js                   # Map registry, Kestrel Yard and the practice range
 │   ├── mapkit.js                # Box-map authoring tools (mirroring, walls, stairs, glass runs)
-│   ├── maps/                    # Halcyon Atrium, Campanile, Frostbite Station, Dustline Pass
+│   ├── maps/                    # One file per arena (eleven of the twelve; Kestrel Yard lives in map.js)
 │   ├── physics.js               # Box world: movement, stairs, raycasts
 │   └── combat.js                # Hit zones, penetration, spread
 ├── server/
@@ -154,7 +161,7 @@ npm test
 
 For every arena: mirroring, clear spawns inside their zones, closed gate-to-gate sightlines, and bot paths from both spawns to every point of interest. Also walks a body through the yard's underpass and roofs, exercises hit zones, penetration, glass and the damage model, and drives a real room through map pinning, voting and random rotation.
 
-Adding an arena: write `shared/maps/<id>.js` with the `mapkit` builder (author the south half with `SYM`), register it in `MAP_INFO`/`BUILDERS` in `shared/map.js`, and `npm test` will tell you what is unfair or unreachable.
+Adding an arena: write `shared/maps/<id>.js` with the `mapkit` builder (author the south half with `SYM`; `arenaShell` gives you the ground, perimeter and gated spawn lobbies, `flight` a staircase bots can climb), register it in `MAP_INFO`/`BUILDERS` in `shared/map.js`, and `npm test` will tell you what is unfair or unreachable.
 
 ## Python backend
 
