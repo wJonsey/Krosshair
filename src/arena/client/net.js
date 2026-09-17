@@ -6,6 +6,8 @@ let socket = null;
 let offsetSamples = [];
 let retry = 0;
 let pingTimer = null;
+const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.SNIPER_SERVER_URL || '';
+const serverOrigin = configuredServer ? new URL(configuredServer, location.href) : location;
 // Room to rejoin after a dropped connection or a page refresh (the tab keeps its session id).
 let wantRoom = (() => { try { return sessionStorage.getItem('sniper-shootout:room'); } catch { return null; } })();
 function remember(name) {
@@ -41,9 +43,9 @@ function sample(message) {
 
 function connect() {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+  const protocol = serverOrigin.protocol === 'https:' ? 'wss' : 'ws';
   bus.emit('net-status', { state: 'connecting' });
-  try { socket = new WebSocket(`${protocol}://${location.host}/arena`); } catch { scheduleRetry(); return; }
+  try { socket = new WebSocket(`${protocol}://${serverOrigin.host}/arena`); } catch { scheduleRetry(); return; }
   socket.addEventListener('open', () => {
     retry = 0;
     net.connected = true;

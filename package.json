@@ -4,6 +4,7 @@
   "description": "Sniper Shootout — round-based tactical sniper multiplayer in the browser",
   "scripts": {
     "arena": "node src/arena/multiplayer-server.mjs",
+    "server": "node src/arena/multiplayer-server.mjs",
     "start": "node src/arena/multiplayer-server.mjs",
     "test": "node --check src/arena/multiplayer-server.mjs && node --test \"src/arena/tests/*.test.mjs\""
   },

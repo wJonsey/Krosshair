@@ -13,6 +13,8 @@ npm run arena
 
 Open http://localhost:4174/ , pick a callsign, and press **Find a match** (bots fill empty seats) or **Learn the ropes** for the practice range.
 
+For a static GitHub Pages frontend, start the multiplayer server with `npm run server`, expose port 4174 publicly, and open Pages with `?server=https%3A%2F%2Fyour-server-host`. The client will use that host for its WebSocket connection.
+
 To play with friends, create a private room and send them the invite link shown in the lobby. On a LAN, replace `localhost` with your machine's address. Override the port with `ARENA_PORT=5000 npm run arena`.
 
 ## How a match plays
