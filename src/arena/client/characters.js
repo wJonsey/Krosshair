@@ -129,10 +129,10 @@ export function animateOperator(root, pose) {
   data.spine.rotation.x = c * 0.28 + stride * 0.08;
   data.aim.rotation.x = pose.pitch - data.spine.rotation.x;
   data.head.rotation.x = pose.pitch * 0.6;
-  const long = pose.weapon === 'm44' || pose.weapon === 'recon' || pose.weapon === 'breaker';
+  const long = pose.weapon === 'm44' || pose.weapon === 'recon' || pose.weapon === 'breaker' || pose.weapon === 'talon';
   data.gunBarrel.visible = pose.weapon !== 'knife';
   data.gunScope.visible = pose.weapon === 'm44' || pose.weapon === 'recon';
-  data.gun.scale.z = long ? 1 : pose.weapon === 'wasp' ? 0.7 : 0.45;
+  data.gun.scale.z = pose.weapon === 'talon' ? 0.85 : long ? 1 : pose.weapon === 'wasp' ? 0.7 : 0.45;
 }
 
 function nameTag(text, color) {

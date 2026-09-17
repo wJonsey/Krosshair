@@ -292,9 +292,29 @@ button.mini:hover { background: var(--cyan) !important; color: var(--black) !imp
 .prompt { position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%); padding: 9px 16px; border: 1px solid var(--yellow); background: rgba(7, 9, 12, .85); color: var(--yellow); font-weight: 700; animation: pulse 1.6s infinite; }
 .cam-bar { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: rgba(7, 9, 12, .88); border-top: 2px solid var(--cyan); }
 .cam-bar b { font: 700 22px var(--display); letter-spacing: .06em; }
-.cam-bar small, .cam-bar em { color: var(--dim); font-size: 9px; font-style: normal; }
-.cam-bar.killcam { top: 110px; bottom: auto; border-color: var(--red); } .cam-bar.killcam span { color: var(--red); }
-.cam-bar.replay { top: 110px; bottom: auto; border-color: var(--yellow); } .cam-bar.replay span { color: var(--yellow); }
+.cam-bar small, .cam-bar em { color: var(--dim); font-size: 9px; font-style: normal; white-space: nowrap; }
+#spectate-weapon { color: var(--yellow); }
+#hud.watching .vitals, #hud.watching .loadout, #hud.watching .controls { opacity: 0; visibility: hidden; }
+.pov-card { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); width: min(540px, calc(100% - 32px)); background: rgba(7, 9, 12, .9); border-top: 2px solid var(--red); animation: pov-in .35s cubic-bezier(.2, .8, .2, 1) both; }
+.pov-card.round { border-color: var(--yellow); } .pov-card.final { border-color: var(--yellow); }
+.pov-label { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px 0; font-weight: 700; color: var(--red); }
+.pov-card.round .pov-label, .pov-card.final .pov-label { color: var(--yellow); }
+.pov-label em { color: var(--dim); font-size: 9px; font-style: normal; font-weight: 400; }
+.pov-main { display: grid; grid-template-columns: 1fr auto; gap: 18px; padding: 8px 16px 10px; align-items: end; }
+.pov-who, .pov-gun { display: grid; gap: 3px; min-width: 0; }
+.pov-gun { text-align: right; }
+.pov-who small, .pov-gun small { color: var(--muted); font-size: 9px; }
+.pov-who b, .pov-gun b { font: 700 24px/1 var(--display); letter-spacing: .05em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pov-who b.foe { color: var(--red); } .pov-who b.friend { color: var(--cyan); }
+.pov-hp { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.pov-hp .meter { width: 120px; } .pov-hp .meter i { background: var(--cyan); transition: none; }
+.pov-hp span { color: var(--muted); font-size: 9px; }
+.pov-gun span { font: 700 22px/1 var(--display); color: var(--yellow); }
+.pov-gun span em { color: var(--dim); font-size: 14px; font-style: normal; margin-left: 4px; }
+.pov-detail { padding: 7px 16px; border-top: 1px solid var(--line); color: var(--ink); font-size: 10px; }
+.pov-detail b { color: var(--yellow); font-weight: 700; }
+@keyframes pov-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@media (max-width: 560px) { .pov-main { grid-template-columns: 1fr; } .pov-gun { text-align: left; } .pov-card { bottom: 64px; } }
 .reactions { display: flex; gap: 4px; pointer-events: auto; }
 .reactions button { border: 1px solid var(--line); background: rgba(242, 240, 234, .06); padding: 4px 7px; font-size: 15px; }
 .reactions button:hover { border-color: var(--yellow); }

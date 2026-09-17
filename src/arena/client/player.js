@@ -117,7 +117,7 @@ export class LocalPlayer {
     this.recoilPitch = 0; this.recoilYaw = 0; this.suppression = 0; this.breath = 1;
     this.reloadEnd = 0; this.nextFire = 0;
     this.spectateId = null; this.pendingKillcam = null;
-    this.operators.hidden = null; this.operators.stopReplay(); this.endReplayView();
+    this.operators.hidden = null; this.operators.stopReplay(); this.endPov();
     this.endDrone();
     this.active = game.you?.weapons?.primary ? 'primary' : 'sidearm';
     this.viewmodel.hidden = false;
@@ -171,17 +171,37 @@ export class LocalPlayer {
     this.mode = 'killcam';
     this.operators.hidden = replay.killer;
     this.operators.startReplay(replay, () => this.endKillcam());
-    this.beginReplayView(replay, 0);
-    bus.emit('killcam', replay);
+    this.beginReplayPov(replay, 0, [0.6, 0.45]);
+    bus.emit('pov-card', { kind: 'killcam', replay });
   }
   skipKillcam() { if (this.mode === 'killcam') { this.operators.stopReplay(); this.endKillcam(); } }
   endKillcam() {
-    this.endReplayView();
+    this.endPov();
     this.operators.hidden = null;
-    bus.emit('killcam', null);
+    bus.emit('pov-card', null);
     this.mode = 'spectate';
     this.spectateId = null;
     this.cycleSpectate(1);
+  }
+
+  // Round over: survivors and the fallen alike watch the kill that ended it.
+  startRoundReplay(replay) {
+    this.endDrone();
+    this.operators.stopReplay();
+    this.endPov();
+    this.pendingKillcam = null;
+    this.mode = 'replay';
+    this.scopeAmount = 0; this.buttons.fire = false; this.buttons.scope = false; this.scopeToggle = false;
+    this.operators.hidden = replay.killer;
+    const from = Math.max(0, replay.duration - 3);
+    this.operators.startReplay(replay, () => {
+      this.endPov();
+      this.operators.hidden = null;
+      bus.emit('pov-card', null);
+      if (this.alive) { this.mode = 'play'; this.viewmodel.hidden = false; } else { this.mode = 'spectate'; this.spectateId = null; this.cycleSpectate(1); }
+    }, { from });
+    this.beginReplayPov(replay, from, [0.8, 0.4]);
+    bus.emit('pov-card', { kind: 'round', replay });
   }
 
   startFinalReplay(replay, onDone) {
@@ -190,31 +210,39 @@ export class LocalPlayer {
     this.viewmodel.hidden = true;
     this.operators.hidden = replay.killer;
     const from = Math.max(0, replay.duration - 2.6);
-    this.operators.startReplay(replay, () => { this.endReplayView(); this.operators.hidden = null; this.mode = 'idle'; onDone(); }, { from });
-    this.beginReplayView(replay, from);
+    this.operators.startReplay(replay, () => { this.endPov(); this.operators.hidden = null; bus.emit('pov-card', null); this.mode = 'idle'; onDone(); }, { from });
+    this.beginReplayPov(replay, from, [1.1, 0.3]);
+    bus.emit('pov-card', { kind: 'final', replay });
   }
 
-  // Killcam / final kill: look through the killer's eyes with their gun in hand, scoping and firing as they did.
-  beginReplayView(replay, from) {
-    const killer = game.roster.get(replay.killer);
-    // Older servers only sent the killing shot.
-    const shots = replay.shots?.length ? replay.shots : [{ t: replay.duration, weapon: replay.weapon, melee: Boolean(WEAPONS[replay.weapon]?.melee), origin: replay.origin, ends: [replay.end] }];
-    this.replayView = { shots, next: shots.findIndex((shot) => shot.t >= from - 0.05), scope: 0, weapon: replay.weapon || 'm44', lastYaw: null, lastPitch: null };
-    if (this.replayView.next < 0) this.replayView.next = shots.length;
-    if (killer?.color) this.viewmodel.setLook(killer.color, killer.accent || game.look.accent);
-    this.viewmodel.setWeapon(this.replayView.weapon, true);
+  // First-person view of another pilot (killcams, replays, spectating): their gun in hand, scoping and firing as they did.
+  beginPov(owner, weapon, extra = {}) {
+    const entry = game.roster.get(owner);
+    this.pov = { owner, weapon: WEAPONS[weapon] ? weapon : 'm44', scope: 0, lastYaw: null, lastPitch: null, mag: null, ...extra };
+    this.viewmodel.setLook(entry?.color || game.look.color, entry?.accent || game.look.accent);
+    this.viewmodel.setWeapon(this.pov.weapon, true);
     this.viewmodel.hidden = false;
   }
-  endReplayView() {
-    if (!this.replayView) return;
-    this.replayView = null;
+  beginReplayPov(replay, from, slow) {
+    // Older servers only sent the killing shot.
+    const shots = replay.shots?.length ? replay.shots : [{ t: replay.duration, weapon: replay.weapon, melee: Boolean(WEAPONS[replay.weapon]?.melee), origin: replay.origin, ends: [replay.end], hit: true }];
+    let next = shots.findIndex((shot) => shot.t >= from - 0.05);
+    if (next < 0) next = shots.length;
+    const weapon = WEAPONS[replay.weapon] || WEAPONS.m44;
+    const before = shots[next - 1], upcoming = shots[next];
+    const mag = before?.mag ?? (upcoming?.mag != null ? upcoming.mag + 1 : weapon.mag);
+    this.beginPov(replay.killer, replay.weapon, { replay, shots, next, slow, mag });
+  }
+  endPov() {
+    if (!this.pov) return;
+    this.pov = null;
     this.viewmodel.hidden = !this.alive;
     this.viewmodel.setLook(game.look.color, game.look.accent);
     if (this.alive) this.viewmodel.setWeapon(this.weapon.id, true);
     this.resetFov();
   }
-  // The weapon the camera is currently holding (the killer's during a replay).
-  get viewWeapon() { return (this.replayView && WEAPONS[this.replayView.weapon]) || this.weapon; }
+  // The weapon the camera is currently holding (someone else's while watching through their eyes).
+  get viewWeapon() { return (this.pov && WEAPONS[this.pov.weapon]) || this.weapon; }
 
   spectateTargets() {
     const team = game.roster.get(game.id)?.team;
@@ -372,7 +400,7 @@ export class LocalPlayer {
     }
     else if (this.mode === 'dead') this.updateDead(wallDt);
     else if (this.mode === 'killcam' || this.mode === 'replay') this.updateReplayCamera(wallDt);
-    else if (this.mode === 'spectate') this.updateSpectate(dt);
+    else if (this.mode === 'spectate') this.updateSpectate(wallDt);
     this.sendState(wallDt);
   }
 
@@ -509,23 +537,28 @@ export class LocalPlayer {
 
   updateReplayCamera(dt) {
     const replay = this.operators.replay;
-    const view = this.replayView;
-    if (!replay || !view) return;
+    const pov = this.pov;
+    if (!replay || !pov?.shots) return;
     const entity = replay.entities.get(replay.data.killer);
     if (!entity) return;
     // Slow right down for the killing shot.
+    const [window, slow] = pov.slow || [0.6, 0.45];
     const left = replay.data.duration - replay.time;
-    replay.speed = left < (this.mode === 'replay' ? 1.1 : 0.6) && left > -0.35 ? (this.mode === 'replay' ? 0.3 : 0.45) : 1;
-    const s = entity.state;
-    if (s.weapon && s.weapon !== view.weapon && WEAPONS[s.weapon]) { view.weapon = s.weapon; this.viewmodel.setWeapon(s.weapon); }
-    const weapon = WEAPONS[view.weapon] || this.weapon;
+    replay.speed = left < window && left > -0.35 ? slow : 1;
     // Play every shot the killer took inside the window.
-    while (view.next < view.shots.length && replay.time >= view.shots[view.next].t) this.replayFire(view.shots[view.next++], s);
-    // Ease the scope in and out from the recorded flag, at the weapon's real ADS speed.
+    while (pov.next < pov.shots.length && replay.time >= pov.shots[pov.next].t) this.povShot(pov.shots[pov.next++]);
+    this.updatePovCamera(entity.state, dt, replay.speed);
+  }
+
+  updatePovCamera(s, dt, timeScale = 1) {
+    const pov = this.pov;
+    if (s.weapon && s.weapon !== pov.weapon && WEAPONS[s.weapon]) { pov.weapon = s.weapon; pov.mag = null; this.viewmodel.setWeapon(s.weapon); }
+    const weapon = WEAPONS[pov.weapon] || this.weapon;
+    // Ease the scope in and out from the networked flag, at the weapon's real ADS speed.
     const wantScope = Boolean(s.flags & FLAG.scoped) && !weapon.melee;
-    const step = dt * replay.speed / (weapon.scopeTime || 0.15);
-    view.scope = clamp(view.scope + (wantScope ? step : -step * 1.6), 0, 1);
-    const eased = view.scope * view.scope * (3 - 2 * view.scope);
+    const step = dt * timeScale / (weapon.scopeTime || 0.15);
+    pov.scope = clamp(pov.scope + (wantScope ? step : -step * 1.6), 0, 1);
+    const eased = pov.scope * pov.scope * (3 - 2 * pov.scope);
     const crouch = Boolean(s.flags & FLAG.crouch);
     this.camera.position.set(s.x, s.y + (crouch ? BODY.crouchEye : BODY.eye), s.z);
     this.camera.rotation.set(s.pitch, s.yaw, 0, 'YXZ');
@@ -534,49 +567,52 @@ export class LocalPlayer {
     const fov = THREE.MathUtils.lerp(baseFov, zoomFov, eased);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Turn speed drives the weapon sway like mouse movement does.
-    const lookX = view.lastYaw === null ? 0 : -((s.yaw - view.lastYaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 600;
-    const lookY = view.lastPitch === null ? 0 : -(s.pitch - view.lastPitch) * 600;
-    view.lastYaw = s.yaw; view.lastPitch = s.pitch;
-    this.viewmodel.update(dt * replay.speed, { speed: s.speed || 0, onGround: Boolean(s.flags & FLAG.ground), scoped: eased, lookX, lookY, crouch });
+    const lookX = pov.lastYaw === null ? 0 : -((s.yaw - pov.lastYaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 600;
+    const lookY = pov.lastPitch === null ? 0 : -(s.pitch - pov.lastPitch) * 600;
+    pov.lastYaw = s.yaw; pov.lastPitch = s.pitch;
+    this.viewmodel.update(dt * timeScale, { speed: s.speed || 0, onGround: Boolean(s.flags & FLAG.ground), scoped: eased, lookX, lookY, crouch });
   }
 
-  replayFire(shot, state) {
-    const weapon = WEAPONS[shot.weapon] || WEAPONS[this.replayView.weapon];
+  // A shot fired by whoever we are watching. quiet: the positional sound is already playing.
+  povShot(shot, { quiet = false } = {}) {
+    const pov = this.pov;
+    const weapon = WEAPONS[shot.weapon] || WEAPONS[pov.weapon];
     if (!weapon) return;
-    if (shot.weapon && shot.weapon !== this.replayView.weapon) { this.replayView.weapon = shot.weapon; this.viewmodel.setWeapon(shot.weapon, true); }
-    if (shot.melee || weapon.melee) { this.viewmodel.melee(); play('swing'); return; }
-    const muzzle = this.viewmodel.muzzleWorld(this.camera, this.replayView.scope);
+    if (shot.weapon && shot.weapon !== pov.weapon) { pov.weapon = shot.weapon; this.viewmodel.setWeapon(shot.weapon, true); }
+    if (shot.mag != null) pov.mag = shot.mag;
+    const final = pov.shots && shot === pov.shots[pov.shots.length - 1];
+    if (shot.hit) bus.emit('pov-hit', final ? (pov.replay?.zone === 'head' ? 'head kill' : 'kill') : 'hit');
+    if (shot.melee || weapon.melee) { this.viewmodel.melee(); if (!quiet) play('swing'); return; }
+    const muzzle = this.viewmodel.muzzleWorld(this.camera, pov.scope);
     const from = [muzzle.x, muzzle.y, muzzle.z];
-    const tracer = game.roster.get(this.operators.replay?.data.killer)?.tracer || '#ffc857';
+    const tracer = game.roster.get(pov.owner)?.tracer || '#ffc857';
     for (const end of shot.ends || []) {
       this.effects.tracer(from, end, tracer, 0.012 + weapon.tracer * 0.012);
       if (weapon.id === 'm44') this.effects.trail(from, end);
     }
-    const final = shot === this.replayView.shots[this.replayView.shots.length - 1];
-    if (final) this.effects.hitPuff(this.operators.replay?.data.end || shot.ends?.[0]);
+    if (final) this.effects.hitPuff(pov.replay?.end || shot.ends?.[0]);
     this.effects.muzzleLight(muzzle, '#ffb45e', this.arena.variantName === 'night' ? 40 : 20);
     this.viewmodel.fire(weapon);
+    if (quiet) return;
     playShot(weapon.id);
     if (weapon.id === 'm44') play('bolt', { delay: 0.32, volume: 0.7 });
     if (weapon.id === 'breaker') play('pump', { delay: 0.28, volume: 0.8 });
   }
 
-  updateSpectate() {
+  updateSpectate(dt) {
     const entry = this.spectateId && game.roster.get(this.spectateId);
     if (!entry || !entry.alive) this.cycleSpectate(1);
     const pose = this.spectateId && this.operators.poseOf(this.spectateId);
     if (!pose) {
       // Nobody left to watch: hold an overview above where we fell.
+      this.endPov();
       this.camera.position.set(this.body.x, this.body.y + 3.2, this.body.z + 0.01);
       this.camera.rotation.set(-1.1, this.yaw, 0, 'YXZ');
       this.resetFov();
       return;
     }
-    const crouch = Boolean(pose.flags & FLAG.crouch);
-    this.camera.position.set(pose.x, pose.y + (crouch ? BODY.crouchEye : BODY.eye), pose.z);
-    this.camera.rotation.set(pose.pitch, pose.yaw, 0, 'YXZ');
-    const fov = pose.flags & FLAG.scoped ? 24 : game.settings.fov;
-    if (Math.abs(this.camera.fov - fov) > 0.5) { this.camera.fov += (fov - this.camera.fov) * 0.25; this.camera.updateProjectionMatrix(); }
+    if (this.pov?.owner !== this.spectateId) { this.endPov(); this.beginPov(this.spectateId, pose.weapon); }
+    this.updatePovCamera(pose, dt);
   }
 
   sendState(dt) {

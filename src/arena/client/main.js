@@ -185,6 +185,9 @@ net.on('round-end', (message) => {
   if (!message.winner) hud.banner('DRAW', reason, '', 'neutral', 3800);
   else hud.banner(won ? 'ROUND WON' : 'ROUND LOST', reason, tags ? `${tags}${hero}` : `${message.scores[mine]} – ${message.scores[mine === 'A' ? 'B' : 'A']}`, won ? 'win' : 'loss', 3800);
   play(won ? 'roundWin' : 'roundLoss');
+  // Let the banner land, then everyone watches the kill that ended the round.
+  const replay = message.replay;
+  if (replay && Object.keys(replay.tracks || {}).length) setTimeout(() => { if (game.room?.phase === 'roundEnd' && game.screen === 'game') player.startRoundReplay(replay); }, 1400);
   if (message.tags.includes('ACE')) announce('Ace.'); else if (message.tags.includes('CLUTCH')) announce('Clutch.'); else if (message.tags.includes('FLAWLESS')) announce('Flawless.');
 });
 
@@ -194,7 +197,6 @@ net.on('match-end', (message) => {
   const mine = game.roster.get(game.id)?.team;
   const won = message.winner === mine;
   const finish = () => {
-    document.querySelector('#replay-bar').classList.add('hidden');
     document.exitPointerLock?.();
     showEnd(message);
     if (pendingEnd?.report) attachReport(pendingEnd.report);
@@ -204,14 +206,10 @@ net.on('match-end', (message) => {
   };
   pendingEnd = { report: null };
   if (message.replay && Object.keys(message.replay.tracks).length) {
-    const bar = document.querySelector('#replay-bar');
-    bar.classList.remove('hidden');
-    document.querySelector('#replay-name').textContent = `${nameOf(message.replay.killer)} → ${nameOf(message.replay.victim)}`;
-    document.querySelector('#replay-detail').textContent = `${WEAPONS[message.replay.weapon]?.name || ''} · ${message.replay.distance} M${message.replay.zone === 'head' ? ' · HEADSHOT' : ''}`;
     let finished = false;
     const once = () => { if (finished) return; finished = true; finish(); };
     player.startFinalReplay(message.replay, once);
-    setTimeout(() => { if (!finished) { operators.stopReplay(); player.endReplayView(); operators.hidden = null; player.mode = 'idle'; once(); } }, 9000);
+    setTimeout(() => { if (!finished) { operators.stopReplay(); player.endPov(); bus.emit('pov-card', null); operators.hidden = null; player.mode = 'idle'; once(); } }, 9000);
   } else finish();
 });
 
@@ -230,7 +228,9 @@ net.on('shot', (message) => {
   const shooter = game.roster.get(message.id);
   const origin = message.o;
   const muzzle = [origin[0], origin[1] - 0.12, origin[2]];
-  message.e.forEach((end) => {
+  // Spectating the shooter: the tracer leaves the gun we are looking down.
+  if (player.mode === 'spectate' && player.pov?.owner === message.id) player.povShot({ weapon: message.w, ends: message.e }, { quiet: true });
+  else message.e.forEach((end) => {
     effects.tracer(muzzle, end, shooter?.tracer || '#ffc857', 0.012 + weapon.tracer * 0.012);
     if (weapon.id === 'm44') effects.trail(muzzle, end);
     player.nearMiss(origin, end, message.id);
@@ -244,7 +244,7 @@ net.on('shot', (message) => {
   if (isEnemy(message.id) && distance < weapon.loud * 0.9) hud.blip(message.id, origin[0], origin[2], 2.5);
 });
 
-net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (pose) { play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); bus.emit('sound', { kind: 'swing', id: message.id, pos: [pose.x, pose.y, pose.z] }); } });
+net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (player.mode === 'spectate' && player.pov?.owner === message.id) viewmodel.melee(); if (pose) { play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); bus.emit('sound', { kind: 'swing', id: message.id, pos: [pose.x, pose.y, pose.z] }); } });
 
 net.on('hit', (message) => {
   if (message.blocked) { hud.hitmarker('blocked'); play('deny', { volume: 0.5 }); return; }
@@ -398,7 +398,7 @@ function frame() {
   soundViz.update();
   renderer.clear();
   renderer.render(arena.scene, camera);
-  if (game.screen === 'game' && (player.mode === 'play' || player.replayView) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
+  if (game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
   renderPreview();
 }
 

@@ -268,6 +268,7 @@ export class Room {
     this.rematch.clear();
     this.autoStartAt = 0;
     this.lastKill = null;
+    this.roundKill = null;
     if (this.rules.variant === 'auto') { variantCursor = (variantCursor + 1) % VARIANTS.length; this.variant = VARIANTS[variantCursor]; } else this.variant = this.rules.variant;
     for (const player of this.players.values()) {
       player.match = freshMatchStats();
@@ -281,6 +282,7 @@ export class Room {
 
   startRound() {
     this.round += 1;
+    this.roundKill = null;
     // Sides switch once (roundsToWin - 1) rounds have been decided; drawn rounds do not count.
     const swapAt = this.rules.roundsToWin - 1;
     const shouldSwap = this.rules.swapSides && this.scores.A + this.scores.B >= swapAt;
@@ -437,7 +439,9 @@ export class Room {
     }
     for (const player of this.players.values()) if (player.drone) this.endDrone(player, false);
     const matchOver = winner && this.scores[winner] >= this.rules.roundsToWin;
-    this.broadcast({ type: 'round-end', winner, reason, scores: this.scores, tags, hero, matchOver, phaseEnds: this.phaseEnds });
+    // Everyone watches the round's last kill; the match's final one is saved for the end screen.
+    const replay = !matchOver && this.roundKill ? this.roundKill : undefined;
+    this.broadcast({ type: 'round-end', winner, reason, scores: this.scores, tags, hero, matchOver, phaseEnds: this.phaseEnds, replay });
     this.pushRoom();
     for (const player of this.players.values()) this.pushYou(player);
   }
@@ -758,7 +762,7 @@ export class Room {
       }
     }
     if (registered) player.match.hits += 1;
-    this.logShot(player, { t, weapon: weapon.id, origin: origin.map(round2), ends, lag: t - rewindTo });
+    this.logShot(player, { t, weapon: weapon.id, origin: origin.map(round2), ends, lag: t - rewindTo, hit: registered, mag: ammo.mag });
     this.broadcast({ type: 'shot', id: player.id, w: weapon.id, o: origin.map(round2), e: ends, i: impacts, seq }, (other) => other !== player || player.bot);
     if (!player.bot) this.send(player, { type: 'shot-ack', seq, e: ends, i: impacts });
     for (const [id, entry] of damageBy) {
@@ -793,7 +797,7 @@ export class Room {
       if (!best || dist < best.dist) best = { other, dist };
     }
     this.broadcast({ type: 'swing', id: player.id, hit: Boolean(best) }, (other) => other !== player);
-    this.logShot(player, { t: now(), weapon: weapon.id, melee: true, lag: now() - rewindTo });
+    this.logShot(player, { t: now(), weapon: weapon.id, melee: true, lag: now() - rewindTo, hit: Boolean(best) });
     if (!best) return;
     const victim = best.other;
     const victimForward = [-Math.sin(victim.yaw), -Math.cos(victim.yaw)];
@@ -863,10 +867,11 @@ export class Room {
     };
     this.broadcast(event);
     if (killer && killer !== victim) {
-      const record = { t, killer: killer.id, victim: victim.id, weapon: weapon.id, zone, distance: event.distance, origin: meta.origin || this.eyeOf(killer), end: meta.end || [victim.x, victim.y + 1.2, victim.z], lag: meta.lag || 0 };
+      const record = { t, killer: killer.id, victim: victim.id, weapon: weapon.id, zone, distance: event.distance, origin: meta.origin || this.eyeOf(killer), end: meta.end || [victim.x, victim.y + 1.2, victim.z], lag: meta.lag || 0,
+        wallbang: Boolean(meta.wallbang), backstab: Boolean(meta.backstab), killerHp: Math.max(0, Math.round(killer.hp)), killerArmor: Math.round(killer.armor || 0) };
       // Built right away: by match end the position history has already scrolled past this moment.
       const replay = this.buildReplay(record, 4);
-      if (!victim.dummy) this.lastKill = replay;
+      if (!victim.dummy) { this.lastKill = replay; this.roundKill = replay; }
       if (!victim.bot) this.send(victim, { type: 'killcam', replay });
     }
     this.pushYou(victim);
@@ -894,7 +899,7 @@ export class Room {
     }
     const killer = this.players.get(kill.killer);
     const shots = (killer?.shotLog || []).filter((shot) => shot.t >= t0 && shot.t <= kill.t + 0.01)
-      .map((shot) => ({ t: round3(shot.t - t0), weapon: shot.weapon, melee: Boolean(shot.melee), origin: shot.origin, ends: shot.ends }));
+      .map((shot) => ({ t: round3(shot.t - t0), weapon: shot.weapon, melee: Boolean(shot.melee), origin: shot.origin, ends: shot.ends, hit: Boolean(shot.hit), mag: shot.mag }));
     return { ...kill, t: undefined, lag: undefined, duration: seconds, tracks, shots, origin: kill.origin.map(round2), end: kill.end.map(round2) };
   }
 

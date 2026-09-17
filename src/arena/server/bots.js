@@ -53,7 +53,7 @@ export function botBuy(room, bot) {
   }
   const roll = Math.random();
   if (room.rules.modifier !== 'sidearms' && bot.weapons.primary === 'm44') {
-    if (roll < 0.22 && bot.credits >= 2100) room.buy(bot, 'recon'); else if (roll > 0.9 && bot.credits >= 1700) room.buy(bot, 'wasp');
+    if (roll < 0.2 && bot.credits >= 2100) room.buy(bot, 'recon'); else if (roll > 0.72 && bot.credits >= 2400) room.buy(bot, 'talon'); else if (roll > 0.9 && bot.credits >= 1700) room.buy(bot, 'wasp');
   }
   if (room.rules.modifier === 'sidearms' && bot.credits >= 900) room.buy(bot, 'viper');
   if (bot.credits >= 800 && Math.random() < 0.5) room.buy(bot, Math.random() < 0.5 ? 'pulse' : 'stim');

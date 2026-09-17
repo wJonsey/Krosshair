@@ -8,7 +8,7 @@ import { play, announce } from './audio.js';
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-const WEAPON_SHORT = { m44: 'M-44', recon: 'RC-9', wasp: 'WASP-9', breaker: 'BREAKER', p9: 'P9', viper: 'VIPER', knife: 'BLADE' };
+const WEAPON_SHORT = { m44: 'M-44', recon: 'RC-9', talon: 'TALON', wasp: 'WASP-9', breaker: 'BREAKER', p9: 'P9', viper: 'VIPER', knife: 'BLADE' };
 
 export class Hud {
   constructor({ player, arena, operators }) {
@@ -30,8 +30,9 @@ export class Hud {
       killfeed: $('#killfeed'), feed: $('#event-feed'), chatLog: $('#chat-log'), chatInput: $('#chat-input'), crosshair: $('#crosshair'), hitmarker: $('#hitmarker'), arcs: $('#damage-arcs'),
       scope: $('#scope-overlay'), scopeZoom: $('#scope-zoom'), breath: $('#breath-meter'), fxDamage: $('#fx-damage'), fxLow: $('#fx-low'), fxSuppress: $('#fx-suppress'), fxFlash: $('#fx-flash'),
       banner: $('#banner'), bannerEyebrow: $('#banner-eyebrow'), bannerTitle: $('#banner-title'), bannerSub: $('#banner-sub'), prompt: $('#prompt'),
-      spectate: $('#spectate-bar'), spectateName: $('#spectate-name'), reactions: $('#reactions'), killcam: $('#killcam-bar'), killcamName: $('#killcam-name'), killcamDetail: $('#killcam-detail'),
-      replay: $('#replay-bar'), replayName: $('#replay-name'), replayDetail: $('#replay-detail'), drone: $('#drone-overlay'), droneTime: $('#drone-time'),
+      spectate: $('#spectate-bar'), spectateName: $('#spectate-name'), reactions: $('#reactions'), spectateWeapon: $('#spectate-weapon'),
+      pov: $('#pov-card'), povLabel: $('#pov-label'), povSkip: $('#pov-skip'), povTitle: $('#pov-title'), povName: $('#pov-name'), povHp: $('#pov-hp'), povHpBar: $('#pov-hp-bar'), povTag: $('#pov-tag'), povWeapon: $('#pov-weapon'), povAmmo: $('#pov-ammo'), povMag: $('#pov-mag'), povDetail: $('#pov-detail'),
+      drone: $('#drone-overlay'), droneTime: $('#drone-time'),
       buy: $('#buy-menu'), scoreboard: $('#scoreboard'), quick: $('#quick-wheel'), controls: $('#controls-hint'),
     };
     this.dom.reactions.innerHTML = REACTIONS.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
@@ -46,12 +47,10 @@ export class Hud {
     bus.on('pad-scoreboard', () => this.toggleScoreboard(!this.scoreOpen));
     addEventListener('keyup', (event) => { if (event.code === 'Tab') this.toggleScoreboard(false); });
     bus.on('spectate', (id) => { this.dom.spectate.classList.toggle('hidden', !id); if (id) this.dom.spectateName.textContent = nameOf(id); });
-    bus.on('killcam', (replay) => {
-      this.dom.killcam.classList.toggle('hidden', !replay);
-      if (replay) { this.dom.killcamName.textContent = nameOf(replay.killer); this.dom.killcamDetail.textContent = `${WEAPONS[replay.weapon]?.name || ''} · ${replay.zone === 'head' ? 'HEADSHOT · ' : ''}${replay.distance} M`; }
-    });
+    bus.on('pov-card', (card) => this.showPovCard(card));
+    bus.on('pov-hit', (kind) => this.hitmarker(kind));
     bus.on('drone', (on) => this.dom.drone.classList.toggle('hidden', !on));
-    bus.on('spawned', () => { this.dom.spectate.classList.add('hidden'); this.dom.killcam.classList.add('hidden'); });
+    bus.on('spawned', () => { this.dom.spectate.classList.add('hidden'); this.showPovCard(null); });
   }
 
   get blocking() { return this.buyOpen || this.chatOpen || this.quickOpen; }
@@ -143,13 +142,37 @@ export class Hud {
     this.bannerTimer = setTimeout(() => banner.classList.add('hidden'), duration);
   }
 
+  // Who got the kill, with what, and how: shown over killcams and round / final replays.
+  showPovCard(card) {
+    const dom = this.dom;
+    dom.pov.classList.toggle('hidden', !card);
+    if (!card) return;
+    const { replay, kind } = card;
+    dom.pov.className = `pov-card ${kind}`;
+    dom.povLabel.textContent = { killcam: 'KILLCAM', round: 'ROUND WINNING KILL', final: 'FINAL KILL' }[kind];
+    dom.povSkip.classList.toggle('hidden', kind !== 'killcam');
+    const killer = game.roster.get(replay.killer);
+    dom.povTitle.textContent = [killer?.title, killer?.level ? `LV ${killer.level}` : ''].filter(Boolean).join(' · ');
+    dom.povName.textContent = nameOf(replay.killer);
+    dom.povName.className = replay.killer === game.id ? '' : isEnemy(replay.killer) ? 'foe' : 'friend';
+    const hp = replay.killerHp ?? null;
+    dom.povHp.parentElement.classList.toggle('hidden', hp === null);
+    if (hp !== null) { dom.povHpBar.style.width = `${hp}%`; dom.povHpBar.style.background = hp < 35 ? 'var(--red)' : ''; dom.povHp.textContent = `${hp} HP${replay.killerArmor ? ` · ${replay.killerArmor} ARMOUR` : ''}`; }
+    const weapon = WEAPONS[replay.weapon];
+    dom.povTag.textContent = weapon?.tag || '';
+    dom.povWeapon.textContent = weapon?.name || '';
+    const victim = replay.victim === game.id ? 'YOU' : escapeHtml(nameOf(replay.victim));
+    const tags = [replay.zone === 'head' && 'HEADSHOT', replay.wallbang && 'WALLBANG', replay.backstab && 'BACKSTAB'].filter(Boolean);
+    dom.povDetail.innerHTML = `ELIMINATED <b>${victim}</b>${tags.map((tag) => ` · <b>${tag}</b>`).join('')} · ${replay.distance} M`;
+  }
+
   prompt(text) { this.dom.prompt.textContent = text || ''; this.dom.prompt.classList.toggle('hidden', !text); }
 
   hitmarker(kind) {
     const marker = this.dom.hitmarker;
     marker.className = 'hitmarker';
     void marker.offsetWidth;
-    marker.classList.add('show', kind);
+    marker.classList.add('show', ...kind.split(' '));
   }
 
   damageFrom(x, z) {
@@ -384,21 +407,29 @@ export class Hud {
     }
 
     // Aim UI
-    const replayView = player.replayView;
-    const weapon = replayView ? player.viewWeapon : player.weapon;
+    const pov = player.pov;
+    this.root.classList.toggle('watching', Boolean(pov));
+    const weapon = pov ? player.viewWeapon : player.weapon;
     const optic = weapon.scope && weapon.scope[0] < 40;
-    const scopedView = optic && (replayView ? replayView.scope > 0.82 : player.mode === 'play' && player.scopeAmount > 0.82);
+    const scopedView = optic && (pov ? pov.scope > 0.82 : player.mode === 'play' && player.scopeAmount > 0.82);
+    if (pov && !dom.pov.classList.contains('hidden')) {
+      const melee = Boolean(weapon.melee);
+      dom.povWeapon.textContent = weapon.name; dom.povTag.textContent = weapon.tag;
+      dom.povAmmo.textContent = melee ? '' : String(pov.mag ?? weapon.mag).padStart(2, '0');
+      dom.povMag.textContent = melee ? '' : `/ ${weapon.mag}`;
+    }
+    if (pov && player.mode === 'spectate') { const text = weapon.name.toUpperCase(); if (dom.spectateWeapon.textContent !== text) dom.spectateWeapon.textContent = text; }
     dom.scope.classList.toggle('hidden', !scopedView);
     if (scopedView) {
-      const zoom = weapon.scope[replayView ? 0 : Math.min(player.zoomIndex, weapon.scope.length - 1)];
-      dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !replayView ? ' · WHEEL TO ZOOM' : ''}`;
+      const zoom = weapon.scope[pov ? 0 : Math.min(player.zoomIndex, weapon.scope.length - 1)];
+      dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !pov ? ' · WHEEL TO ZOOM' : ''}`;
       dom.breath.style.width = `${player.breath * 100}%`;
       dom.breath.classList.toggle('winded', player.winded);
     }
-    const showCross = player.mode === 'play' && !scopedView && !this.buyOpen;
+    const showCross = (player.mode === 'play' || Boolean(pov)) && !scopedView && !this.buyOpen;
     dom.crosshair.classList.toggle('hidden', !showCross);
     if (showCross) {
-      const spread = weapon.melee ? 0 : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);
+      const spread = weapon.melee ? 0 : pov ? (pov.scope > 0.9 ? weapon.spread.ads : weapon.spread.hip) : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);
       dom.crosshair.style.setProperty('--gap', `${Math.round(4 + spread * 5)}px`);
       dom.crosshair.classList.toggle('dot', Boolean(weapon.melee));
     }

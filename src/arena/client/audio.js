@@ -115,6 +115,7 @@ function tone(dest, at, { wave = 'sine', freq = 440, to = null, attack = 0.003, 
 const SHOTS = {
   m44: { thump: [95, 38, 0.42, 1], crack: [2600, 0.09, 0.9], body: [900, 0.55, 0.9], ref: 14, send: 0.6 },
   recon: { thump: [120, 50, 0.22, 0.8], crack: [3000, 0.06, 0.8], body: [1300, 0.28, 0.7], ref: 11, send: 0.45 },
+  talon: { thump: [140, 60, 0.13, 0.65], crack: [3200, 0.045, 0.7], body: [1500, 0.18, 0.6], ref: 10, send: 0.35 },
   wasp: { thump: [170, 80, 0.08, 0.5], crack: [3400, 0.035, 0.6], body: [1900, 0.11, 0.5], ref: 8, send: 0.25 },
   breaker: { thump: [80, 34, 0.36, 1], crack: [1800, 0.1, 0.9], body: [650, 0.5, 1], ref: 12, send: 0.55 },
   p9: { thump: [190, 70, 0.1, 0.6], crack: [3100, 0.04, 0.7], body: [1600, 0.16, 0.55], ref: 8, send: 0.3 },

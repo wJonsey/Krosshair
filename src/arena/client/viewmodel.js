@@ -54,6 +54,21 @@ function buildWeapon(id, accent) {
     data.muzzle.set(0, 0.01, -0.94);
     data.ads = [0, -0.09, -0.2];
     data.adsHide = true;
+  } else if (id === 'talon') {
+    part(g, box(0.058, 0.095, 0.46), steel, [0, 0, -0.16]);
+    part(g, box(0.064, 0.07, 0.26), dark, [0, -0.005, -0.5]);
+    part(g, tube(0.015, 0.26), grey, [0, 0.01, -0.74], ALONG);
+    part(g, tube(0.024, 0.07, 8), dark, [0, 0.01, -0.9], ALONG);
+    part(g, box(0.05, 0.085, 0.24), dark, [0, -0.015, 0.2]);
+    part(g, box(0.04, 0.12, 0.055), dark, [0, -0.1, 0.0], [-0.28, 0, 0]);
+    part(g, box(0.02, 0.012, 0.36), grey, [0, 0.055, -0.22]);
+    part(g, box(0.05, 0.05, 0.08), dark, [0, 0.09, -0.16]);
+    part(g, box(0.042, 0.036, 0.004), glow, [0, 0.1, -0.2]);
+    part(g, box(0.006, 0.01, 0.34), glow, [0.031, 0.0, -0.2]);
+    data.mag = part(g, box(0.04, 0.17, 0.07), dark, [0, -0.12, -0.24], [0.2, 0, 0]);
+    data.muzzle.set(0, 0.01, -0.95);
+    data.hip = [0.18, -0.2, -0.4];
+    data.ads = [0, -0.1, -0.24];
   } else if (id === 'wasp') {
     part(g, box(0.06, 0.1, 0.36), steel, [0, 0, -0.16]);
     part(g, tube(0.02, 0.18), dark, [0, 0.0, -0.42], ALONG);
@@ -105,7 +120,7 @@ function buildWeapon(id, accent) {
   const left = new THREE.Group();
   part(left, new THREE.CapsuleGeometry(0.045, 0.36, 4, 8), sleeve, [0, 0, 0.24], ALONG);
   part(left, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
-  const reach = id === 'knife' || id === 'p9' || id === 'viper' ? null : (id === 'wasp' ? -0.3 : -0.45);
+  const reach = id === 'knife' || id === 'p9' || id === 'viper' ? null : (id === 'wasp' ? -0.3 : id === 'talon' ? -0.4 : -0.45);
   if (reach !== null) { left.position.set(-0.03, -0.06, reach); left.rotation.set(0.35, 0.75, 0); g.add(left); }
   data.sleeve = sleeve;
   g.userData = data;
