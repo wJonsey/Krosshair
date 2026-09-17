@@ -169,7 +169,7 @@ export function renderHome() {
     <div class="home-grid">
       <section class="home-left">
         <p class="eyebrow">Tactical sniper duels · one life</p>
-        <h1>Sniper<br /><em>Shootout.</em></h1>
+        <h1>Kros<br /><em>shair.</em></h1>
         ${authHtml()}
         <div class="operator-panel">
           <canvas id="operator-preview" width="200" height="260"></canvas>
