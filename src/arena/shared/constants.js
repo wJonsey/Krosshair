@@ -223,6 +223,9 @@ export const WEAPONS = {
 // pilots play as guests with a callsign, and progress stays tied to their browser.
 // Flip to true to bring back login and sign-up (server/accounts.js keeps working either way).
 export const ACCOUNTS_ENABLED = false;
+// Discord application that pilots log in through. This is the app's public Application ID (Developer
+// Portal → General Information) — safe to commit, unlike the client secret or bot token, which go in .env.
+export const DISCORD_CLIENT_ID = '1550238088758825050';
 // Community server. Logging in with Discord adds pilots to it; this link is for everyone else.
 export const DISCORD_INVITE = 'https://discord.gg/uFVygVtKzt';
 

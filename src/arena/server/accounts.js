@@ -3,6 +3,7 @@
 // Login hands the browser a random session token; the file only keeps its SHA-256,
 // so a copy of data/accounts.json can't be used to sign in. data/ is git-ignored.
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
 
@@ -48,6 +49,13 @@ export class AccountStore {
         await rename(`${this.file}.tmp`, this.file);
       } catch (error) { console.warn('account save failed', error.message); }
     }, 500);
+  }
+
+  // Shutdown: write pending changes immediately (see ProfileStore.flush).
+  flush() {
+    if (!this.saveTimer) return;
+    clearTimeout(this.saveTimer); this.saveTimer = null;
+    try { mkdirSync(path.dirname(this.file), { recursive: true }); writeFileSync(`${this.file}.tmp`, JSON.stringify({ version: 1, accounts: Object.fromEntries(this.accounts) }), { mode: 0o600 }); renameSync(`${this.file}.tmp`, this.file); } catch (error) { console.warn('account save failed', error.message); }
   }
 
   static usernameError(username) {

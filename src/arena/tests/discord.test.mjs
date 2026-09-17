@@ -6,12 +6,18 @@ import path from 'node:path';
 import { AccountStore } from '../server/accounts.js';
 import { DiscordAuth, callbackPage } from '../server/discord.js';
 
-const env = { DISCORD_CLIENT_ID: 'id', DISCORD_CLIENT_SECRET: 'secret', DISCORD_BOT_TOKEN: 'bot', PUBLIC_URL: 'https://example.test/' };
+const env = { DISCORD_CLIENT_ID: '111111111111111111', DISCORD_CLIENT_SECRET: 'secret', DISCORD_BOT_TOKEN: 'bot', PUBLIC_URL: 'https://example.test/' };
 const request = { headers: { host: 'localhost:4174' } };
 const store = () => new AccountStore(path.join(os.tmpdir(), `krosshair-accounts-${process.pid}-${Math.random()}.json`));
 
-test('discord login is off without keys, and only asks to join servers when a bot token is set', () => {
-  assert.equal(new DiscordAuth({}).enabled, false);
+test('discord login needs an application id; the secret only picks the flow; joining needs the bot token', () => {
+  // With no env var the committed application id (shared/constants.js) is used.
+  assert.match(new DiscordAuth({}).clientId, /^(\d{15,25})?$/);
+  assert.equal(new DiscordAuth({ DISCORD_CLIENT_ID: 'not-a-number' }).enabled, false);
+  const idOnly = new DiscordAuth({ DISCORD_CLIENT_ID: '111111111111111111' });
+  assert.equal(idOnly.enabled, true);
+  assert.equal(new URL(idOnly.start(request)).searchParams.get('response_type'), 'token');
+  assert.equal(new URL(new DiscordAuth(env).start(request)).searchParams.get('response_type'), 'code');
   const noBot = new URL(new DiscordAuth({ ...env, DISCORD_BOT_TOKEN: '' }).start(request));
   assert.equal(noBot.searchParams.get('scope'), 'identify');
   const full = new URL(new DiscordAuth(env).start(request));
@@ -70,4 +76,41 @@ test('the callback page keeps the session out of URLs and escapes errors', () =>
   assert.ok(!page.includes('</script>en'));
   assert.ok(page.includes("location.replace('/')"));
   assert.ok(callbackPage({ error: '<b>no</b>' }).includes('&lt;b&gt;no&lt;/b&gt;'));
+});
+
+test('implicit login only trusts a token that Discord says was issued to this application', async () => {
+  const discord = new DiscordAuth({ DISCORD_CLIENT_ID: '111111111111111111', DISCORD_BOT_TOKEN: 'bot' });
+  const realFetch = globalThis.fetch;
+  let appId = '111111111111111111';
+  const puts = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (String(url).endsWith('/oauth2/@me')) return new Response(JSON.stringify({ application: { id: appId }, scopes: ['identify', 'guilds.join'], user: { id: '123456789012345678', username: 'pilot', global_name: 'Pilot', avatar: null } }), { status: 200 });
+    puts.push(String(url)); return new Response(null, { status: 204 });
+  };
+  try {
+    const state = () => new URL(discord.start(request)).searchParams.get('state');
+    const ok = await discord.finishToken('a-real-looking-token', state());
+    assert.equal(ok.user.id, '123456789012345678');
+    assert.equal(ok.joined, true);
+    assert.equal(puts.length, 1);
+    appId = '999999999999999999';
+    await assert.rejects(discord.finishToken('token-from-another-app', state()), /not issued for Krosshair/);
+    await assert.rejects(discord.finishToken('a-real-looking-token', 'made-up-state'), /expired/);
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test('settings, key binds and crosshair are saved to the profile, cleaned', async () => {
+  const { ProfileStore } = await import('../server/profiles.js');
+  const profiles = new ProfileStore(path.join(os.tmpdir(), `krosshair-profiles-${process.pid}-${Math.random()}.json`));
+  const token = 'guest-token-0123456789';
+  profiles.get(token);
+  profiles.savePrefs(token, { settings: { fov: 999, quality: 'ultra', showFps: true, fpsCap: 144, binds: { forward: ['KeyI', null], 'bad key!': ['x'], reload: ['<script>', 'KeyR'] }, crosshair: { color: '#00FF66', dot: { on: true, size: 99, opacity: 1 }, inner: { on: true, length: 5, thickness: 2, offset: 3, opacity: 1 } }, evil: 'x' } });
+  const saved = profiles.view(token).settings;
+  assert.equal(saved.fov, 120);
+  assert.equal(saved.quality, 'ultra');
+  assert.equal(saved.fpsCap, 144);
+  assert.deepEqual(saved.binds, { forward: ['KeyI', null], reload: [null, 'KeyR'] });
+  assert.equal(saved.crosshair.color, '#00ff66');
+  assert.equal(saved.crosshair.dot.size, 12);
+  assert.equal(saved.evil, undefined);
 });

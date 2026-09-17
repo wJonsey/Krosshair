@@ -7,7 +7,7 @@ import { WebSocketServer } from 'ws';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
-import { DiscordAuth, callbackPage } from './server/discord.js';
+import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
 import { Room, now } from './server/room.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -30,16 +30,17 @@ for (const file of envFiles) {
 }
 const port = Number(process.env.ARENA_PORT || 4174);
 const discord = new DiscordAuth();
-// Playing needs an account whenever there is a way to get one. Without Discord keys nobody could log in,
-// so the server falls back to guest callsigns rather than locking everyone out.
-const LOGIN_REQUIRED = ACCOUNTS_ENABLED || discord.enabled;
+// Playing needs a Discord login. ALLOW_GUESTS=1 is the only way round it (local testing, or an emergency
+// while the Discord application is being set up).
+const LOGIN_REQUIRED = !['1', 'true', 'yes'].includes(String(process.env.ALLOW_GUESTS || '').toLowerCase());
 // Say what was found (names only, never values) so a missing key is obvious in `journalctl -u krosshair`.
 {
   const has = (key) => (process.env[key] ? 'set' : 'MISSING');
   console.log(`discord: .env ${envLoaded.length ? `read from ${envLoaded.join(', ')}` : `not found (looked in ${envFiles.join(', ')})`} · node ${process.version}`);
   console.log(`discord: DISCORD_CLIENT_ID ${has('DISCORD_CLIENT_ID')} · DISCORD_CLIENT_SECRET ${has('DISCORD_CLIENT_SECRET')} · DISCORD_BOT_TOKEN ${has('DISCORD_BOT_TOKEN')} · PUBLIC_URL ${process.env.PUBLIC_URL || '(from request host)'}`);
   if (discord.clientId && !/^\d{15,25}$/.test(discord.clientId)) console.warn('discord: DISCORD_CLIENT_ID should be the numeric Application ID, not the public key or a token.');
-  console.log(`discord: login ${discord.enabled ? 'ON and required to play' : 'OFF — pilots play as guests'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF'}`);
+  console.log(`discord: login ${discord.enabled ? `ON (${discord.flow} flow)` : 'NOT CONFIGURED — set DISCORD_CLIENT_ID in shared/constants.js'} · ${LOGIN_REQUIRED ? 'required to play' : 'guests allowed (ALLOW_GUESTS)'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF (no DISCORD_BOT_TOKEN)'}`);
+  if (LOGIN_REQUIRED && !discord.enabled) console.warn('discord: NOBODY CAN PLAY until the application ID is set, or the server is started with ALLOW_GUESTS=1.');
 }
 const profiles = new ProfileStore(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json'));
 await profiles.load();
@@ -178,7 +179,22 @@ const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; c
 
 async function discordRoute(request, response, url) {
   const page = (status, body) => { response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); response.end(callbackPage(body)); };
-  if (!discord.enabled) return page(503, { error: 'Discord login is not set up on this server yet.' });
+  const html = (status, body) => { response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); response.end(body); };
+  if (!discord.enabled) return html(503, setupPage(discord.redirectUri(request)));
+  if (url.pathname === '/auth/discord/token') {
+    const reply = (status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
+    if (request.method !== 'POST') return reply(405, { error: 'POST only.' });
+    try {
+      let raw = '';
+      for await (const chunk of request) { raw += chunk; if (raw.length > 4096) return reply(413, { error: 'Too large.' }); }
+      const body = JSON.parse(raw || '{}');
+      const { user, joined } = await discord.finishToken(body.access_token, String(body.state || ''));
+      const result = accounts.discordSignIn(user);
+      if (!result) return reply(400, { error: 'Discord sent back an account we could not read.' });
+      console.log(`discord ${result.created ? 'signup' : 'login'}: ${result.account.username}${joined ? ' (in the server)' : ''}`);
+      return reply(200, { session: result.session, joined });
+    } catch (error) { return reply(400, { error: error instanceof SyntaxError ? 'Bad request.' : error.message }); }
+  }
   if (url.pathname === '/auth/discord') {
     const target = discord.start(request);
     if (!target) return page(503, { error: 'Too many logins in progress. Try again in a minute.' });
@@ -186,6 +202,8 @@ async function discordRoute(request, response, url) {
     return response.end();
   }
   if (url.searchParams.get('error')) return page(400, { error: 'Discord login was cancelled.' });
+  // Implicit grant: nothing in the query, the token is in the fragment and the page deals with it.
+  if (!url.searchParams.get('code')) return html(200, tokenPage());
   try {
     const { user, joined } = await discord.finish(request, url.searchParams.get('code') || '', url.searchParams.get('state') || '');
     const result = accounts.discordSignIn(user);
@@ -202,7 +220,7 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()), discord: { login: discord.enabled, autoJoin: discord.autoJoin, required: LOGIN_REQUIRED } }));
     return;
   }
-  if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback') return void discordRoute(request, response, url);
+  if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback' || url.pathname === '/auth/discord/token') return void discordRoute(request, response, url);
   const requested = decodeURIComponent(url.pathname);
   // Relative asset paths only resolve from the real page URL, so send bare visits there.
   if (requested === '/' || requested === '/index.html' || requested === '/src/arena/' || requested === '/src/arena') {
@@ -280,7 +298,7 @@ wss.on('connection', (socket) => {
         return send(socket, { type: 'pong', c: message.c, s: now() });
       }
       if (message.type === 'auth') {
-        if (!ACCOUNTS_ENABLED && !discord.enabled) return send(socket, { type: 'auth-error', action: message.action, message: 'Accounts are switched off for now. Play with a callsign instead.' });
+        if (!ACCOUNTS_ENABLED && !discord.enabled && message.action !== 'logout') return send(socket, { type: 'auth-required' });
         return void handleAuth(socket, message);
       }
       if (message.type === 'identify') {
@@ -318,4 +336,6 @@ wss.on('connection', (socket) => {
   socket.on('error', () => {});
 });
 
+// systemd stops the game with SIGTERM on every deploy: save first, then go.
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { profiles.flush(); accounts.flush(); process.exit(0); });
 server.listen(port, '0.0.0.0', () => console.log(`Krosshair online at http://localhost:${port}/`));

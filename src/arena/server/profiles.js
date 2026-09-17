@@ -1,15 +1,40 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { dailyContracts, dateKey, levelFromXp, COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
 
 const HISTORY_LIMIT = 25;
 // Settings a pilot's account remembers, with the values the server will accept.
+// Key binds and the crosshair are structured, so they get their own checks: only the shapes the client
+// writes are kept, everything is bounded, and nothing unexpected reaches the saved file.
+function cleanBinds(binds) {
+  if (!binds || typeof binds !== 'object' || Array.isArray(binds)) return null;
+  const out = {};
+  for (const [action, slots] of Object.entries(binds).slice(0, 40)) {
+    if (!/^[A-Za-z0-9]{1,24}$/.test(action) || !Array.isArray(slots)) continue;
+    out[action] = [0, 1].map((index) => (typeof slots[index] === 'string' && /^[A-Za-z0-9]{1,24}$/.test(slots[index]) ? slots[index] : null));
+  }
+  return out;
+}
+function cleanCrosshair(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  const num = (value, min, max) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min);
+  const lines = (g = {}) => ({ on: Boolean(g.on), opacity: num(g.opacity, 0, 1), length: num(g.length, 0, 30), thickness: num(g.thickness, 1, 10), offset: num(g.offset, 0, 40) });
+  return {
+    color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color.toLowerCase() : '#e6edf1',
+    outline: { on: Boolean(c.outline?.on), opacity: num(c.outline?.opacity, 0, 1), thickness: num(c.outline?.thickness, 1, 10) },
+    dot: { on: Boolean(c.dot?.on), size: num(c.dot?.size, 1, 12), opacity: num(c.dot?.opacity, 0, 1) },
+    inner: lines(c.inner), outer: lines(c.outer), dynamic: Boolean(c.dynamic), tee: Boolean(c.tee),
+  };
+}
+
 const SETTING_RULES = {
   sensitivity: [0.1, 5], scopeSensitivity: [0.1, 3], padSensitivity: [0.1, 5], fov: [50, 120], volume: [0, 1],
-  quality: ['high', 'medium', 'low'], announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool',
+  quality: ['ultra', 'high', 'medium', 'low', 'custom'], renderScale: [0.4, 2], shadows: ['off', 'low', 'high', 'ultra'], streetLights: 'bool', brightness: [0.5, 2], fpsCap: [0, 360], autoQuality: 'bool', showFps: 'bool',
+  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool',
 };
 
 export class ProfileStore {
@@ -36,6 +61,13 @@ export class ProfileStore {
         await rename(`${this.file}.tmp`, this.file);
       } catch (error) { console.warn('profile save failed', error.message); }
     }, 1500);
+  }
+
+  // Shutdown: write whatever is waiting, right now. Restarts (every deploy) must not cost anyone progress.
+  flush() {
+    if (!this.saveTimer) return;
+    clearTimeout(this.saveTimer); this.saveTimer = null;
+    try { mkdirSync(path.dirname(this.file), { recursive: true }); writeFileSync(`${this.file}.tmp`, JSON.stringify(Object.fromEntries(this.profiles))); renameSync(`${this.file}.tmp`, this.file); } catch (error) { console.warn('profile save failed', error.message); }
   }
 
   static key(token) { return createHash('sha256').update(token).digest('hex').slice(0, 32); }
@@ -87,6 +119,8 @@ export class ProfileStore {
         const value = settings[key];
         if (rule === 'bool') { if (typeof value === 'boolean') clean[key] = value; } else if (typeof rule[0] === 'string') { if (rule.includes(value)) clean[key] = value; } else if (Number.isFinite(value)) clean[key] = Math.min(rule[1], Math.max(rule[0], value));
       }
+      const binds = cleanBinds(settings.binds); if (binds) clean.binds = binds;
+      const crosshair = cleanCrosshair(settings.crosshair); if (crosshair) clean.crosshair = crosshair;
       profile.settings = clean;
     }
     if (tutorialDone === true) profile.tutorialDone = true;

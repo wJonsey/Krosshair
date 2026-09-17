@@ -27,24 +27,25 @@ A systemd timer (`krosshair-deploy.timer`) polls `origin/main` every few minutes
 
 ## Discord login
 
-A Discord login is required to play: the menu shows **Log in / sign up with Discord** and the server turns away anyone who has not logged in, including for bot matches and the practice range. (Until the server has its Discord keys nobody could log in, so it falls back to guest callsigns and says so in its log at start-up.) There is no email and no password: the first Discord login creates the account (and adopts the guest progress already in that browser), later logins find it again by Discord ID, so progress follows the pilot to any device. Each login also adds them to the [Krosshair Discord](https://discord.gg/uFVygVtKzt) — Discord shows "Join servers for you" on its consent screen first.
+A Discord login is required to play — quick play, ranked, bot matches, the practice range, all of it. There is no email and no password: the menu shows **Log in / sign up with Discord**, the first login creates the account (and adopts the guest progress already in that browser), and later logins find it again by Discord ID. Level, stats, unlocks, look, settings, key binds and crosshair are saved to the account on the server, so they survive restarts and follow the pilot to any device.
 
-Login switches on, and becomes mandatory, once the server has Discord keys. One-time setup, by whoever owns the Discord server:
+**What is already set up.** The game logs in through the Discord application whose public ID is `DISCORD_CLIENT_ID` in `src/arena/shared/constants.js`, with these redirects registered on it: `https://krosshair.online/auth/discord/callback` and `http://localhost:4174/auth/discord/callback`. That is everything login needs — no secrets on the server. The server checks with Discord that every token it is handed was issued to this application before trusting it.
 
-1. Create an application at https://discord.com/developers/applications.
-2. **OAuth2 → Redirects:** add `https://krosshair.online/auth/discord/callback` (and `http://localhost:4174/auth/discord/callback` for local testing).
-3. **Bot:** create the bot and copy its token. Invite it to the Krosshair server with the **Create Invite** permission — without the bot in the server, logins still work but nobody is auto-joined.
-4. On the game machine, copy `.env.example` to `.env`, fill in the client ID, client secret and bot token, and restart `krosshair.service`. `.env` is git-ignored; never commit these values.
+**Adding pilots to the Discord server automatically** needs the application's bot, because only a bot can add members:
 
-If the button does not appear, the server did not find its keys. It says what it found when it starts (key names only, never values):
+1. Developer Portal → the application → **Bot** → create it and copy the token.
+2. Invite the bot to the [Krosshair Discord](https://discord.gg/uFVygVtKzt) with the **Create Invite** permission.
+3. On the game machine, copy `.env.example` to `.env`, set `DISCORD_BOT_TOKEN`, and restart `krosshair.service`. `.env` is git-ignored; never commit it.
+
+Until then logins work and the menu links to the invite instead. Setting `DISCORD_CLIENT_SECRET` as well switches login to the code flow, which keeps Discord's token off the browser entirely. Discord shows "Join servers for you" on its consent screen whenever auto-join is on. Only the `identify` and `guilds.join` scopes are ever requested.
+
+**Checking it.** `https://krosshair.online/api/status` reports `"discord": { "login", "autoJoin", "required" }`, and the server prints what it found at start-up (key names only):
 
 ```bash
 journalctl -u krosshair -n 20 | grep discord:
 ```
 
-`https://krosshair.online/api/status` shows the same thing as `"discord": { "login": …, "autoJoin": …, "required": … }`. The `.env` must sit next to `package.json`, and the service needs a restart after it changes — a push to `main` restarts it too.
-
-The only scopes requested are `identify` and `guilds.join`. Sessions are stored the same way as before (the file keeps a SHA-256 of the token, in `data/accounts.json`).
+`ALLOW_GUESTS=1` in the environment lets people in with a callsign instead — for local testing or an emergency. Sessions are stored as SHA-256 hashes in `data/accounts.json`, and pending saves are flushed when the service stops, so a deploy never costs anyone progress.
 
 ## How a match plays
 

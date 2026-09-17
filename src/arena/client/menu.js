@@ -50,10 +50,10 @@ function accountRowHtml() {
 }
 // Sign-up and login are the same button. When the server requires a login there is no guest callsign at all.
 function discordHtml() {
-  const canLogin = game.discord.enabled && net.sameOrigin;
   const required = game.loginRequired && !ACCOUNTS_ENABLED;
-  const login = canLogin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'You need a Discord login to play. ' : ''}No email or password. Your progress follows you to any device, and you’re added to the Krosshair Discord — Discord asks you to approve that first.</small>` : required ? '<p class="muted">This server needs a Discord login, which only works from the game’s own address. Open the game there to play.</p>' : '';
-  return `<div class="discord-block${required ? ' required' : ''}">${login}<a class="discord-link" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">${canLogin && !required ? 'Just want to look around? Join the Discord →' : 'Join the Krosshair Discord →'}</a></div>`;
+  // The button is always there. On a server with no Discord application yet it opens the setup steps.
+  const login = net.sameOrigin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'You need a Discord login to play. ' : ''}No email or password. Your level, stats, unlocks, settings, key binds and crosshair are saved to your account and follow you to any device. You’re also added to the Krosshair Discord — Discord asks you to approve that first.${game.discord.enabled || !net.connected ? '' : ' <b class="warn">This server’s Discord application is not set up yet — the button shows how.</b>'}</small>` : '<p class="muted">Discord login only works from the game’s own address. Open the game there to play.</p>';
+  return `<div class="discord-block${required ? ' required' : ''}">${login}<a class="discord-link" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">Join the Krosshair Discord →</a></div>`;
 }
 function authHtml() {
   if (game.username) return accountRowHtml();
@@ -351,7 +351,7 @@ bus.on('signed-in', () => {
   // Set by the Discord callback page on its way back to the menu.
   let viaDiscord = null;
   try { viaDiscord = sessionStorage.getItem('krosshair:discord'); sessionStorage.removeItem('krosshair:discord'); } catch { /* private mode */ }
-  if (viaDiscord && game.username) toast(viaDiscord === 'joined' ? `Signed in as ${game.username}. You’re in the Krosshair Discord too.` : `Signed in as ${game.username}.`, 'good');
+  if (viaDiscord && game.username) toast(viaDiscord === 'joined' ? `Signed in as ${game.username}. You’re in the Krosshair Discord too.` : `Signed in as ${game.username}. Join the Krosshair Discord from the Pilot panel.`, 'good');
   if (pendingPlay) { const payload = pendingPlay; pendingPlay = null; net.enter(payload); }
   if (authPending === 'signup') { toast(`Welcome, ${game.username}. Your progress now saves to your account.`, 'good'); game.token = null; store('token', null); }
   else if (authPending === 'login') toast(`Welcome back, ${game.username}.`, 'good');

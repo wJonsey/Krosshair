@@ -779,3 +779,4 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .account-row { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
 .account-row > div { flex: 1; min-width: 0; } .account-row b { display: block; font: 500 16px var(--body); margin-top: 3px; }
 .account-row .avatar { border-radius: 50%; }
+.discord-block .hint .warn { color: var(--signal); font-weight: 400; }
