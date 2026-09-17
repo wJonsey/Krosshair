@@ -47,6 +47,15 @@ journalctl -u krosshair -n 20 | grep discord:
 
 `ALLOW_GUESTS=1` in the environment lets people in with a callsign instead — for local testing or an emergency. Sessions are stored as SHA-256 hashes in `data/accounts.json`, and pending saves are flushed when the service stops, so a deploy never costs anyone progress.
 
+## Discord webhooks
+
+Two optional channel webhooks, both set in `.env` on the game machine (see `.env.example`):
+
+- **`DISCORD_WEBHOOK_UPDATES`** — every deploy. When the deploy timer restarts the service, the old process posts "⚠️ Update incoming — server restarting" with how many pilots and matches are about to be dropped, shows the same warning in game, and waits `RESTART_GRACE_SECONDS` (20 by default, skipped when nobody is online) before it saves and exits. The new process then posts "✅ Update live" with the commit message and hash. A restart with no new commit posts the warning but not the second message.
+- **`DISCORD_WEBHOOK_LEADERBOARD`** — checked every five minutes; posts when the top three of any board changes, with the new top five and a headline when #1 changes hands.
+
+Webhook posts never mention anyone, and a webhook that is down or slow never delays a deploy by more than three seconds past the grace period. `https://krosshair.online/api/status` reports which of the two are configured. Last-announced state lives in `data/webhooks.json`.
+
 ## How a match plays
 
 - **Best of nine.** First team to five rounds wins. Sides switch after round four.
@@ -143,7 +152,8 @@ src/arena/
 │   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
 │   ├── bots.js, nav.js          # Bot AI and the generated navigation grid
 │   ├── profiles.js              # JSON profile store
-│   └── accounts.js, discord.js  # Accounts and "Log in with Discord"
+│   ├── accounts.js, discord.js  # Accounts and "Log in with Discord"
+│   └── webhooks.js              # Discord channel posts: deploy warnings, leaderboard changes
 ├── client/                      # Three.js client (world, characters, viewmodel, HUD, menus, audio)
 └── tests/                       # `npm test`
 backend/                         # Separate Python Call of Duty profile API (unrelated to the arena)

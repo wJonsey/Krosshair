@@ -8,6 +8,7 @@ import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey, 
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
+import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -50,6 +51,9 @@ await accounts.load();
 const loginFailures = new Map();
 // Bug reports and suggestions, one JSON object per line. data/ is git-ignored.
 const feedbackFile = process.env.ARENA_FEEDBACK || path.join(root, 'data', 'feedback.jsonl');
+
+const webhooks = new Webhooks({ root, stateFile: path.join(path.dirname(profiles.file), 'webhooks.json'), siteUrl: (process.env.PUBLIC_URL || 'https://krosshair.online').replace(/\/$/, '') });
+{ const hooks = webhooks.status(); console.log(`discord webhooks: updates ${hooks.updates ? 'ON' : 'off'} · leaderboard ${hooks.leaderboard ? 'ON' : 'off'}`); }
 
 const rooms = new Map();
 let roomCounter = 1;
@@ -278,7 +282,7 @@ const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://arena.local');
   if (url.pathname === '/api/status') {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()), discord: { login: discord.enabled, autoJoin: discord.autoJoin, required: LOGIN_REQUIRED } }));
+    response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()), discord: { login: discord.enabled, autoJoin: discord.autoJoin, required: LOGIN_REQUIRED, webhooks: webhooks.status() } }));
     return;
   }
   if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback' || url.pathname === '/auth/discord/token') return void discordRoute(request, response, url);
@@ -398,6 +402,36 @@ wss.on('connection', (socket) => {
   socket.on('error', () => {});
 });
 
-// systemd stops the game with SIGTERM on every deploy: save first, then go.
-for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { profiles.flush(); accounts.flush(); process.exit(0); });
-server.listen(port, '0.0.0.0', () => console.log(`Krosshair online at http://localhost:${port}/`));
+// The leaderboard channel hears about it when a podium changes hands. Checked every few minutes.
+const boardValue = (id, row) => (id === 'rating' ? `${row.value} SR` : id === 'level' ? `Lv ${row.level} · ${row.value.toLocaleString('en')} XP` : id === 'longest' ? `${row.value} m` : row.value.toLocaleString('en'));
+function checkBoards() {
+  boardCache.at = 0;
+  const rows = leaderboards();
+  webhooks.announceBoards(Object.fromEntries(Object.entries(BOARDS).map(([id, board]) => [id, { label: board.label, top: rows[id] }])), boardValue).catch((error) => console.warn('leaderboard webhook failed', error.message));
+}
+setInterval(checkBoards, 5 * 60 * 1000).unref();
+setTimeout(checkBoards, 15 * 1000).unref();
+
+// systemd stops the game with SIGTERM on every deploy. People mid-match get a warning in game and in
+// Discord and a short grace period to finish the round; then everything is saved and the process goes.
+// (systemd waits 90 s by default before it kills a service, so the grace period must stay well under that.)
+const RESTART_GRACE = Math.min(60, Math.max(0, Number(process.env.RESTART_GRACE_SECONDS ?? 20)));
+let stopping = false;
+function shutdown() { profiles.flush(); accounts.flush(); process.exit(0); }
+process.on('SIGINT', shutdown); // Ctrl+C while developing: no ceremony
+process.on('SIGTERM', () => {
+  if (stopping) return shutdown(); // asked twice: go now
+  stopping = true;
+  const pilots = [...sockets].filter((socket) => socket.identified).length;
+  const matches = [...rooms.values()].filter((room) => room.mode === 'match' && room.phase !== 'lobby').length;
+  const seconds = pilots ? RESTART_GRACE : 0;
+  console.log(`stopping for a deploy: ${pilots} online, ${matches} matches, ${seconds}s grace`);
+  for (const socket of sockets) send(socket, { type: 'notice', tone: 'warn', text: `New update: the server restarts in ${seconds} seconds. Matches in progress will end — your page refreshes itself when it is back.` });
+  const posted = webhooks.announceRestart({ seconds, pilots, matches });
+  // Never let a slow webhook hold the deploy up: leave when the grace period is over, posted or not.
+  Promise.race([Promise.all([posted, new Promise((resolve) => setTimeout(resolve, seconds * 1000))]), new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 3000))]).then(shutdown);
+});
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Krosshair online at http://localhost:${port}/`);
+  webhooks.announceBoot().catch((error) => console.warn('update webhook failed', error.message));
+});
