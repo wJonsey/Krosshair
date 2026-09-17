@@ -132,10 +132,25 @@
   spawnTimer = setInterval(spawn, 750);
 
   // ----- when the engine never arrives -----
-  document.querySelector('#main-module')?.addEventListener('error', () => fail('Could not download the game. Check your connection and reload.'));
   addEventListener('error', (event) => { if (!ready && event.filename) fail('The game hit an error while starting. Reload to try again.'); });
   setTimeout(() => { if (!ready && !closed && !el.classList.contains('failed')) status.textContent += ' Still working — slow connection?'; }, 15000);
 
   refresh();
   window.__boot = { step, ready: markReady, fail };
+
+  // ----- phones and tablets -----
+  // Krosshair needs a mouse and keyboard (pointer lock, right-click to scope, a dozen keys), so touch
+  // devices stop here and the engine is never downloaded. A tablet with a mouse attached counts as a laptop.
+  const ua = navigator.userAgent || '';
+  const touchOnly = navigator.maxTouchPoints > 0 && !matchMedia('(any-pointer: fine)').matches;
+  const mobile = navigator.userAgentData?.mobile === true || /Android|iPhone|iPad|iPod|Windows Phone|Mobile/i.test(ua) || touchOnly;
+  if (mobile) {
+    closed = true;
+    clearInterval(spawnTimer);
+    el.classList.add('blocked');
+    $('.boot-steps').remove(); $('.boot-meter').remove(); $('.boot-score').remove(); enter.remove(); range.remove();
+    status.outerHTML = '<div class="boot-block"><h2>Krosshair needs a laptop or desktop.</h2><p>It’s played with a mouse and keyboard — aiming, scoping and a dozen keys — so it doesn’t run on phones or tablets.</p><p>Open <b>krosshair.online</b> on a computer to play. See you on the range.</p><a href="https://discord.gg/uFVygVtKzt" target="_blank" rel="noopener noreferrer">Join the Discord in the meantime →</a></div>';
+    return;
+  }
+  import(new URL('client/main.js', document.baseURI).href).catch((error) => { console.error(error); fail('Could not download the game. Check your connection and reload.'); });
 })();

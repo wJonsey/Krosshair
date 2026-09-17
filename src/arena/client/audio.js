@@ -8,6 +8,7 @@ let master = null;
 let reverb = null;
 let noiseBuffer = null;
 let ambience = null;
+let ambienceLevel = 0.6;
 const listener = { x: 0, y: 0, z: 0 };
 const loops = new Map();
 
@@ -273,14 +274,17 @@ export function setAmbience(variant) {
     source.connect(filter).connect(amp).connect(gain); source.start(0, Math.random());
     sources.push(source);
   };
-  bed('lowpass', variant === 'storm' ? 500 : 320, 0.5, variant === 'storm' ? 0.2 : 0.09, 0.13);
-  if (variant === 'storm') { bed('highpass', 2600, 0.3, 0.1, 0); bed('bandpass', 1200, 0.4, 0.07, 0.31); }
-  if (variant === 'night') { const hum = ctx.createOscillator(); hum.frequency.value = 55; const g = ctx.createGain(); g.gain.value = 0.035; hum.connect(g).connect(gain); hum.start(); sources.push(hum); }
-  gain.gain.setTargetAtTime(1, ctx.currentTime, 1.2);
-  ambience = { gain, sources, base: 1 };
+  // Weather sits under the action: footsteps and distant shots have to read over it.
+  bed('lowpass', variant === 'storm' ? 500 : 320, 0.5, variant === 'storm' ? 0.07 : 0.05, 0.13);
+  if (variant === 'storm') { bed('highpass', 2600, 0.3, 0.028, 0); bed('bandpass', 1200, 0.4, 0.024, 0.31); }
+  if (variant === 'night') { const hum = ctx.createOscillator(); hum.frequency.value = 55; const g = ctx.createGain(); g.gain.value = 0.02; hum.connect(g).connect(gain); hum.start(); sources.push(hum); }
+  gain.gain.setTargetAtTime(ambienceLevel, ctx.currentTime, 1.2);
+  ambience = { gain, sources, shelter: 0 };
 }
 // Rain and wind fall away when you step under a roof or into the underpass.
-export function setAmbienceShelter(amount) { if (ambience) ambience.gain.gain.setTargetAtTime(1 - amount * 0.65, ctx.currentTime, 0.4); }
+export function setAmbienceShelter(amount) { if (ambience) { ambience.shelter = amount; ambience.gain.gain.setTargetAtTime(ambienceLevel * (1 - amount * 0.65), ctx.currentTime, 0.4); } }
+// Settings → Audio → Weather volume.
+export function setAmbienceVolume(value) { ambienceLevel = Math.max(0, Math.min(1, Number(value))); if (ambience) ambience.gain.gain.setTargetAtTime(ambienceLevel * (1 - ambience.shelter * 0.65), ctx.currentTime, 0.2); }
 
 let lastSpoken = 0;
 export function announce(text, priority = false) {

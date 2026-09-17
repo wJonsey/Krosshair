@@ -12,7 +12,7 @@ import { ViewModel } from './viewmodel.js';
 import { SoundViz } from './soundviz.js';
 import { LocalPlayer, MATERIAL_SOUND } from './player.js';
 import { Hud, roundIntroVoice } from './hud.js';
-import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, setListener, setVolume, stopAllLoops, unlockAudio } from './audio.js';
+import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setVolume, stopAllLoops, unlockAudio } from './audio.js';
 import { mapFingerprint } from '../shared/version.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
@@ -462,6 +462,8 @@ function frame(now = 0) {
 }
 
 setVolume(game.settings.volume);
+setAmbienceVolume(game.settings.ambience);
+bus.on('settings', () => setAmbienceVolume(game.settings.ambience));
 showScreen('home');
 bus.on('net-status', ({ state }) => { if (state === 'open') boot?.step('link'); else if (state === 'closed') boot?.step('link', 'warn'); });
 net.connect();

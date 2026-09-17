@@ -91,6 +91,12 @@ Each arena has its own set of conditions: Dusk, Night Fog, Storm Front and High 
 | Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
 | Private room | Room code + invite link, team select, bots, custom rules (arena vote / random / fixed, format, round time, credits, weather, modifier, friendly fire, sudden death). |
 
+## Leaderboard
+
+The **Leaderboard** page ranks every account by skill rating (ranked players only), level, player kills, wins, headshots and longest kill: a podium for the top three, the rest of the top 50, and your own position however far down it is. The Play page shows the top five. Standings are rebuilt on the server at most every 30 seconds.
+
+Phones and tablets are stopped at the loading screen with a note to play on a laptop or desktop — the game needs a mouse and keyboard — and the engine is never downloaded on them.
+
 ## Progression
 
 Profiles live on the server in `data/profiles.json`, keyed by a random token kept in the browser. They track XP and level, skill rating, career stats, per-weapon mastery, the last 25 matches, and three daily contracts that rotate at 00:00 UTC. Levels unlock suit, visor and tracer colours and titles. The end screen can render a shareable match card (PNG).

@@ -186,7 +186,7 @@ function pilotHtml() {
 }
 
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
-const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['career', 'Career'], ['rooms', 'Rooms']];
+const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['career', 'Career'], ['leaderboard', 'Leaderboard'], ['rooms', 'Rooms']];
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
 const pageFromHash = () => ([...HOME_PAGES, ...TOOL_PAGES].some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
 let homePage = pageFromHash();
@@ -201,6 +201,49 @@ function setHomePage(page) {
 }
 addEventListener('popstate', () => { const page = pageFromHash(); if (page !== homePage) { homePage = page; pageEntering = true; if (game.screen === 'home') renderHome(); } });
 addEventListener('hashchange', () => { const page = pageFromHash(); if (page !== homePage) { homePage = page; pageEntering = true; if (game.screen === 'home') renderHome(); } });
+
+// ------------------------------------------------------------------ leaderboard
+let boards = null;
+let boardTab = 'rating';
+let boardsAskedAt = -Infinity;
+const BOARD_ORDER = ['rating', 'level', 'kills', 'wins', 'headshots', 'longest'];
+const boardValue = (id, row) => (id === 'rating' ? `${row.value} SR` : id === 'level' ? `${row.value.toLocaleString()} XP` : id === 'longest' ? `${row.value} M` : row.value.toLocaleString());
+// Standings refresh every 30 s while they are on screen. Until the first answer arrives the request is
+// repeated every few seconds, so a message lost around connect or login never leaves the page on "Loading…".
+function askBoards() {
+  if (!net.connected) return;
+  const since = performance.now() - boardsAskedAt;
+  if (since < (boards ? 30000 : 3000)) return;
+  boardsAskedAt = performance.now();
+  net.send({ type: 'leaderboard' });
+}
+net.on('leaderboard', (message) => { boards = message.boards; if (game.screen === 'home' && (homePage === 'leaderboard' || homePage === 'play')) renderHome(); });
+setInterval(() => { if (game.screen === 'home' && (homePage === 'leaderboard' || homePage === 'play') && !document.hidden) askBoards(); }, 2000);
+const pilotFace = (row) => (row.avatar ? `<img class="avatar" src="${escapeHtml(row.avatar)}" alt="" width="28" height="28" loading="lazy" referrerpolicy="no-referrer" />` : `<i class="avatar blank">${escapeHtml(row.name.slice(0, 1).toUpperCase())}</i>`);
+const boardRow = (id, row) => `<div class="board-row${row.you ? ' you' : ''}"><b class="place">${row.rank}</b>${pilotFace(row)}<span class="who"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.title)} · LV ${row.level}</small></span><em>${boardValue(id, row)}</em></div>`;
+
+function leaderboardPageHtml() {
+  askBoards();
+  const board = boards?.[boardTab];
+  const tabs = `<div class="segmented board-tabs" role="tablist">${BOARD_ORDER.map((id) => `<button type="button" role="tab" data-board="${id}" class="${id === boardTab ? 'active' : ''}" aria-selected="${id === boardTab}">${boards?.[id]?.label || id}</button>`).join('')}</div>`;
+  if (!board) return `<section class="page-wide"><p class="eyebrow">Leaderboard</p><h1 class="page-title">Top <em>guns.</em></h1>${tabs}<div class="panel"><p class="muted">${net.connected ? 'Loading the standings…' : 'Connecting to the relay…'}</p></div></section>`;
+  const podium = board.top.slice(0, 3);
+  const rest = board.top.slice(3);
+  const empty = boardTab === 'rating' ? 'Nobody is ranked yet. Win a ranked match and the top spot is yours.' : 'Nobody is on this board yet. Play a match to be the first.';
+  const mine = board.you ? `You are <b>#${board.you.rank}</b> of ${board.total.toLocaleString()}` : game.username ? (boardTab === 'rating' ? 'Play a ranked match to get on this board.' : 'Play a match to get on this board.') : 'Log in to see where you stand.';
+  return `<section class="page-wide"><p class="eyebrow">Leaderboard <small>${board.total.toLocaleString()} pilot${board.total === 1 ? '' : 's'} · updates every 30 s</small></p><h1 class="page-title">Top <em>guns.</em></h1>
+    <div class="board-head">${tabs}<p class="board-mine">${mine}</p></div>
+    ${board.top.length ? `<div class="podium">${podium.map((row) => `<div class="panel podium-card place-${row.rank}${row.you ? ' you' : ''}"><span class="medal">${row.rank}</span>${pilotFace(row)}<strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.title)} · LV ${row.level}</small><em>${boardValue(boardTab, row)}</em></div>`).join('')}</div>
+    ${rest.length ? `<div class="panel board-list">${rest.map((row) => boardRow(boardTab, row)).join('')}</div>` : ''}
+    ${board.you && board.you.rank > 50 ? `<div class="panel board-list"><div class="board-row you"><b class="place">${board.you.rank}</b><i class="avatar blank">★</i><span class="who"><strong>${escapeHtml(game.username || 'You')}</strong><small>Your position</small></span><em>${boardValue(boardTab, board.you)}</em></div></div>` : ''}` : `<div class="panel"><p class="muted">${empty}</p></div>`}</section>`;
+}
+// Play page: the top five by skill rating, or by level while nobody is ranked.
+function boardTeaserHtml() {
+  askBoards();
+  const id = boards?.rating?.top.length ? 'rating' : 'level';
+  const top = boards?.[id]?.top.slice(0, 5) || [];
+  return `<div class="panel board-teaser"><p class="eyebrow">Leaderboard <small>${id === 'rating' ? 'skill rating' : 'level'}</small></p>${top.length ? top.map((row) => boardRow(id, row)).join('') : `<p class="muted">${boards ? 'No pilots on the board yet — be the first.' : 'Loading…'}</p>`}<div class="link-row"><button type="button" class="ghost-button" data-page="leaderboard">Full standings →</button></div></div>`;
+}
 
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
@@ -220,6 +263,9 @@ function playPageHtml() {
       <div class="panel pilot"><p class="eyebrow">Pilot</p>${authHtml()}<div class="pilot-body">${pilotHtml()}</div>
         <div class="link-row"><button type="button" class="ghost-button" data-page="operator">Customise operator</button><button type="button" class="ghost-button" data-page="career">Full career →</button></div>
       </div>
+    </aside>
+    <aside class="page-side page-third">
+      ${boardTeaserHtml()}
       <button type="button" class="panel room-teaser" data-page="rooms"><p class="eyebrow">Rooms</p><strong>${game.publicRooms.length ? `${game.publicRooms.length} live room${game.publicRooms.length === 1 ? '' : 's'}` : 'Play with friends'}</strong><span>Private rooms, custom rules and an invite link.</span></button>
     </aside>`;
 }
@@ -260,7 +306,7 @@ export function renderHome() {
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') listening = null;
-  const pageHtml = homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
@@ -309,6 +355,7 @@ home.addEventListener('click', (event) => {
   if (!target) return;
   if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
   if (onSettingsClick(event)) return;
+  if (target.dataset.board) { boardTab = target.dataset.board; play('ui'); renderHome(); return; }
   if (target.dataset.kind) {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
     game.look[target.dataset.kind] = target.dataset.value;
@@ -507,7 +554,7 @@ function settingsBodyHtml(tab) {
         ${toggle('autoQuality', 'Lower graphics automatically', 'Steps the preset down if the frame rate stays under 38 for a few seconds.')}</div></div>`;
   }
   if (tab === 'audio') {
-    return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Audio</p>${slider('volume', 'Master volume', 0, 1, 0.05, 'pct')}${toggle('announcer', 'Announcer voice', 'Uses your browser’s speech voice, so it sounds different per system.')}</div>
+    return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Audio</p>${slider('volume', 'Master volume', 0, 1, 0.05, 'pct')}${slider('ambience', 'Weather volume', 0, 1, 0.05, 'pct', s.ambience, 'Rain, wind and the night hum. Footsteps and gunfire are not affected.')}${toggle('announcer', 'Announcer voice', 'Uses your browser’s speech voice, so it sounds different per system.')}</div>
       <div class="panel"><p class="eyebrow">HUD</p>${toggle('visualizeSound', 'Visualize sound effects', 'Draws footsteps and gunfire as on-screen markers.')}${toggle('showFps', 'Show FPS counter')}</div></div>`;
   }
   if (tab === 'crosshair') {

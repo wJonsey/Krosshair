@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey } from './shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
@@ -37,7 +37,7 @@ const LOGIN_REQUIRED = !['1', 'true', 'yes'].includes(String(process.env.ALLOW_G
 {
   const has = (key) => (process.env[key] ? 'set' : 'MISSING');
   console.log(`discord: .env ${envLoaded.length ? `read from ${envLoaded.join(', ')}` : `not found (looked in ${envFiles.join(', ')})`} · node ${process.version}`);
-  console.log(`discord: DISCORD_CLIENT_ID ${has('DISCORD_CLIENT_ID')} · DISCORD_CLIENT_SECRET ${has('DISCORD_CLIENT_SECRET')} · DISCORD_BOT_TOKEN ${has('DISCORD_BOT_TOKEN')} · PUBLIC_URL ${process.env.PUBLIC_URL || '(from request host)'}`);
+  console.log(`discord: application id ${process.env.DISCORD_CLIENT_ID ? 'from env' : discord.clientId ? 'from shared/constants.js' : 'MISSING'} · DISCORD_CLIENT_SECRET ${has('DISCORD_CLIENT_SECRET')} · DISCORD_BOT_TOKEN ${has('DISCORD_BOT_TOKEN')} · PUBLIC_URL ${process.env.PUBLIC_URL || '(from request host)'}`);
   if (discord.clientId && !/^\d{15,25}$/.test(discord.clientId)) console.warn('discord: DISCORD_CLIENT_ID should be the numeric Application ID, not the public key or a token.');
   console.log(`discord: login ${discord.enabled ? `ON (${discord.flow} flow)` : 'NOT CONFIGURED — set DISCORD_CLIENT_ID in shared/constants.js'} · ${LOGIN_REQUIRED ? 'required to play' : 'guests allowed (ALLOW_GUESTS)'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF (no DISCORD_BOT_TOKEN)'}`);
   if (LOGIN_REQUIRED && !discord.enabled) console.warn('discord: NOBODY CAN PLAY until the application ID is set, or the server is started with ALLOW_GUESTS=1.');
@@ -160,6 +160,44 @@ async function handleAuth(socket, message) {
   } finally {
     socket.authBusy = false;
   }
+}
+
+// Leaderboards: accounts only (every pilot has one now), rebuilt at most every 30 s.
+const BOARDS = {
+  rating: { label: 'Skill rating', value: (p) => Math.round(p.rating), eligible: (p) => p.rankedMatches > 0 },
+  level: { label: 'Level', value: (p) => p.xp, eligible: (p) => p.xp > 0 },
+  kills: { label: 'Player kills', value: (p) => p.stats?.playerKills || 0, eligible: (p) => (p.stats?.playerKills || 0) > 0 },
+  wins: { label: 'Wins', value: (p) => p.stats?.wins || 0, eligible: (p) => (p.stats?.wins || 0) > 0 },
+  headshots: { label: 'Headshots', value: (p) => p.stats?.headshots || 0, eligible: (p) => (p.stats?.headshots || 0) > 0 },
+  longest: { label: 'Longest kill', value: (p) => p.stats?.longest || 0, eligible: (p) => (p.stats?.longest || 0) > 0 },
+};
+let boardCache = { at: 0, rows: {} };
+function leaderboards() {
+  if (now() - boardCache.at < 30) return boardCache.rows;
+  const pilots = [];
+  for (const account of accounts.accounts.values()) {
+    const profile = profiles.profiles.get(ProfileStore.key(account.profileToken));
+    if (profile) pilots.push({ account, profile });
+  }
+  const rows = {};
+  for (const [id, board] of Object.entries(BOARDS)) {
+    rows[id] = pilots.filter(({ profile }) => board.eligible(profile)).map(({ account, profile }) => ({
+      key: account.username.toLowerCase(), name: account.username, title: profile.look?.title || 'Recruit', level: levelFromXp(profile.xp), value: board.value(profile),
+      avatar: account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null,
+    })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  }
+  boardCache = { at: now(), rows };
+  return rows;
+}
+// Top 50 of each board, plus where the asking pilot stands even if that is 4,000th.
+function leaderboardFor(socket) {
+  const rows = leaderboards();
+  const boards = {};
+  for (const [id, board] of Object.entries(BOARDS)) {
+    const index = socket.account ? rows[id].findIndex((row) => row.key === socket.account) : -1;
+    boards[id] = { label: board.label, total: rows[id].length, top: rows[id].slice(0, 50).map(({ key, ...row }, place) => ({ ...row, rank: place + 1, you: key === socket.account })), you: index >= 0 ? { rank: index + 1, value: rows[id][index].value } : null };
+  }
+  return boards;
 }
 
 function publicRooms() {
@@ -320,6 +358,7 @@ wss.on('connection', (socket) => {
       }
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
       if (message.type === 'feedback') return void saveFeedback(socket, message);
+      if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {
