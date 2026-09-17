@@ -4,18 +4,26 @@ A round-based tactical sniper game for the browser. Two teams, one life per roun
 
 No accounts, no asset downloads: every model, texture and sound is generated in code.
 
-## Quick start
+## Play now
+
+The game is live at **[krosshair.online](https://krosshair.online)** — no install needed. Pick a callsign and press **Find a match** (bots fill empty seats) or **Learn the ropes** for the practice range.
+
+## Quick start (running it yourself)
 
 ```bash
 npm install
 npm run arena
 ```
 
-Open http://localhost:4174/ , pick a callsign, and press **Find a match** (bots fill empty seats) or **Learn the ropes** for the practice range.
-
-For a static GitHub Pages frontend, start the multiplayer server with `npm run server`, expose port 4174 publicly, and open Pages with `?server=https%3A%2F%2Fyour-server-host`. The client will use that host for its WebSocket connection.
+Open http://localhost:4174/ — the server hosts the client itself (HTML, JS, CSS) alongside the WebSocket, so there's nothing else to stand up. Pick a callsign and press **Find a match** or **Learn the ropes**.
 
 To play with friends, create a private room and send them the invite link shown in the lobby. On a LAN, replace `localhost` with your machine's address. Override the port with `ARENA_PORT=5000 npm run arena`.
+
+## Deployment
+
+`krosshair.online` runs off a single dedicated machine: `npm run server` behind a Cloudflare Tunnel (`cloudflared`) routes the domain straight to the Node process on port 4174 — Cloudflare terminates HTTPS and there is no port-forwarding or reverse proxy involved. The game process is managed by systemd (`krosshair.service`) so it restarts on crash and on boot.
+
+A systemd timer (`krosshair-deploy.timer`) polls `origin/main` every few minutes; when it finds a new commit it pulls, reinstalls dependencies if `package.json`/`package-lock.json` changed, and restarts `krosshair.service`. In practice: push to `main` and the live site updates itself within a few minutes, no manual deploy step required.
 
 ## How a match plays
 
@@ -130,7 +138,7 @@ python backend/server.py
 
 ## Notes
 
-- Built for private and LAN play. The server is authoritative about combat but does not hide enemy positions from a modified client, so it is not hardened for public deployment.
+- The server is authoritative about combat, but it does not hide enemy positions from a modified client — fine for playing with friends, worth keeping in mind if the player base ever grows beyond that.
 - The announcer uses the browser's speech synthesis, so its voice varies by system. It can be turned off in Settings.
 
 ## License
