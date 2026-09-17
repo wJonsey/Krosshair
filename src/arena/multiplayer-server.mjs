@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -10,14 +11,36 @@ import { DiscordAuth, callbackPage } from './server/discord.js';
 import { Room, now } from './server/room.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
-// Secrets (Discord keys) can live in a git-ignored .env next to package.json.
-try { process.loadEnvFile?.(path.join(root, '.env')); } catch { /* no .env */ }
+// Secrets (Discord keys) live in a git-ignored .env next to package.json (or in the working directory).
+// Parsed here rather than with process.loadEnvFile so it works on every Node 20, and forgives the usual
+// slips: quotes, `export`, spaces around =, Windows line endings. Real environment variables win.
+const envFiles = [...new Set([path.join(root, '.env'), path.resolve('.env')])];
+const envLoaded = [];
+for (const file of envFiles) {
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch { continue; }
+  envLoaded.push(file);
+  for (const raw of text.replace(/^\uFEFF/, '').split(/\r?\n/)) {
+    const match = raw.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (!match || raw.trim().startsWith('#')) continue;
+    let value = match[2];
+    if (/^(['"]).*\1$/.test(value)) value = value.slice(1, -1); else value = value.replace(/\s+#.*$/, '');
+    if (!process.env[match[1]]) process.env[match[1]] = value;
+  }
+}
 const port = Number(process.env.ARENA_PORT || 4174);
 const discord = new DiscordAuth();
 // Playing needs an account whenever there is a way to get one. Without Discord keys nobody could log in,
 // so the server falls back to guest callsigns rather than locking everyone out.
 const LOGIN_REQUIRED = ACCOUNTS_ENABLED || discord.enabled;
-if (!LOGIN_REQUIRED) console.warn('Discord keys are not set (see .env.example): login is NOT enforced and pilots play as guests.');
+// Say what was found (names only, never values) so a missing key is obvious in `journalctl -u krosshair`.
+{
+  const has = (key) => (process.env[key] ? 'set' : 'MISSING');
+  console.log(`discord: .env ${envLoaded.length ? `read from ${envLoaded.join(', ')}` : `not found (looked in ${envFiles.join(', ')})`} · node ${process.version}`);
+  console.log(`discord: DISCORD_CLIENT_ID ${has('DISCORD_CLIENT_ID')} · DISCORD_CLIENT_SECRET ${has('DISCORD_CLIENT_SECRET')} · DISCORD_BOT_TOKEN ${has('DISCORD_BOT_TOKEN')} · PUBLIC_URL ${process.env.PUBLIC_URL || '(from request host)'}`);
+  if (discord.clientId && !/^\d{15,25}$/.test(discord.clientId)) console.warn('discord: DISCORD_CLIENT_ID should be the numeric Application ID, not the public key or a token.');
+  console.log(`discord: login ${discord.enabled ? 'ON and required to play' : 'OFF — pilots play as guests'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF'}`);
+}
 const profiles = new ProfileStore(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json'));
 await profiles.load();
 const accounts = new AccountStore(process.env.ARENA_ACCOUNTS || path.join(path.dirname(profiles.file), 'accounts.json'));
@@ -176,7 +199,7 @@ const server = createServer((request, response) => {
   const url = new URL(request.url, 'http://arena.local');
   if (url.pathname === '/api/status') {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) }));
+    response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()), discord: { login: discord.enabled, autoJoin: discord.autoJoin, required: LOGIN_REQUIRED } }));
     return;
   }
   if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback') return void discordRoute(request, response, url);

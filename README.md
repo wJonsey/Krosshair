@@ -36,6 +36,14 @@ Login switches on, and becomes mandatory, once the server has Discord keys. One-
 3. **Bot:** create the bot and copy its token. Invite it to the Krosshair server with the **Create Invite** permission — without the bot in the server, logins still work but nobody is auto-joined.
 4. On the game machine, copy `.env.example` to `.env`, fill in the client ID, client secret and bot token, and restart `krosshair.service`. `.env` is git-ignored; never commit these values.
 
+If the button does not appear, the server did not find its keys. It says what it found when it starts (key names only, never values):
+
+```bash
+journalctl -u krosshair -n 20 | grep discord:
+```
+
+`https://krosshair.online/api/status` shows the same thing as `"discord": { "login": …, "autoJoin": …, "required": … }`. The `.env` must sit next to `package.json`, and the service needs a restart after it changes — a push to `main` restarts it too.
+
 The only scopes requested are `identify` and `guilds.join`. Sessions are stored the same way as before (the file keeps a SHA-256 of the token, in `data/accounts.json`).
 
 ## How a match plays
