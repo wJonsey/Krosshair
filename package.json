@@ -1,7 +1,7 @@
 {
   "name": "game-website",
   "version": "1.0.0",
-  "description": "Sniper Shootout — round-based tactical sniper multiplayer in the browser",
+  "description": "Krosshair — round-based tactical sniper multiplayer in the browser",
   "scripts": {
     "arena": "node src/arena/multiplayer-server.mjs",
     "server": "node src/arena/multiplayer-server.mjs",

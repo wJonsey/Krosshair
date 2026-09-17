@@ -8,13 +8,13 @@ let offsetSamples = [];
 let retry = 0;
 let pingTimer = null;
 const pagesBackend = 'https://sturdy-couscous-wr4gp496w77g25jpp-4174.app.github.dev';
-const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.SNIPER_SERVER_URL || (location.hostname.endsWith('github.io') ? pagesBackend : '');
+const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.KROSSHAIR_SERVER_URL || (location.hostname.endsWith('github.io') ? pagesBackend : '');
 const serverOrigin = configuredServer ? new URL(configuredServer, location.href) : location;
 // Room to rejoin after a dropped connection or a page refresh (the tab keeps its session id).
-let wantRoom = (() => { try { return sessionStorage.getItem('sniper-shootout:room'); } catch { return null; } })();
+let wantRoom = (() => { try { return sessionStorage.getItem('krosshair:room'); } catch { return null; } })();
 function remember(name) {
   wantRoom = name;
-  try { if (name) sessionStorage.setItem('sniper-shootout:room', name); else sessionStorage.removeItem('sniper-shootout:room'); } catch { /* private mode */ }
+  try { if (name) sessionStorage.setItem('krosshair:room', name); else sessionStorage.removeItem('krosshair:room'); } catch { /* private mode */ }
 }
 
 export const net = {

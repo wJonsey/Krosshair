@@ -420,7 +420,7 @@ const FEEDBACK_COPY = {
 };
 let feedbackKind = 'bug';
 let feedbackPending = false;
-function sentReports() { try { return JSON.parse(localStorage.getItem('sniper-shootout:feedback') || '[]'); } catch { return []; } }
+function sentReports() { try { return JSON.parse(localStorage.getItem('krosshair:feedback') || '[]'); } catch { return []; } }
 
 export function openFeedback(kind = feedbackKind) {
   feedbackKind = kind;
@@ -492,7 +492,7 @@ net.on('feedback-result', (message) => {
   if (send) send.disabled = false;
   if (!message.ok || !pending) return setFeedbackStatus(message.message || 'That did not send. Try again.', 'warn');
   const sent = [{ ...pending, ref: message.ref, at: Date.now() }, ...sentReports()].slice(0, 20);
-  try { localStorage.setItem('sniper-shootout:feedback', JSON.stringify(sent)); } catch { /* private mode */ }
+  try { localStorage.setItem('krosshair:feedback', JSON.stringify(sent)); } catch { /* private mode */ }
   play('buy');
   openFeedback(feedbackKind);
   setFeedbackStatus(`Sent — thanks. Reference ${message.ref}.`, 'good');
@@ -545,7 +545,7 @@ endCard.addEventListener('click', (event) => {
   if (target.id === 'rematch-button') { net.send({ type: 'rematch' }); play('ready'); }
   if (target.id === 'end-leave') { play('uiBack'); net.leaveRoom(); }
   if (target.id === 'share-button') { play('ui'); buildShareCard(); }
-  if (target.id === 'share-download') { const link = document.createElement('a'); link.download = 'sniper-shootout-match.png'; link.href = $('#share-canvas').toDataURL('image/png'); link.click(); }
+  if (target.id === 'share-download') { const link = document.createElement('a'); link.download = 'krosshair-match.png'; link.href = $('#share-canvas').toDataURL('image/png'); link.click(); }
   if (target.id === 'share-copy') $('#share-canvas').toBlob((blob) => { navigator.clipboard?.write?.([new ClipboardItem({ 'image/png': blob })]).then(() => toast('Card copied — paste it anywhere.', 'good'), () => toast('Copy is blocked here. Use download instead.', 'warn')); });
 });
 setInterval(() => { const label = $('#end-timer'); if (label && game.room?.phase === 'matchEnd') label.textContent = `Back to lobby in ${Math.max(0, Math.ceil(game.room.phaseEnds - net.time()))}s`; }, 500);
@@ -567,7 +567,7 @@ function buildShareCard() {
   c.fillStyle = 'rgba(230,237,241,.025)';
   for (let y = 0; y < 630; y += 6) c.fillRect(0, y, 1200, 1);
   c.fillStyle = accent; c.fillRect(0, 0, 14, 630);
-  c.fillStyle = '#ffb547'; c.font = '700 22px "Geist", sans-serif'; c.fillText('SNIPER SHOOTOUT  //  KESTREL YARD  //  ' + (VARIANT_NAMES[message.variant] || '').toUpperCase(), 70, 84);
+  c.fillStyle = '#ffb547'; c.font = '700 22px "Geist", sans-serif'; c.fillText('KROSSHAIR  //  KESTREL YARD  //  ' + (VARIANT_NAMES[message.variant] || '').toUpperCase(), 70, 84);
   c.fillStyle = '#e6edf1'; c.font = '400 170px "Michroma", sans-serif'; c.fillText(result, 62, 250);
   c.fillStyle = accent; c.font = '400 120px "Michroma", sans-serif';
   c.textAlign = 'right'; c.fillText(`${message.scores[row.team]} – ${message.scores[row.team === 'A' ? 'B' : 'A']}`, 1130, 240); c.textAlign = 'left';

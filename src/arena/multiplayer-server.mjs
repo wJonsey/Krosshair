@@ -258,4 +258,4 @@ wss.on('connection', (socket) => {
   socket.on('error', () => {});
 });
 
-server.listen(port, '0.0.0.0', () => console.log(`Sniper Shootout online at http://localhost:${port}/`));
+server.listen(port, '0.0.0.0', () => console.log(`Krosshair online at http://localhost:${port}/`));

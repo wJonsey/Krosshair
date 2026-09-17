@@ -6,17 +6,17 @@ export const bus = {
 };
 
 function stored(key, fallback) {
-  try { const value = localStorage.getItem(`sniper-shootout:${key}`); return value === null ? fallback : JSON.parse(value); } catch { return fallback; }
+  try { const value = localStorage.getItem(`krosshair:${key}`); return value === null ? fallback : JSON.parse(value); } catch { return fallback; }
 }
 export function store(key, value) {
-  try { localStorage.setItem(`sniper-shootout:${key}`, JSON.stringify(value)); } catch { /* private mode */ }
+  try { localStorage.setItem(`krosshair:${key}`, JSON.stringify(value)); } catch { /* private mode */ }
 }
 
 const legacyName = (() => { try { return localStorage.getItem('neon-arena-name') || ''; } catch { return ''; } })();
 let session = null;
 try {
-  session = sessionStorage.getItem('sniper-shootout:session');
-  if (!session) { session = crypto.randomUUID(); sessionStorage.setItem('sniper-shootout:session', session); }
+  session = sessionStorage.getItem('krosshair:session');
+  if (!session) { session = crypto.randomUUID(); sessionStorage.setItem('krosshair:session', session); }
 } catch { session = `${Date.now()}-${Math.random()}`; }
 
 export const DEFAULT_SETTINGS = { sensitivity: 1, scopeSensitivity: 0.7, fov: 78, quality: 'high', volume: 0.8, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false, visualizeSound: false };
