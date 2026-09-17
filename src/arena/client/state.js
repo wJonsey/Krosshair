@@ -19,7 +19,7 @@ try {
   if (!session) { session = crypto.randomUUID(); sessionStorage.setItem('sniper-shootout:session', session); }
 } catch { session = `${Date.now()}-${Math.random()}`; }
 
-export const DEFAULT_SETTINGS = { sensitivity: 1, scopeSensitivity: 0.7, fov: 78, quality: 'high', volume: 0.8, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false };
+export const DEFAULT_SETTINGS = { sensitivity: 1, scopeSensitivity: 0.7, fov: 78, quality: 'high', volume: 0.8, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false, visualizeSound: false };
 
 export const game = {
   name: stored('name', legacyName),

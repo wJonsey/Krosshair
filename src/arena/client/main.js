@@ -8,6 +8,7 @@ import { Arena } from './world.js';
 import { Operators } from './characters.js';
 import { Effects } from './effects.js';
 import { ViewModel } from './viewmodel.js';
+import { SoundViz } from './soundviz.js';
 import { LocalPlayer, MATERIAL_SOUND } from './player.js';
 import { Hud, roundIntroVoice } from './hud.js';
 import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, setListener, setVolume, stopAllLoops, unlockAudio } from './audio.js';
@@ -35,6 +36,7 @@ const viewmodel = new ViewModel();
 viewmodel.setLook(game.look.color, game.look.accent);
 const player = new LocalPlayer({ camera, arena, viewmodel, effects, operators, canvas: renderer.domElement });
 const hud = new Hud({ player, arena, operators });
+const soundViz = new SoundViz(camera);
 const pauseCard = document.querySelector('#pause-card');
 const settingsCard = document.querySelector('#settings-card');
 const endCard = document.querySelector('#end-card');
@@ -236,12 +238,13 @@ net.on('shot', (message) => {
   message.i.slice(0, 6).forEach(([x, y, z, nx, ny, nz, mat, exit], index) => { effects.impact([x, y, z], [nx, ny, nz], mat, Boolean(exit)); if (!exit && index < 2) playImpact(MATERIAL_SOUND(mat), [x, y, z], 0.6); });
   effects.muzzleLight(new THREE.Vector3(...muzzle), '#ffb45e', arena.variantName === 'night' ? 46 : 22);
   playShot(weapon.id, origin);
+  bus.emit('sound', { kind: 'shot', id: message.id, pos: origin });
   // Loud weapons give away the shooter on the minimap.
   const distance = Math.hypot(origin[0] - camera.position.x, origin[2] - camera.position.z);
   if (isEnemy(message.id) && distance < weapon.loud * 0.9) hud.blip(message.id, origin[0], origin[2], 2.5);
 });
 
-net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (pose) play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); });
+net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (pose) { play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); bus.emit('sound', { kind: 'swing', id: message.id, pos: [pose.x, pose.y, pose.z] }); } });
 
 net.on('hit', (message) => {
   if (message.blocked) { hud.hitmarker('blocked'); play('deny', { volume: 0.5 }); return; }
@@ -278,6 +281,7 @@ net.on('glass', (message) => {
   const box = arena.breakGlass(message.id);
   if (!box) return;
   effects.shatter(box);
+  bus.emit('sound', { kind: 'glass', pos: [(box.min[0] + box.max[0]) / 2, box.min[1], (box.min[2] + box.max[2]) / 2] });
   play('glassBreak', { pos: [(box.min[0] + box.max[0]) / 2, (box.min[1] + box.max[1]) / 2, (box.min[2] + box.max[2]) / 2], ref: 7 });
 });
 net.on('shield', (message) => { arena.addShield(message, !isEnemyTeam(message.team)); play('shield', { pos: [(message.min[0] + message.max[0]) / 2, message.min[1] + 0.8, (message.min[2] + message.max[2]) / 2] }); });
@@ -297,6 +301,7 @@ net.on('gadget-used', (message) => {
   const gadget = GADGETS[message.gadget];
   const self = message.id === game.id;
   const pos = self ? null : [message.x, message.y + 1, message.z];
+  if (pos && message.gadget !== 'ghost') bus.emit('sound', { kind: 'gadget', id: message.id, pos });
   if (message.gadget === 'stim') play('stim', { pos });
   if (message.gadget === 'decoy') play('decoy', { pos });
   if (message.gadget === 'ghost' && (self || !isEnemy(message.id))) play('ghost', { pos });
@@ -390,6 +395,7 @@ function frame() {
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));
   hud.update(dt);
+  soundViz.update();
   renderer.clear();
   renderer.render(arena.scene, camera);
   if (game.screen === 'game' && (player.mode === 'play' || player.replayView) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }

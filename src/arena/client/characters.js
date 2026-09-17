@@ -2,7 +2,7 @@
 // for remote players, decoys, drones, and replay playback (killcam / final kill).
 import * as THREE from 'three';
 import { BODY, FLAG, INTERP_DELAY, MATERIALS } from '../shared/constants.js';
-import { game, isEnemy } from './state.js';
+import { bus, game, isEnemy } from './state.js';
 import { playFootstep, startLoop, loop } from './audio.js';
 
 const DUMMY_LOOK = { color: '#d9d4c8', accent: '#ff7148', name: '' };
@@ -251,7 +251,7 @@ class Entity {
     const loud = s.speed > 3.6 && (s.flags & FLAG.ground) && !(s.flags & (FLAG.crouch | FLAG.ghost | FLAG.walking));
     if (footsteps && loud) {
       this.stride += moved;
-      if (this.stride > 2.1) { this.stride = 0; playFootstep(this.surface?.(s.x, s.y, s.z) || 'concrete', [s.x, s.y + 0.1, s.z], isEnemy(this.id) ? 0.8 : 0.45); }
+      if (this.stride > 2.1) { this.stride = 0; playFootstep(this.surface?.(s.x, s.y, s.z) || 'concrete', [s.x, s.y + 0.1, s.z], isEnemy(this.id) ? 0.8 : 0.45); bus.emit('sound', { kind: 'step', id: this.id, pos: [s.x, s.y, s.z] }); }
     }
   }
 
