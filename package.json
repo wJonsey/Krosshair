@@ -1,10 +1,11 @@
 {
   "name": "game-website",
   "version": "1.0.0",
-  "description": "Sniper Shootout multiplayer arena",
+  "description": "Sniper Shootout — round-based tactical sniper multiplayer in the browser",
   "scripts": {
     "arena": "node src/arena/multiplayer-server.mjs",
-    "test": "node --check src/arena/arena.js && node --check src/arena/multiplayer-server.mjs"
+    "start": "node src/arena/multiplayer-server.mjs",
+    "test": "node --check src/arena/multiplayer-server.mjs && node --test \"src/arena/tests/*.test.mjs\""
   },
   "repository": {
     "type": "git",
@@ -19,6 +20,10 @@
   },
   "homepage": "https://github.com/wJonsey/game-website#readme",
   "dependencies": {
+    "three": "^0.171.0",
     "ws": "^8.21.3"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

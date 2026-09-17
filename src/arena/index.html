@@ -3,31 +3,87 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sniper Shootout // Multiplayer Arena</title>
+  <title>Sniper Shootout // Kestrel Yard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="arena.css" />
-  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.171.0/build/three.module.js"}}</script>
+  <script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js"}}</script>
 </head>
 <body>
   <main id="arena-shell">
     <div id="game-root"></div>
     <div class="vignette"></div>
-    <div id="scope-overlay" class="scope-overlay hidden" aria-hidden="true"><span class="scope-crosshair"></span><span class="scope-hit-marker">×</span><span class="scope-range">M-44 // 4X OPTIC</span></div>
-    <header class="arena-header"><div class="arena-title"><span class="live-dot"></span> SNIPER SHOOTOUT <small>// MULTIPLAYER ARENA</small></div><div class="round-readout">DUEL <b id="round">01</b></div></header>
-    <section class="hud hud-top"><div class="score-box"><span>ELIMINATIONS</span><b id="eliminations">00</b></div><div class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="score-box right"><span>OPEN MATCH</span><b>∞</b></div></section>
-    <section class="hud hud-bottom"><div class="health-wrap"><span>SHIELD / HEALTH</span><div class="meter"><i id="health-meter"></i></div><b id="health">100</b></div><div class="weapon-readout"><span id="weapon-name">M-44 // LONG SIGHT</span><b><strong id="ammo">5</strong> / 48</b><small>SNIPER PLATFORM // 4X OPTIC</small></div></section>
-    <div id="ammo-alert" class="ammo-alert hidden" aria-live="assertive">OUT OF AMMO <span>Press R to reload</span></div>
-    <div id="event-feed" class="event-feed" aria-live="polite"></div>
-    <div id="start-card" class="start-card"><div class="entry-topline"><p class="eyebrow">Private 1v1 arena</p><span class="entry-step">01 / 02</span></div><h1>Build your<br /><em>operator.</em></h1><p>Choose your look, lock in a callsign, then connect to the same room as your rival.</p><section class="identity-panel"><label class="callsign-field">Calls­ign<input id="name-input" placeholder="Enter a callsign" maxlength="16" aria-label="Your player name" autocomplete="nickname" /></label><div class="character-picker"><span class="field-label">Operator frame</span><div class="character-options" role="radiogroup" aria-label="Choose operator frame"><button type="button" class="character-option selected" data-character="vanguard" aria-pressed="true"><span class="operator-silhouette vanguard"></span><strong>Vanguard</strong><small>Balanced</small></button><button type="button" class="character-option" data-character="specter" aria-pressed="false"><span class="operator-silhouette specter"></span><strong>Specter</strong><small>Stealth</small></button><button type="button" class="character-option" data-character="ranger" aria-pressed="false"><span class="operator-silhouette ranger"></span><strong>Ranger</strong><small>Recon</small></button></div></div><div class="customize-row"><div><span class="field-label">Suit color</span><div class="swatches" role="radiogroup" aria-label="Choose suit color"><button type="button" class="swatch selected" data-color="#ec6a9e" style="--swatch:#ec6a9e" aria-label="Coral suit" aria-pressed="true"></button><button type="button" class="swatch" data-color="#6ce6d1" style="--swatch:#6ce6d1" aria-label="Mint suit" aria-pressed="false"></button><button type="button" class="swatch" data-color="#ffc857" style="--swatch:#ffc857" aria-label="Gold suit" aria-pressed="false"></button><button type="button" class="swatch" data-color="#8fa7ff" style="--swatch:#8fa7ff" aria-label="Blue suit" aria-pressed="false"></button></div></div><div><span class="field-label">Visor glow</span><div class="swatches" role="radiogroup" aria-label="Choose visor glow"><button type="button" class="swatch selected" data-accent="#6ce6d1" style="--swatch:#6ce6d1" aria-label="Mint visor" aria-pressed="true"></button><button type="button" class="swatch" data-accent="#ff7148" style="--swatch:#ff7148" aria-label="Orange visor" aria-pressed="false"></button><button type="button" class="swatch" data-accent="#ffc857" style="--swatch:#ffc857" aria-label="Gold visor" aria-pressed="false"></button></div></div></div></section><div class="profile-row"><label>Room code<input id="room-input" value="night-shift" maxlength="24" aria-label="Room code" /></label><div class="room-hint"><span>Matchmaking room</span><b>UP TO 8 PILOTS</b></div></div><div class="room-row"><button id="connect-button" type="button">Connect <span>↗</span></button><button id="settings-button" class="secondary-button" type="button">Settings</button></div><div class="network-status" id="network-status">Enter a callsign to connect</div><button id="start-button" type="button" disabled>Enter 1v1 <span>→</span></button><small>Mouse lock is required for aim</small></div>
-    <div id="pause-card" class="pause-card hidden"><p class="eyebrow">Arena paused</p><h2>Take a breath.</h2><p>Click resume to return to the fight.</p><button id="resume-button" type="button">Resume fight</button></div>
-    <div id="respawn-card" class="pause-card respawn-card hidden"><p class="eyebrow">Pilot down</p><h2>Eliminated.</h2><p>Press <strong>SPACE</strong> to respawn</p></div>
-    <div id="settings-card" class="pause-card settings-card hidden"><p class="eyebrow">Combat settings</p><h2>Fine tune.</h2><label>Mouse sensitivity <output id="sensitivity-value">1.0</output><input id="sensitivity-input" type="range" min="0.3" max="2.5" step="0.1" value="1" /></label><label>Scoped sensitivity <output id="scope-sensitivity-value">0.6</output><input id="scope-sensitivity-input" type="range" min="0.2" max="1.2" step="0.1" value="0.6" /></label><label>Field of view <output id="fov-value">72°</output><input id="fov-input" type="range" min="60" max="110" step="1" value="72" /></label><label>Resolution <select id="resolution-input"><option value="1920x1080">1920 × 1080 // HD</option><option value="1600x900">1600 × 900 // balanced</option><option value="1280x720">1280 × 720 // performance</option><option value="1080x1080">1080 × 1080 // square</option></select></label><button id="close-settings" type="button">Done</button></div>
-    <div id="end-card" class="pause-card hidden"><p class="eyebrow">Match report</p><h2 id="end-title">Arena clear.</h2><p id="end-copy">You held the line.</p><button id="restart-button" type="button">Run it back</button></div>
-    <div id="scoreboard" class="scoreboard hidden" aria-live="polite"><div class="scoreboard-head"><span>ROOM SCOREBOARD</span><b> TAB TO CLOSE</b></div><div class="scoreboard-columns"><span>PILOT</span><span>K</span><span>D</span><span>K/D</span></div><div id="scoreboard-rows"></div></div>
-    <aside class="controls"><span><b>W A S D</b> move</span><span><b>LMB</b> fire / <b>RMB</b> scope</span><span><b>R</b> reload</span><span><b>TAB</b> scoreboard</span></aside>
+
+    <!-- ===== In-match HUD ===== -->
+    <section id="hud" class="hidden" aria-live="off">
+      <div id="fx-damage" class="fx fx-damage"></div>
+      <div id="fx-low" class="fx fx-low"></div>
+      <div id="fx-suppress" class="fx fx-suppress"></div>
+      <div id="fx-flash" class="fx fx-flash"></div>
+
+      <div id="scope-overlay" class="scope-overlay hidden" aria-hidden="true">
+        <span class="scope-crosshair"></span>
+        <span class="scope-mil"></span>
+        <span class="scope-range" id="scope-zoom">M-44 // 4X</span>
+        <div class="breath"><span>HOLD BREATH // SHIFT</span><div class="meter"><i id="breath-meter"></i></div></div>
+      </div>
+      <div id="drone-overlay" class="drone-overlay hidden"><span class="drone-title">RECON DRONE // LIVE FEED</span><span id="drone-time">12.0</span><span class="drone-help">WASD fly · SPACE / CTRL altitude · CLICK to recall</span></div>
+
+      <div id="crosshair" class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+      <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
+      <div id="damage-arcs" aria-hidden="true"></div>
+
+      <header class="scorebar">
+        <div class="team-side friendly"><div class="pips" id="pips-mine"></div><b id="score-mine">0</b><span id="label-mine">ALPHA</span></div>
+        <div class="clock"><small id="phase-label">WARM UP</small><b id="clock">0:00</b><small id="round-label">ROUND 1</small></div>
+        <div class="team-side rival"><span id="label-theirs">BRAVO</span><b id="score-theirs">0</b><div class="pips" id="pips-theirs"></div></div>
+      </header>
+
+      <div class="minimap-wrap"><canvas id="minimap" width="150" height="204"></canvas><div class="zone-row"><span id="zone-name">KESTREL YARD</span><small id="variant-name">DUSK</small></div></div>
+      <div id="killfeed" class="killfeed"></div>
+      <div id="event-feed" class="event-feed" aria-live="polite"></div>
+
+      <div class="chat" id="chat"><div id="chat-log" class="chat-log"></div><input id="chat-input" class="hidden" maxlength="140" placeholder="Message…" autocomplete="off" /></div>
+
+      <div class="vitals">
+        <div class="vital-row"><span>HEALTH</span><div class="meter"><i id="health-meter"></i></div><b id="health">100</b></div>
+        <div class="vital-row armor"><span>ARMOUR</span><div class="meter"><i id="armor-meter"></i></div><b id="armor">0</b><em id="helmet-tag" class="hidden">HELMET</em></div>
+        <div class="credits"><span>CREDITS</span><b id="credits">800</b></div>
+      </div>
+
+      <div class="loadout">
+        <div class="gadgets" id="gadget-slots"></div>
+        <div class="weapon-readout"><span id="weapon-name">M-44 LONG SIGHT</span><b><strong id="ammo">5</strong><i id="reserve"> / 20</i></b><small id="weapon-tag">BOLT-ACTION SNIPER</small></div>
+        <div class="slots" id="weapon-slots"></div>
+      </div>
+
+      <div id="prompt" class="prompt hidden"></div>
+      <div id="banner" class="banner hidden"><small id="banner-eyebrow"></small><h2 id="banner-title"></h2><p id="banner-sub"></p></div>
+      <div id="spectate-bar" class="cam-bar hidden"><span>SPECTATING</span><b id="spectate-name"></b><small>CLICK to switch pilot</small><div id="reactions" class="reactions"></div></div>
+      <div id="killcam-bar" class="cam-bar killcam hidden"><span>KILLCAM</span><b id="killcam-name"></b><small id="killcam-detail"></small><em>SPACE to skip</em></div>
+      <div id="replay-bar" class="cam-bar replay hidden"><span>FINAL KILL</span><b id="replay-name"></b><small id="replay-detail"></small></div>
+      <div id="quick-wheel" class="quick-wheel hidden"></div>
+      <aside id="tutorial" class="tutorial hidden"></aside>
+      <aside class="controls" id="controls-hint"><span><b>B</b> armoury</span><span><b>Q / E</b> gadgets</span><span><b>Z</b> ping</span><span><b>X</b> radio</span><span><b>ENTER</b> chat</span><span><b>TAB</b> scores</span></aside>
+    </section>
+
+    <div id="buy-menu" class="overlay-card buy-menu hidden"></div>
+    <div id="scoreboard" class="overlay-card scoreboard hidden"></div>
+    <div id="pause-card" class="pause-card hidden">
+      <p class="eyebrow">Paused</p><h2>Hold position.</h2>
+      <p>The match keeps running. Click resume to lock your aim again.</p>
+      <div class="button-row"><button id="resume-button" type="button">Resume <span>→</span></button><button id="pause-settings" class="secondary-button" type="button">Settings</button><button id="leave-button" class="ghost-button" type="button">Leave match</button></div>
+    </div>
+
+    <!-- ===== Menus (rendered by menu.js) ===== -->
+    <div id="home" class="screen"></div>
+    <div id="lobby" class="screen hidden"></div>
+    <div id="end-card" class="screen end-screen hidden"></div>
+    <div id="settings-card" class="pause-card settings-card hidden"></div>
+    <div id="net-banner" class="net-banner hidden"></div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
-  <script type="module" src="arena.js"></script>
+  <script type="module" src="client/main.js"></script>
 </body>
 </html>

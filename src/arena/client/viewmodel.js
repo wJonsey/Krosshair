@@ -1,0 +1,254 @@
+// First-person weapons. Rendered in their own scene on top of the world so the
+// rifle never clips through walls. All models and animation are procedural.
+import * as THREE from 'three';
+
+const M = (color, rough = 0.4, metal = 0.5, emissive = null) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: emissive || '#000000', emissiveIntensity: emissive ? 1.3 : 0 });
+
+function part(group, geometry, material, position, rotation = null) {
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(...position);
+  if (rotation) mesh.rotation.set(...rotation);
+  group.add(mesh);
+  return mesh;
+}
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const tube = (r, length, seg = 10) => new THREE.CylinderGeometry(r, r, length, seg);
+const ALONG = [Math.PI / 2, 0, 0];
+
+function buildWeapon(id, accent) {
+  const g = new THREE.Group();
+  const steel = M('#2a3038'), dark = M('#14181d', 0.5, 0.3), grey = M('#56616c', 0.35, 0.7), wood = M('#6e4a2b', 0.7, 0.05), glow = M(accent, 0.3, 0.2, accent);
+  const data = { muzzle: new THREE.Vector3(0, 0.03, -0.9), mag: null, bolt: null, pump: null, hip: [0.19, -0.2, -0.42], ads: [0, -0.115, -0.3], adsHide: false };
+  if (id === 'm44') {
+    part(g, box(0.055, 0.08, 0.62), steel, [0, 0, -0.2]);
+    part(g, tube(0.016, 0.72), grey, [0, 0.02, -0.82], ALONG);
+    part(g, tube(0.028, 0.12, 8), dark, [0, 0.02, -1.2], ALONG);
+    part(g, box(0.05, 0.11, 0.34), wood, [0, -0.03, 0.2]);
+    part(g, box(0.04, 0.12, 0.06), dark, [0, -0.09, 0.0], [-0.3, 0, 0]);
+    part(g, tube(0.034, 0.34, 12), dark, [0, 0.095, -0.2], ALONG);
+    part(g, tube(0.042, 0.06, 12), dark, [0, 0.095, -0.39], ALONG);
+    part(g, tube(0.04, 0.05, 12), dark, [0, 0.095, -0.02], ALONG);
+    part(g, box(0.03, 0.035, 0.05), grey, [0, 0.055, -0.28]);
+    part(g, box(0.03, 0.035, 0.05), grey, [0, 0.055, -0.1]);
+    part(g, box(0.006, 0.01, 0.5), glow, [0.029, 0.0, -0.22]);
+    data.mag = part(g, box(0.045, 0.08, 0.1), dark, [0, -0.075, -0.17]);
+    const bolt = new THREE.Group();
+    part(bolt, tube(0.012, 0.09, 6), grey, [0.045, 0, 0], [0, 0, Math.PI / 2]);
+    part(bolt, new THREE.SphereGeometry(0.02, 8, 6), grey, [0.09, 0, 0]);
+    bolt.position.set(0.03, 0.03, -0.03);
+    g.add(bolt);
+    data.bolt = bolt;
+    data.muzzle.set(0, 0.02, -1.26);
+    data.ads = [0, -0.095, -0.2];
+    data.adsHide = true;
+  } else if (id === 'recon') {
+    part(g, box(0.055, 0.09, 0.5), steel, [0, 0, -0.18]);
+    part(g, box(0.06, 0.06, 0.3), dark, [0, 0.0, -0.5]);
+    part(g, tube(0.014, 0.3), grey, [0, 0.01, -0.78], ALONG);
+    part(g, box(0.05, 0.1, 0.26), dark, [0, -0.02, 0.17]);
+    part(g, box(0.04, 0.11, 0.055), dark, [0, -0.09, 0.0], [-0.3, 0, 0]);
+    part(g, tube(0.028, 0.2, 10), dark, [0, 0.09, -0.2], ALONG);
+    part(g, box(0.03, 0.03, 0.12), grey, [0, 0.055, -0.2]);
+    part(g, box(0.006, 0.01, 0.4), glow, [0.029, 0.0, -0.25]);
+    data.mag = part(g, box(0.04, 0.16, 0.07), dark, [0, -0.11, -0.2], [0.12, 0, 0]);
+    data.muzzle.set(0, 0.01, -0.94);
+    data.ads = [0, -0.09, -0.2];
+    data.adsHide = true;
+  } else if (id === 'wasp') {
+    part(g, box(0.06, 0.1, 0.36), steel, [0, 0, -0.16]);
+    part(g, tube(0.02, 0.18), dark, [0, 0.0, -0.42], ALONG);
+    part(g, box(0.04, 0.12, 0.055), dark, [0, -0.1, 0.0], [-0.25, 0, 0]);
+    part(g, box(0.035, 0.035, 0.22), grey, [0, 0.0, 0.12]);
+    part(g, box(0.04, 0.05, 0.06), dark, [0, 0.075, -0.16]);
+    part(g, box(0.012, 0.012, 0.012), glow, [0, 0.085, -0.13]);
+    part(g, box(0.006, 0.01, 0.28), glow, [0.032, 0.02, -0.16]);
+    data.mag = part(g, box(0.035, 0.2, 0.05), dark, [0, -0.14, -0.2]);
+    data.muzzle.set(0, 0, -0.52);
+    data.hip = [0.17, -0.19, -0.36];
+    data.ads = [0, -0.1, -0.28];
+  } else if (id === 'breaker') {
+    part(g, box(0.06, 0.09, 0.34), steel, [0, 0, -0.08]);
+    part(g, tube(0.02, 0.6), grey, [0, 0.025, -0.52], ALONG);
+    part(g, tube(0.02, 0.46), dark, [0, -0.025, -0.45], ALONG);
+    part(g, box(0.05, 0.1, 0.3), wood, [0, -0.03, 0.22]);
+    part(g, box(0.006, 0.01, 0.3), glow, [0.032, 0.0, -0.08]);
+    data.pump = part(g, box(0.06, 0.055, 0.17), wood, [0, -0.03, -0.42]);
+    data.muzzle.set(0, 0.025, -0.84);
+    data.ads = [0, -0.075, -0.26];
+  } else if (id === 'p9' || id === 'viper') {
+    const heavy = id === 'viper';
+    part(g, box(0.04, 0.055, heavy ? 0.3 : 0.22), heavy ? grey : steel, [0, 0.02, heavy ? -0.16 : -0.11]);
+    part(g, box(0.038, 0.13, 0.055), heavy ? wood : dark, [0, -0.06, 0.0], [-0.22, 0, 0]);
+    if (heavy) { part(g, tube(0.032, 0.07, 8), steel, [0, 0.015, -0.06], ALONG); part(g, box(0.012, 0.02, 0.02), glow, [0, 0.055, -0.3]); } else part(g, box(0.006, 0.008, 0.16), glow, [0.022, 0.03, -0.11]);
+    data.mag = heavy ? null : part(g, box(0.03, 0.1, 0.04), dark, [0, -0.07, 0.0], [-0.22, 0, 0]);
+    data.muzzle.set(0, 0.02, heavy ? -0.34 : -0.24);
+    data.hip = [0.17, -0.17, -0.4];
+    data.ads = [0, -0.075, -0.34];
+  } else {
+    part(g, box(0.012, 0.045, 0.24), grey, [0, 0.0, -0.17]);
+    part(g, box(0.004, 0.012, 0.2), glow, [0.008, 0.02, -0.17]);
+    part(g, box(0.03, 0.04, 0.12), dark, [0, 0, 0.02]);
+    part(g, box(0.05, 0.015, 0.02), steel, [0, 0, -0.045]);
+    data.hip = [0.2, -0.18, -0.38];
+    data.ads = data.hip;
+    data.muzzle.set(0, 0, -0.3);
+  }
+  // Forearms
+  const sleeve = M('#ec6a9e', 0.7, 0.05);
+  const glove = M('#171c22', 0.8, 0.05);
+  const right = new THREE.Group();
+  part(right, new THREE.CapsuleGeometry(0.045, 0.34, 4, 8), sleeve, [0, 0, 0.22], ALONG);
+  part(right, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
+  right.position.set(0.02, -0.09, 0.05);
+  right.rotation.set(0.25, -0.25, 0);
+  g.add(right);
+  const left = new THREE.Group();
+  part(left, new THREE.CapsuleGeometry(0.045, 0.36, 4, 8), sleeve, [0, 0, 0.24], ALONG);
+  part(left, box(0.07, 0.07, 0.09), glove, [0, 0, 0.0]);
+  const reach = id === 'knife' || id === 'p9' || id === 'viper' ? null : (id === 'wasp' ? -0.3 : -0.45);
+  if (reach !== null) { left.position.set(-0.03, -0.06, reach); left.rotation.set(0.35, 0.75, 0); g.add(left); }
+  data.sleeve = sleeve;
+  g.userData = data;
+  g.traverse((mesh) => { mesh.frustumCulled = false; });
+  return g;
+}
+
+export class ViewModel {
+  constructor() {
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.01, 10);
+    this.scene.add(new THREE.HemisphereLight('#cfe0f5', '#30343a', 1.4));
+    this.key = new THREE.DirectionalLight('#ffe2bb', 2.2);
+    this.key.position.set(-1, 2, 1.5);
+    this.scene.add(this.key);
+    this.flashLight = new THREE.PointLight('#ffb45e', 0, 3);
+    this.scene.add(this.flashLight);
+    const flashCanvas = document.createElement('canvas');
+    flashCanvas.width = flashCanvas.height = 128;
+    const context = flashCanvas.getContext('2d');
+    context.translate(64, 64);
+    for (let i = 0; i < 9; i += 1) { context.rotate((Math.PI * 2) / 9 + i); const length = 30 + ((i * 37) % 30); const gradient = context.createLinearGradient(0, 0, length, 0); gradient.addColorStop(0, 'rgba(255,240,200,1)'); gradient.addColorStop(1, 'rgba(255,150,40,0)'); context.fillStyle = gradient; context.beginPath(); context.moveTo(0, -7); context.lineTo(length, 0); context.lineTo(0, 7); context.fill(); }
+    this.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(flashCanvas), blending: THREE.AdditiveBlending, transparent: true, depthTest: false }));
+    this.flash.visible = false;
+    this.scene.add(this.flash);
+    this.holder = new THREE.Group();
+    this.scene.add(this.holder);
+    this.models = new Map();
+    this.current = null;
+    this.currentId = null;
+    this.accent = '#6ce6d1'; this.suit = '#ec6a9e';
+    this.kick = 0; this.kickRot = 0; this.swayX = 0; this.swayY = 0; this.bob = 0; this.equip = 1; this.flashTime = 0;
+    this.reloadTime = 0; this.reloadDuration = 0; this.cycleTime = -1; this.cycleDuration = 0; this.slash = -1; this.landDip = 0;
+    this.hidden = false;
+  }
+
+  setLook(suit, accent) {
+    if (suit === this.suit && accent === this.accent) return;
+    this.suit = suit; this.accent = accent;
+    this.models.forEach((model) => this.holder.remove(model));
+    this.models.clear();
+    if (this.currentId) { const id = this.currentId; this.currentId = null; this.setWeapon(id, true); }
+  }
+
+  setWeapon(id, instant = false) {
+    if (id === this.currentId) return;
+    if (!this.models.has(id)) { const model = buildWeapon(id, this.accent); model.userData.sleeve.color.set(this.suit); model.visible = false; this.holder.add(model); this.models.set(id, model); }
+    if (this.current) this.current.visible = false;
+    this.current = this.models.get(id);
+    this.current.visible = true;
+    this.currentId = id;
+    this.equip = instant ? 1 : 0;
+    this.reloadTime = 0; this.cycleTime = -1; this.slash = -1;
+  }
+
+  fire(weapon) {
+    this.kick = Math.min(1.6, this.kick + weapon.recoil.kick * 0.22);
+    this.kickRot = Math.min(1.4, this.kickRot + weapon.recoil.kick * 0.2);
+    this.flashTime = 0.055;
+    this.flash.material.rotation = Math.random() * Math.PI;
+    if (weapon.id === 'm44') { this.cycleTime = 0; this.cycleDuration = weapon.cooldown - 0.2; }
+    if (weapon.id === 'breaker') { this.cycleTime = 0; this.cycleDuration = 0.6; }
+  }
+  reload(duration) { this.reloadTime = duration; this.reloadDuration = duration; }
+  cancelReload() { this.reloadTime = 0; }
+  melee() { this.slash = 0; }
+  land(force) { this.landDip = Math.min(1, force); }
+
+  // Where the muzzle is in world space, so tracers start at the barrel.
+  muzzleWorld(camera, scoped) {
+    if (!this.current || scoped > 0.8) return camera.position.clone().add(new THREE.Vector3(0, -0.06, -0.4).applyQuaternion(camera.quaternion));
+    const local = this.current.userData.muzzle.clone().applyMatrix4(this.current.matrixWorld);
+    return local.applyQuaternion(camera.quaternion).add(camera.position);
+  }
+
+  update(dt, state) {
+    const model = this.current;
+    if (!model) return;
+    const data = model.userData;
+    this.camera.aspect = innerWidth / innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.equip = Math.min(1, this.equip + dt * 4.5);
+    this.kick += (0 - this.kick) * Math.min(1, dt * 11);
+    this.kickRot += (0 - this.kickRot) * Math.min(1, dt * 9);
+    this.landDip += (0 - this.landDip) * Math.min(1, dt * 8);
+    this.swayX += (-state.lookX * 0.0009 - this.swayX) * Math.min(1, dt * 9);
+    this.swayY += (state.lookY * 0.0009 - this.swayY) * Math.min(1, dt * 9);
+    this.swayX = THREE.MathUtils.clamp(this.swayX, -0.05, 0.05); this.swayY = THREE.MathUtils.clamp(this.swayY, -0.05, 0.05);
+    const moving = state.onGround ? Math.min(1, state.speed / 6) : 0;
+    this.bob += dt * (4 + state.speed * 1.35);
+    const ads = state.scoped;
+    const bobScale = moving * (1 - ads * 0.85);
+    const bx = Math.cos(this.bob) * 0.011 * bobScale, by = Math.abs(Math.sin(this.bob)) * -0.014 * bobScale;
+    const idle = Math.sin(performance.now() / 900) * 0.0025 * (1 - ads);
+    const ease = 1 - (1 - this.equip) ** 3;
+    const x = THREE.MathUtils.lerp(data.hip[0], data.ads[0], ads) + bx + this.swayX;
+    const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0);
+    const z = THREE.MathUtils.lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085;
+    model.position.set(x, y, z);
+    model.rotation.set(this.kickRot * 0.13 + (1 - ease) * 0.9 + this.swayY * 1.5, -0.035 * (1 - ads) + this.swayX * 2, -this.swayX * 1.4);
+
+    // Reload: tip the weapon, drop the magazine, slap a new one in.
+    if (this.reloadTime > 0) {
+      this.reloadTime = Math.max(0, this.reloadTime - dt);
+      const k = 1 - this.reloadTime / this.reloadDuration;
+      const tilt = Math.sin(Math.min(1, k * 1.15) * Math.PI);
+      model.rotation.z += tilt * 0.55;
+      model.rotation.x += tilt * 0.35;
+      model.position.y -= tilt * 0.06;
+      if (data.mag) { const out = k > 0.2 && k < 0.62; data.mag.visible = !out; }
+    } else if (data.mag) data.mag.visible = true;
+
+    // Bolt / pump cycling after a shot.
+    if (this.cycleTime >= 0) {
+      this.cycleTime += dt;
+      const k = this.cycleTime / this.cycleDuration;
+      const pull = k < 0.2 ? 0 : Math.sin(Math.min(1, (k - 0.2) / 0.8) * Math.PI);
+      if (data.bolt) { data.bolt.rotation.z = Math.min(1, pull * 2.5) * 0.9; data.bolt.position.z = -0.03 + pull * 0.09; model.rotation.z += pull * 0.12; model.position.y -= pull * 0.012; }
+      if (data.pump) data.pump.position.z = -0.42 + pull * 0.1;
+      if (k >= 1) { this.cycleTime = -1; if (data.bolt) { data.bolt.rotation.z = 0; data.bolt.position.z = -0.03; } }
+    }
+    if (this.slash >= 0) {
+      this.slash += dt / 0.32;
+      const k = Math.min(1, this.slash);
+      const arc = Math.sin(k * Math.PI);
+      model.position.x -= arc * 0.28; model.position.z -= arc * 0.22; model.position.y += arc * 0.05;
+      model.rotation.y += arc * 1.1; model.rotation.z += arc * 0.6;
+      if (k >= 1) this.slash = -1;
+    }
+
+    const hide = this.hidden || (data.adsHide && ads > 0.82);
+    this.holder.visible = !hide;
+    this.flashTime = Math.max(0, this.flashTime - dt);
+    const flashing = this.flashTime > 0 && !hide;
+    this.flash.visible = flashing;
+    this.flashLight.intensity = flashing ? 6 : 0;
+    if (flashing) {
+      model.updateMatrixWorld();
+      this.flash.position.copy(data.muzzle).applyMatrix4(model.matrixWorld);
+      this.flash.position.z -= 0.04;
+      this.flashLight.position.copy(this.flash.position);
+      const size = 0.16 + Math.random() * 0.12;
+      this.flash.scale.set(size, size, 1);
+    }
+  }
+}

@@ -1,116 +1,120 @@
 # Sniper Shootout
 
-A fast browser-based multiplayer shooter prototype built for local play in a private arena. The project includes a 3D sniper arena in the browser, a WebSocket multiplayer server, and a lightweight Python backend for Call of Duty profile lookups.
+A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and one hand-built map: **Kestrel Yard**. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
 
-## Features
+No accounts, no asset downloads: every model, texture and sound is generated in code.
 
-- Browser-based 3D sniper arena experience
-- Match lobby and room-based multiplayer via WebSockets
-- Private room codes for quick local sessions
-- Player customization for callsign, operator style, colors, and settings
-- HUD, scoreboard, reload flow, respawn loop, and match state handling
-- Python API endpoint for external Call of Duty profile data
+## Quick start
+
+```bash
+npm install
+npm run arena
+```
+
+Open http://localhost:4174/ , pick a callsign, and press **Find a match** (bots fill empty seats) or **Learn the ropes** for the practice range.
+
+To play with friends, create a private room and send them the invite link shown in the lobby. On a LAN, replace `localhost` with your machine's address. Override the port with `ARENA_PORT=5000 npm run arena`.
+
+## How a match plays
+
+- **Best of nine.** First team to five rounds wins. Sides switch after round four.
+- **One life.** Die and you watch the killcam, then spectate your team until the round ends.
+- **Buy phase.** Twelve seconds behind your spawn gate to spend credits on weapons, armour and two gadgets. Survive a round and you keep your gear; die and you are back to the M-44 and a P9.
+- **Sudden death.** If the clock runs out, every pilot is revealed and every hit is lethal for 35 seconds.
+- **Rematch.** The end screen has a rematch vote; when everyone votes the next match starts straight away.
+
+### Shots matter
+
+- Head, torso and limb hit zones. The M-44 kills with one shot to the head or an unarmoured torso; a vest lets you survive one body shot.
+- Bullets pass through planks, cloth and sheet metal, losing damage on the way. Brick and concrete stop them. Glass shatters.
+- The long rifle leaves a vapour trail back to the shooter, loud weapons show on the rival minimap, footsteps are audible unless you walk or crouch, and near misses blur your aim.
+- Scoped rifles sway. Crouch to settle, hold **Shift** to hold your breath, scroll to change zoom.
+
+### Gadgets (two slots, keys Q and E)
+
+Radar Pulse · Recon Drone (pilotable) · Decoy Hologram · Deploy Shield · Silent Step · Field Stim
+
+### Kestrel Yard
+
+A mirrored industrial yard: rail lane to the west, market lane to the east, a plaza in the middle. Two depot roofs for long sightlines, a glass-fronted office overlooking the plaza, and a plus-shaped underpass that gets you across the map unseen. Locations are named on the HUD and used by pings. Each match rolls one of four conditions: Dusk, Night Fog, Storm Front or High Noon.
+
+## Modes
+
+| Mode | What it is |
+| --- | --- |
+| Quick play | Casual queue. Bots fill seats and hand them to humans who join later. |
+| Ranked | Humans only. Skill rating (Elo) moves when people face people. |
+| Arcade | The day's modifier: Headhunter, One Tap, Low Orbit or Sidearms Only. |
+| Bot match | 3v3 against Recruit, Veteran or Elite bots. |
+| Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
+| Private room | Room code + invite link, team select, bots, custom rules (format, round time, credits, weather, modifier, friendly fire, sudden death). |
+
+## Progression
+
+Profiles live on the server in `data/profiles.json`, keyed by a random token kept in the browser. They track XP and level, skill rating, career stats, per-weapon mastery, the last 25 matches, and three daily contracts that rotate at 00:00 UTC. Levels unlock suit, visor and tracer colours and titles. The end screen can render a shareable match card (PNG).
+
+## Controls
+
+| Input | Action |
+| --- | --- |
+| W A S D / Space | Move / jump |
+| Shift | Walk quietly · hold breath while scoped |
+| Ctrl or C | Crouch (silent) |
+| LMB / RMB / wheel | Fire / scope / zoom or switch weapon |
+| 1 2 3 · R | Primary, sidearm, blade · reload |
+| Q / E | Gadgets |
+| B | Armoury (buy phase) |
+| Z or MMB · X | Ping a location · radio commands |
+| Enter / Y · Tab | Chat all / team · scoreboard |
+| Gamepad | Sticks move and aim, RT fire, LT scope, X reload, Y swap, B crouch, LB/RB gadgets |
+
+Settings cover sensitivity, field of view, volume, graphics quality, announcer voice, invert Y and toggle scope/crouch. Graphics step down automatically if the frame rate cannot hold.
 
 ## Project layout
 
 ```text
-.
-├── index.html                  # Redirects to the arena entry page
-├── package.json                # Node scripts and dependencies
-├── backend/
-│   ├── server.py               # Python API server
-│   └── codwrapper/             # Call of Duty API client package
-├── src/
-│   └── arena/
-│       ├── arena.css           # Arena styling
-│       ├── arena.js            # Game client logic and rendering
-│       ├── index.html          # Game UI shell
-│       └── multiplayer-server.mjs  # WebSocket game server
-└── README.md
+src/arena/
+├── index.html, arena.css        # UI shell and styling
+├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking
+├── shared/                      # Runs on both sides
+│   ├── constants.js             # Weapons, gadgets, economy, rules, progression
+│   ├── map.js                   # Kestrel Yard and the range, as collision boxes
+│   ├── physics.js               # Box world: movement, stairs, raycasts
+│   └── combat.js                # Hit zones, penetration, spread
+├── server/
+│   ├── room.js                  # Match state machine, authoritative combat, gadgets
+│   ├── bots.js, nav.js          # Bot AI and the generated navigation grid
+│   └── profiles.js              # JSON profile store
+├── client/                      # Three.js client (world, characters, viewmodel, HUD, menus, audio)
+└── tests/                       # `npm test`
+backend/                         # Separate Python Call of Duty profile API (unrelated to the arena)
 ```
 
-## Requirements
+### Networking notes
 
-- Node.js 18+
-- npm
-- Python 3.10+
+The client predicts its own movement and draws tracers immediately; the server validates movement speed and position, rewinds other players to the moment you fired (lag compensation, capped at 400 ms), and decides every hit. Remote players are interpolated 100 ms in the past. If your connection drops mid-match your seat is held for 45 seconds and the page rejoins on its own, even after a refresh.
 
-## Install dependencies
-
-```bash
-npm install
-```
-
-## Run the arena server
-
-Start the multiplayer arena server:
-
-```bash
-npm run arena
-```
-
-This starts the WebSocket server and static file host on the default port:
-
-- http://localhost:4174/src/arena/index.html
-
-You can override the port with:
-
-```bash
-ARENA_PORT=5000 npm run arena
-```
-
-## Run the Python backend
-
-The Python backend exposes a profile endpoint at `/api/cod/profile`.
-
-```bash
-python backend/server.py
-```
-
-Default port:
-
-- http://127.0.0.1:4173
-
-To use the profile API, set one of the following environment variables:
-
-```bash
-export COD_SSO="your-sso-token"
-```
-
-or
-
-```bash
-export COD_EMAIL="your-email@example.com"
-export COD_PASSWORD="your-password"
-```
-
-Then query:
-
-```bash
-http://127.0.0.1:4173/api/cod/profile?username=YourUsername&platform=uno&title=mw&mode=zm
-```
-
-## Test the project
+## Tests
 
 ```bash
 npm test
 ```
 
-This checks the JavaScript files for syntax issues.
+Checks the map (mirroring, clear spawns, closed gate-to-gate sightlines), walks a body through the underpass and onto the roofs, verifies bots can path everywhere, and exercises hit zones, penetration, glass and the damage model.
 
-## Local gameplay
+## Python backend
 
-1. Start the arena server with `npm run arena`.
-2. Open the page in your browser:
-   - http://localhost:4174/src/arena/index.html
-3. Enter a callsign and join a room.
-4. Open the same room in another browser or device on the same network to play together.
+`backend/server.py` exposes `/api/cod/profile` on http://127.0.0.1:4173 and is independent of the game. It needs `COD_SSO`, or `COD_EMAIL` and `COD_PASSWORD`, in the environment:
+
+```bash
+python backend/server.py
+# http://127.0.0.1:4173/api/cod/profile?username=YourUsername&platform=uno&title=mw&mode=zm
+```
 
 ## Notes
 
-- The arena is designed for local or private network multiplayer, not a public production deployment.
-- The root `index.html` redirects to the arena page for convenience.
-- The Call of Duty profile endpoint depends on valid credential environment variables and may require platform-specific configuration.
+- Built for private and LAN play. The server is authoritative about combat but does not hide enemy positions from a modified client, so it is not hardened for public deployment.
+- The announcer uses the browser's speech synthesis, so its voice varies by system. It can be turned off in Settings.
 
 ## License
 
