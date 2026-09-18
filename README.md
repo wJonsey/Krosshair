@@ -1,62 +1,64 @@
 # Krosshair
 
-A round-based tactical sniper game for the browser. Two teams, one life per round, best of nine, a buy phase between rounds, and twelve hand-built arenas from a 1v1 subway platform to a canyon-sized sniper range. The Node server owns the truth — health, ammo, credits, hit detection — so matches stay fair between friends on different connections.
+A round-based tactical sniper game for the browser, live at **[krosshair.online](https://krosshair.online)**. Two teams, one life per round, best of nine, a buy phase between rounds, and twelve hand-built arenas from a 1v1 subway platform to a canyon-sized sniper range. A single Node process serves the page and runs the match; it owns every hit, health point and credit, so games stay fair between friends on different connections.
 
-No asset downloads: every model, texture and sound is generated in code. Log in with Discord to play; your progress follows you to any device.
+No asset downloads — every model, texture and sound is generated in code. Players sign in with Discord (no email, no password) and their progress follows them to any device.
 
-## Play now
+Working on the code? Read **[CLAUDE.md](CLAUDE.md)** first — it is the guide for anyone, human or AI agent, changing this project.
 
-The game is live at **[krosshair.online](https://krosshair.online)** — no install needed. Pick a callsign and press **Find a match** (bots fill empty seats) or **Learn the ropes** for the practice range.
+## Running it locally
 
-## Quick start (running it yourself)
+Needs Node 20 or newer.
 
 ```bash
 npm install
 npm run arena
 ```
 
-Open http://localhost:4174/ — the server hosts the client itself (HTML, JS, CSS) alongside the WebSocket, so there's nothing else to stand up. Pick a callsign and press **Find a match** or **Learn the ropes**.
+Open http://localhost:4174/. The server hosts the client (HTML, JS, CSS) alongside the WebSocket, so there is nothing else to start.
 
-To play with friends, create a private room and send them the invite link shown in the lobby. On a LAN, replace `localhost` with your machine's address. Override the port with `ARENA_PORT=5000 npm run arena`.
+- **Logging in locally** works out of the box: the game logs in through the Krosshair Discord application, whose public ID is committed in `src/arena/shared/constants.js`, and `http://localhost:4174/auth/discord/callback` is registered on it.
+- **Playing without Discord** (offline, or a quick test): start with `ALLOW_GUESTS=1 npm run arena` and the menu offers a callsign box instead.
+- **Port:** `ARENA_PORT=5000 npm run arena`.
+- **Tests:** `npm test` — about 100 checks, including every arena's fairness (see below), the login flow against a stand-in Discord, and the webhooks. `MAP=foundry node --test src/arena/tests/maps.test.mjs` runs one arena.
 
-## Deployment
+## How krosshair.online runs
 
-`krosshair.online` runs off a single dedicated machine: `npm run server` behind a Cloudflare Tunnel (`cloudflared`) routes the domain straight to the Node process on port 4174 — Cloudflare terminates HTTPS and there is no port-forwarding or reverse proxy involved. The game process is managed by systemd (`krosshair.service`) so it restarts on crash and on boot.
+One dedicated machine runs `npm run server` behind a Cloudflare Tunnel (`cloudflared` routes the domain straight to port 4174 and terminates HTTPS — no port forwarding, no reverse proxy). `systemd` manages the process as `krosshair.service`, restarting it on crash and on boot.
 
-A systemd timer (`krosshair-deploy.timer`) polls `origin/main` every few minutes; when it finds a new commit it pulls, reinstalls dependencies if `package.json`/`package-lock.json` changed, and restarts `krosshair.service`. In practice: push to `main` and the live site updates itself within a few minutes, no manual deploy step required.
+**Deploys are automatic.** A systemd timer (`krosshair-deploy.timer`) polls `origin/main` every few minutes; on a new commit it pulls, reinstalls dependencies if `package.json` or the lockfile changed, and restarts the service. Pushing to `main` *is* the deploy — expect it live within about five minutes. When the service stops:
 
-## Discord login
+1. everyone online gets an in-game warning and the Discord updates channel gets "⚠️ Update incoming";
+2. the server waits `RESTART_GRACE_SECONDS` (20 by default; skipped when nobody is online), then flushes profiles and accounts to disk and exits;
+3. the new process posts "✅ Update live" with the commit, and pages that were left open refresh themselves onto the same menu page without the loading screen's Enter button.
 
-A Discord login is required to play — quick play, ranked, bot matches, the practice range, all of it. There is no email and no password: the menu shows **Log in / sign up with Discord**, the first login creates the account (and adopts the guest progress already in that browser), and later logins find it again by Discord ID. Level, stats, unlocks, look, settings, key binds and crosshair are saved to the account on the server, so they survive restarts and follow the pilot to any device.
+`https://krosshair.online/api/status` shows who is online, the public rooms, and which Discord features are configured: `discord: { login, autoJoin, required, webhooks: { updates, leaderboard } }`.
 
-**What is already set up.** The game logs in through the Discord application whose public ID is `DISCORD_CLIENT_ID` in `src/arena/shared/constants.js`, with these redirects registered on it: `https://krosshair.online/auth/discord/callback` and `http://localhost:4174/auth/discord/callback`. That is everything login needs — no secrets on the server. The server checks with Discord that every token it is handed was issued to this application before trusting it.
+### Secrets: the `.env` file
 
-**Adding pilots to the Discord server automatically** needs the application's bot, because only a bot can add members:
+Everything secret lives in a git-ignored `.env` next to `package.json` on the machine that runs the server. Copy `.env.example` and fill in what you have:
 
-1. Developer Portal → the application → **Bot** → create it and copy the token.
-2. Invite the bot to the [Krosshair Discord](https://discord.gg/uFVygVtKzt) with the **Create Invite** permission.
-3. On the game machine, copy `.env.example` to `.env`, set `DISCORD_BOT_TOKEN`, and restart `krosshair.service`. `.env` is git-ignored; never commit it.
+| Variable | What it does | Where it comes from |
+| --- | --- | --- |
+| `DISCORD_BOT_TOKEN` | Lets a login add the pilot to the Krosshair Discord server (auto-join). Without it, logins still work and players get an invite card instead. | Developer Portal → the app → Bot → Reset Token |
+| `DISCORD_WEBHOOK_UPDATES` | Deploy warnings and "update live" posts | Discord channel → Integrations → Webhooks |
+| `DISCORD_WEBHOOK_LEADERBOARD` | Posts when the top three of any leaderboard changes | same |
+| `DISCORD_CLIENT_SECRET` | Optional. Switches login to the OAuth code flow so Discord's token never reaches the browser. | Developer Portal → OAuth2 |
+| `PUBLIC_URL` | Optional. Only if the server cannot work out its own public address. | — |
+| `ALLOW_GUESTS=1` | Emergency / local testing: callsign play instead of Discord login. | — |
+| `RESTART_GRACE_SECONDS` | Warning time before a deploy restart (0–60). | — |
 
-Until then logins work and the menu links to the invite instead. Setting `DISCORD_CLIENT_SECRET` as well switches login to the code flow, which keeps Discord's token off the browser entirely. Discord shows "Join servers for you" on its consent screen whenever auto-join is on. Only the `identify` and `guilds.join` scopes are ever requested.
+The server logs what it found at start-up (key names only, never values): `journalctl -u krosshair -n 30 | grep discord`. A restart is needed after `.env` changes: `sudo systemctl restart krosshair.service`.
 
-**Checking it.** `https://krosshair.online/api/status` reports `"discord": { "login", "autoJoin", "required" }`, and the server prints what it found at start-up (key names only):
+Never commit `.env`, never paste a token or webhook URL into chat or an issue. If one leaks, reset it in Discord and the old one stops working at once.
 
-```bash
-journalctl -u krosshair -n 20 | grep discord:
-```
+### Discord application
 
-`ALLOW_GUESTS=1` in the environment lets people in with a callsign instead — for local testing or an emergency. Sessions are stored as SHA-256 hashes in `data/accounts.json`, and pending saves are flushed when the service stops, so a deploy never costs anyone progress.
+Login goes through one Discord application ("Krosshair"). What is set up on it: the public Application ID in `constants.js`; redirects `https://krosshair.online/auth/discord/callback` and `http://localhost:4174/auth/discord/callback`; a bot user invited to the Krosshair Discord with the **Create Invite** permission (needed for auto-join). Scopes requested from players are only `identify` and `guilds.join`. Discord shows "Join servers for you" on its consent screen when auto-join is on.
 
-## Discord webhooks
+## Playing
 
-Two optional channel webhooks, both set in `.env` on the game machine (see `.env.example`):
-
-- **`DISCORD_WEBHOOK_UPDATES`** — every deploy. When the deploy timer restarts the service, the old process posts "⚠️ Update incoming — server restarting" with how many pilots and matches are about to be dropped, shows the same warning in game, and waits `RESTART_GRACE_SECONDS` (20 by default, skipped when nobody is online) before it saves and exits. The new process then posts "✅ Update live" with the commit message and hash. A restart with no new commit posts the warning but not the second message.
-- **`DISCORD_WEBHOOK_LEADERBOARD`** — checked every five minutes; posts when the top three of any board changes, with the new top five and a headline when #1 changes hands.
-
-Webhook posts never mention anyone, and a webhook that is down or slow never delays a deploy by more than three seconds past the grace period. `https://krosshair.online/api/status` reports which of the two are configured. Last-announced state lives in `data/webhooks.json`.
-
-## How a match plays
+### A match
 
 - **Best of nine.** First team to five rounds wins. Sides switch after round four.
 - **One life.** Die and you watch the killcam, then spectate your team until the round ends.
@@ -64,67 +66,66 @@ Webhook posts never mention anyone, and a webhook that is down or slow never del
 - **Sudden death.** If the clock runs out, every pilot is revealed and every hit is lethal for 35 seconds.
 - **Rematch.** The end screen has a rematch vote; when everyone votes the next match starts straight away.
 
-### Shots matter
+### Shots
 
 - Head, torso and limb hit zones. The M-44 kills with one shot to the head or an unarmoured torso; a vest lets you survive one body shot.
 - Bullets pass through planks, cloth and sheet metal, losing damage on the way. Brick and concrete stop them. Glass shatters.
 - The long rifle leaves a vapour trail back to the shooter, loud weapons show on the rival minimap, footsteps are audible unless you walk or crouch, and near misses blur your aim.
-- Scoped rifles sway. Crouch to settle, hold **Shift** to hold your breath, scroll to change zoom.
+- Scoped rifles sway: crouch to settle, hold breath, scroll to change zoom. Red dots and holographic sights are real optics on the gun — aiming brings the housing up to your eye and the reticle sits in its window.
 
-### Gadgets (two slots, keys Q and E)
+### Gadgets (two slots)
 
 Radar Pulse · Recon Drone (pilotable) · Decoy Hologram · Deploy Shield · Silent Step · Field Stim
 
-### Arenas
-
-Every arena is mirrored so both teams play the same ground, names its locations on the HUD, and gives bots a generated navigation grid. Hosts choose **Lobby vote** (every arena is on the ballot plus "surprise me", 25 seconds, ties broken at random), **Random each match** (never the same map twice running, weighted by lobby size), or pin one arena. Matchmade queues rotate at random.
-
-| Arena | Size | Style | What defines it |
-| --- | --- | --- | --- |
-| Kestrel Yard | Medium · 2v2–4v4 | Industrial rail yard | Depot roofs, a glass-fronted office, a plus-shaped underpass |
-| Halcyon Atrium | Small · 1v1–2v2 | Glass-and-marble gallery | Two mezzanines with breakable glass railings, a skybridge, shoot-through exhibit panels |
-| Campanile | Small–medium · 2v2–3v3 | Old-town piazza | A climbable bell tower, arcades, a balcony house per side, a sunken canal walk |
-| Frostbite Station | Medium–large · 3v3–4v4 | Arctic research base | Helipad on stilts, lab roofs, snow berms (thin ones stop nothing), an ice trench |
-| Foundry 4 | Small–medium · 2v2–3v3 | Steel mill floor | A dead furnace, catwalks down both sides, two bridges, sheet metal that stops nothing |
-| Saffron Market | Small–medium · 2v2–3v3 | Covered souk | Shoot-through cloth and plank stalls, two flat roofs to climb, a kiosk in the square |
-| Line 9 | Small · 1v1–2v2 | Underground station | Two platforms, two parked trains to run through, a track bed down the middle |
-| Skyline Terrace | Medium · 2v2–4v4 | Tower rooftop | A breakable glass greenhouse, water tanks on stilts, plant rooms on both flanks |
-| Breakwater | Medium–large · 3v3–4v4 | Container quay | Long lanes between the stacks and a walkway across the crane beam |
-| Timberline | Large · 3v3–4v4 | Mountain logging camp | A lodge, a watchtower each, rock that stops everything and hedgerows that stop nothing |
-| Ravelin | Large · 3v3–4v4 | Desert fort | Crenellated ramparts down both walls, a keep in the courtyard, open stone between |
-| Dustline Pass | Large · 3v3–4v4 | Desert canyon outpost | One stone bridge over a dry riverbed, plank crossings, a watchtower, a roof-terrace house, a climbable mesa |
-
-Each arena has its own set of conditions: Dusk, Night Fog, Storm Front and High Noon, plus **Whiteout** (snowfall, 90 m visibility) on Frostbite and **Dust Haze** on Dustline.
-
-## Modes
+### Modes
 
 | Mode | What it is |
 | --- | --- |
 | Quick play | Casual queue. Bots fill seats and hand them to humans who join later. |
 | Ranked | Humans only. Skill rating (Elo) moves when people face people. |
 | Arcade | The day's modifier: Headhunter, One Tap, Low Orbit or Sidearms Only. |
-| Bot match | 3v3 against Recruit, Veteran or Elite bots. The level is a centre point: every bot rolls its own skill and habits around it, so no two play alike. |
+| Bot match | 3v3 against Recruit, Veteran or Elite bots. The level is a centre point — every bot rolls its own skill and habits around it, so no two play alike. |
 | Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
 | Private room | Room code + invite link, team select, bots, custom rules (arena vote / random / fixed, format, round time, credits, weather, modifier, friendly fire, sudden death). |
 
-## Leaderboard
+### Arenas
 
-The **Leaderboard** page ranks every account by skill rating (ranked players only), level, player kills, wins, headshots and longest kill: a podium for the top three, the rest of the top 50, and your own position however far down it is. The Play page shows the top five. Standings are rebuilt on the server at most every 30 seconds.
+Every arena is mirrored so both teams play the same ground, names its locations on the HUD, and gives bots a generated navigation grid. Hosts choose **Lobby vote** (every arena on the ballot plus "surprise me", 25 seconds, ties broken at random), **Random each match** (never the same map twice running, weighted by lobby size), or pin one arena.
 
-Phones and tablets are stopped at the loading screen with a note to play on a laptop or desktop — the game needs a mouse and keyboard — and the engine is never downloaded on them.
+| Arena | Size | Style | What defines it |
+| --- | --- | --- | --- |
+| Kestrel Yard | Medium · 2v2–4v4 | Industrial rail yard | Depot roofs, a glass-fronted office, a plus-shaped underpass |
+| Halcyon Atrium | Small · 1v1–2v2 | Glass-and-marble gallery | Two mezzanines with breakable glass railings, a skybridge |
+| Campanile | Small–medium · 2v2–3v3 | Old-town piazza | A climbable bell tower, arcades, a balcony house per side, a sunken canal walk |
+| Frostbite Station | Medium–large · 3v3–4v4 | Arctic research base | Helipad on stilts, lab roofs, snow berms, an ice trench |
+| Foundry 4 | Small–medium · 2v2–3v3 | Steel mill floor | A dead furnace, catwalks down both sides, two bridges |
+| Saffron Market | Small–medium · 2v2–3v3 | Covered souk | Shoot-through stalls, two flat roofs to climb, a kiosk in the square |
+| Line 9 | Small · 1v1–2v2 | Underground station | Two platforms, two parked trains to run through, a track bed |
+| Skyline Terrace | Medium · 2v2–4v4 | Tower rooftop | A breakable glass greenhouse, water tanks on stilts, plant rooms |
+| Breakwater | Medium–large · 3v3–4v4 | Container quay | Long lanes between the stacks, a walkway across the crane beam |
+| Timberline | Large · 3v3–4v4 | Mountain logging camp | A lodge, a watchtower each, rock that stops everything, hedgerows that stop nothing |
+| Ravelin | Large · 3v3–4v4 | Desert fort | Crenellated ramparts down both walls, a keep in the courtyard |
+| Dustline Pass | Large · 3v3–4v4 | Desert canyon outpost | A stone bridge over a dry riverbed, a watchtower, a climbable mesa |
 
-## Progression
+Conditions rotate per arena: Dusk, Night Fog, Storm Front and High Noon, plus Whiteout (snowfall) on Frostbite and Timberline and Dust Haze on Dustline, Saffron and Ravelin.
 
-Profiles live on the server in `data/profiles.json`, keyed by a random token kept in the browser. They track XP and level, skill rating, career stats, per-weapon mastery, the last 25 matches, and three daily contracts that rotate at 00:00 UTC. Levels unlock suit, visor and tracer colours and titles. The end screen can render a shareable match card (PNG).
+### Accounts, progression, leaderboard
 
-## Controls
+- **Login is required to play** and is Discord-only. The first login creates the account and adopts any guest progress already in that browser; later logins find it by Discord ID.
+- The account keeps XP and level, skill rating, career stats, per-weapon mastery, the last 25 matches, three daily contracts (reset 00:00 UTC), the operator's look, and every setting — key binds and crosshair included — so they follow the pilot between devices.
+- **Leaderboard** (menu tab 04): skill rating, level, player kills, wins, headshots and longest kill; podium, top 50, and your own position. The Play page shows the top five.
+- Phones and tablets are stopped at the loading screen: the game needs a mouse and keyboard, and the engine is never downloaded on them.
+
+### Controls and settings
+
+Every key and mouse button is rebindable in Settings → Key binds (two slots per action). Defaults:
 
 | Input | Action |
 | --- | --- |
 | W A S D / Space | Move / jump |
 | Shift | Walk quietly · hold breath while scoped |
 | Ctrl or C | Crouch (silent) |
-| LMB / RMB / wheel | Fire / scope / zoom or switch weapon |
+| LMB / RMB / wheel | Fire / aim / zoom or switch weapon |
 | 1 2 3 · R | Primary, sidearm, blade · reload |
 | Q / E | Gadgets |
 | B | Armoury (buy phase) |
@@ -132,55 +133,46 @@ Profiles live on the server in `data/profiles.json`, keyed by a random token kep
 | Enter / Y · Tab | Chat all / team · scoreboard |
 | Gamepad | Sticks move and aim, RT fire, LT scope, X reload, Y swap, B crouch, LB/RB gadgets |
 
-Settings cover sensitivity, field of view, volume, graphics quality, announcer voice, invert Y and toggle scope/crouch. Graphics step down automatically if the frame rate cannot hold.
+Settings pages: Aim (sensitivities, toggles), Graphics (presets or render scale / shadows / lights / brightness / FOV, frame-rate cap, FPS counter, automatic step-down), Audio & HUD (master and weather volume, announcer, sound visualiser), Crosshair (colour, outline, dot, inner and outer lines, dynamic spread, presets, share codes), Key binds.
 
 ## Project layout
 
 ```text
+index.html                       # Redirects to the game page
 src/arena/
-├── index.html, arena.css        # UI shell and styling
-├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking
-├── shared/                      # Runs on both sides
-│   ├── constants.js             # Weapons, gadgets, economy, rules, progression
-│   ├── map.js                   # Map registry, Kestrel Yard and the practice range
-│   ├── mapkit.js                # Box-map authoring tools (mirroring, walls, stairs, glass runs)
-│   ├── maps/                    # One file per arena (eleven of the twelve; Kestrel Yard lives in map.js)
-│   ├── physics.js               # Box world: movement, stairs, raycasts
-│   └── combat.js                # Hit zones, penetration, spread
+├── index.html, arena.css        # UI shell, loading screen markup, all styling
+├── brand/                       # Logo (SVG + PNG), favicon, touch icon
+├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking, auth routes, status API
+├── shared/                      # Runs on both sides — the simulation must agree
+│   ├── constants.js             # Weapons, gadgets, economy, rules, progression, bot levels, Discord IDs
+│   ├── map.js, mapkit.js        # Map registry + Kestrel Yard; box-map authoring tools (arenaShell, flight, SYM …)
+│   ├── maps/                    # One file per arena
+│   ├── physics.js, combat.js    # Box world, movement, raycasts; hit zones, penetration, spread
+│   └── version.js               # Map fingerprints so stale pages notice
 ├── server/
 │   ├── room.js                  # Match state machine, authoritative combat, gadgets
 │   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
-│   ├── bots.js, nav.js          # Bot AI and the generated navigation grid
-│   ├── profiles.js              # JSON profile store
-│   ├── accounts.js, discord.js  # Accounts and "Log in with Discord"
+│   ├── bots.js, nav.js          # Bot personalities + AI; generated navigation grid
+│   ├── profiles.js, accounts.js # JSON stores: progression and settings; accounts and sessions
+│   ├── discord.js               # "Log in with Discord" (implicit or code flow) and auto-join
 │   └── webhooks.js              # Discord channel posts: deploy warnings, leaderboard changes
-├── client/                      # Three.js client (world, characters, viewmodel, HUD, menus, audio)
+├── client/                      # Three.js client
+│   ├── boot.js                  # Loading screen, mobile block, loads main.js
+│   ├── main.js, net.js, state.js
+│   ├── world.js, characters.js, viewmodel.js, effects.js, audio.js
+│   ├── player.js, input.js, hud.js, crosshair.js
+│   └── menu.js, mapvote.js      # Every screen outside the match
 └── tests/                       # `npm test`
-backend/                         # Separate Python Call of Duty profile API (unrelated to the arena)
+backend/                         # Unrelated legacy Python API (Call of Duty profile lookup); not part of the game
 ```
 
-### Networking notes
+### Networking
 
-The client predicts its own movement and draws tracers immediately; the server validates movement speed and position, rewinds other players to the moment you fired (lag compensation, capped at 400 ms), and decides every hit. Remote players are interpolated 100 ms in the past. If your connection drops mid-match your seat is held for 45 seconds and the page rejoins on its own, even after a refresh.
+The client predicts its own movement and draws tracers immediately; the server validates movement speed and position, rewinds other players to the moment you fired (lag compensation, capped at 400 ms) and decides every hit. Remote players are interpolated 100 ms in the past. If your connection drops mid-match your seat is held for 45 seconds and the page rejoins on its own, even after a refresh. Anyone in the menus receives the public room list and online count live.
 
-## Tests
+### Adding an arena
 
-```bash
-npm test
-```
-
-For every arena: mirroring, clear spawns inside their zones, closed gate-to-gate sightlines, and bot paths from both spawns to every point of interest. Also walks a body through the yard's underpass and roofs, exercises hit zones, penetration, glass and the damage model, and drives a real room through map pinning, voting and random rotation.
-
-Adding an arena: write `shared/maps/<id>.js` with the `mapkit` builder (author the south half with `SYM`; `arenaShell` gives you the ground, perimeter and gated spawn lobbies, `flight` a staircase bots can climb), register it in `MAP_INFO`/`BUILDERS` in `shared/map.js`, and `npm test` will tell you what is unfair or unreachable.
-
-## Python backend
-
-`backend/server.py` exposes `/api/cod/profile` on http://127.0.0.1:4173 and is independent of the game. It needs `COD_SSO`, or `COD_EMAIL` and `COD_PASSWORD`, in the environment:
-
-```bash
-python backend/server.py
-# http://127.0.0.1:4173/api/cod/profile?username=YourUsername&platform=uno&title=mw&mode=zm
-```
+Write `src/arena/shared/maps/<id>.js` with the `mapkit` builder: `arenaShell` gives you the ground, perimeter and gated spawn lobbies, `flight` a staircase bots can climb, `SYM` mirrors a piece across `z = 0`. Author the south half; the north is the mirror. Register the id in `MAP_INFO` and `BUILDERS` in `shared/map.js`, add a thumbnail palette in `client/mapvote.js`, and run `MAP=<id> node --test src/arena/tests/maps.test.mjs`. The tests reject anything unfair or unreachable: unmirrored geometry, blocked spawns, a spawn gate that can see another, and any interest point bots cannot reach from both spawns.
 
 ## Notes
 

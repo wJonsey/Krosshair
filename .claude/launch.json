@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "krosshair",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "arena"],
+      "port": 4174
+    }
+  ]
+}
