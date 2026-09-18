@@ -54,5 +54,5 @@ test('the leaderboard posts when a podium changes, and stays quiet otherwise', a
   });
   assert.equal(posts.length, 1);
   assert.match(posts[0].body.embeds[0].title, /Bo takes #1 in Skill rating/);
-  assert.match(posts[0].body.embeds[0].fields[0].value, /🥇 \*\*Bo\*\* — 1500 SR/);
+  assert.match(posts[0].body.embeds[0].fields[0].value, /🥇 \*\*Bo\*\* · 1500 SR/);
 });

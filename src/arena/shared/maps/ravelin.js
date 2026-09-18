@@ -1,4 +1,4 @@
-// RAVELIN — large. A desert fort: ramparts down both long walls with crenels to shoot from, a keep
+// RAVELIN: large. A desert fort: ramparts down both long walls with crenels to shoot from, a keep
 // in the courtyard, and a lot of open stone between them.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 

@@ -12,7 +12,7 @@
   const status = $('#boot-status');
   const enter = $('#boot-enter');
   const steps = [...el.querySelectorAll('[data-step]')];
-  const labels = { engine: 'Downloading engine…', arena: 'Building Kestrel Yard…', link: 'Reaching the match server…', optics: 'Zeroing optics…' };
+  const labels = { engine: 'Downloading engine…', arena: 'Building Kestrel Yard…', link: 'Connecting…', optics: 'Zeroing optics…' };
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let shots = 0;
   let hits = 0;
@@ -29,7 +29,7 @@
     if (!ready) { if (next) status.textContent = labels[next.dataset.step]; return; }
     // The game is playable before the socket opens; say so rather than pretend.
     const link = steps.find((item) => item.dataset.step === 'link');
-    status.textContent = link.classList.contains('done') ? 'Ready.' : link.classList.contains('warn') ? 'Ready — server unreachable, still retrying.' : 'Ready — still reaching the server…';
+    status.textContent = link.classList.contains('done') ? 'Ready.' : link.classList.contains('warn') ? 'Ready. Server unreachable, retrying…' : 'Ready. Connecting…';
   }
   function step(id, state = 'done') {
     const item = steps.find((entry) => entry.dataset.step === id);
@@ -90,7 +90,7 @@
   // ----- warm-up range -----
   function score() {
     $('#boot-hits').textContent = hits;
-    $('#boot-acc').textContent = shots ? `${Math.round((hits / shots) * 100)}% ACC` : '—';
+    $('#boot-acc').textContent = shots ? `${Math.round((hits / shots) * 100)}% ACC` : '-';
   }
   function spark(x, y, hit) {
     const mark = document.createElement('span');
@@ -133,8 +133,8 @@
   spawnTimer = setInterval(spawn, 750);
 
   // ----- when the engine never arrives -----
-  addEventListener('error', (event) => { if (!ready && event.filename) fail('The game hit an error while starting. Reload to try again.'); });
-  setTimeout(() => { if (!ready && !closed && !el.classList.contains('failed')) status.textContent += ' Still working — slow connection?'; }, 15000);
+  addEventListener('error', (event) => { if (!ready && event.filename) fail('Failed to start. Reload to try again.'); });
+  setTimeout(() => { if (!ready && !closed && !el.classList.contains('failed')) status.textContent += ' Still loading. Slow connection?'; }, 15000);
 
   refresh();
   window.__boot = { step, ready: markReady, fail };
@@ -150,8 +150,8 @@
     clearInterval(spawnTimer);
     el.classList.add('blocked');
     $('.boot-steps').remove(); $('.boot-meter').remove(); $('.boot-score').remove(); enter.remove(); range.remove();
-    status.outerHTML = '<div class="boot-block"><h2>Krosshair needs a laptop or desktop.</h2><p>It’s played with a mouse and keyboard — aiming, scoping and a dozen keys — so it doesn’t run on phones or tablets.</p><p>Open <b>krosshair.online</b> on a computer to play. See you on the range.</p><a href="https://discord.gg/uFVygVtKzt" target="_blank" rel="noopener noreferrer">Join the Discord in the meantime →</a></div>';
+    status.outerHTML = '<div class="boot-block"><h2>Desktop only.</h2><p>Krosshair needs a mouse and keyboard.</p><p>Play at <b>krosshair.online</b> on a computer.</p><a href="https://discord.gg/uFVygVtKzt" target="_blank" rel="noopener noreferrer">Join the Discord →</a></div>';
     return;
   }
-  import(new URL('client/main.js', document.baseURI).href).catch((error) => { console.error(error); fail('Could not download the game. Check your connection and reload.'); });
+  import(new URL('client/main.js', document.baseURI).href).catch((error) => { console.error(error); fail('Download failed. Check your connection and reload.'); });
 })();

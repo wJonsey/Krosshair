@@ -54,15 +54,15 @@ export class Webhooks {
     if (first && !this.usable(this.updates)) return false;
     return this.post(this.updates, {
       title: '✅ Update live', color: COLORS.good,
-      description: `**${esc(commit.subject)}**\n\`${commit.hash}\` · ${commit.author}\n\nThe server is back up. If your page was open it has refreshed itself${this.siteUrl ? ` — [play now](${this.siteUrl})` : ''}.`,
+      description: `**${esc(commit.subject)}**\n\`${commit.hash}\` · ${commit.author}\n\nBack up.${this.siteUrl ? ` [Play now](${this.siteUrl})` : ''}`,
     });
   }
 
   // Shutdown for a deploy: everyone in a match is about to be dropped.
   announceRestart({ seconds, pilots, matches }) {
     return this.post(this.updates, {
-      title: '⚠️ Update incoming — server restarting', color: COLORS.warn,
-      description: `A new version of Krosshair is being deployed. The server restarts in **${seconds} seconds**, and **anyone in a match will be disconnected** — matches in progress are lost.\n\nIt is usually back within a minute. Pages left open refresh themselves when it is.`,
+      title: '⚠️ Update incoming', color: COLORS.warn,
+      description: `Server restarts in **${seconds} seconds**. **Anyone in a match will be disconnected.**\n\nBack in about a minute.`,
       fields: [{ name: 'Online now', value: String(pilots), inline: true }, { name: 'Matches running', value: String(matches), inline: true }],
     }, 2500);
   }
@@ -88,7 +88,7 @@ export class Webhooks {
       description: this.siteUrl ? `[See the full standings](${this.siteUrl}/#leaderboard)` : undefined,
       fields: changed.slice(0, 6).map(({ id, board, before }) => ({
         name: board.label, inline: true,
-        value: board.top.slice(0, 5).map((row, place) => `${medals[place]} **${esc(row.name)}** — ${format(id, row)}${place < 3 && before[place] !== row.name ? ' ⬆' : ''}`).join('\n').slice(0, 1000),
+        value: board.top.slice(0, 5).map((row, place) => `${medals[place]} **${esc(row.name)}** · ${format(id, row)}${place < 3 && before[place] !== row.name ? ' ⬆' : ''}`).join('\n').slice(0, 1000),
       })),
     });
   }

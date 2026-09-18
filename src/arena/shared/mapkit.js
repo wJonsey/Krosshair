@@ -49,7 +49,7 @@ export function createBuilder() {
   }
 
   // axis 'x': wall runs along x, c1..c2 is its z thickness. axis 'z': runs along z, c1..c2 is x thickness.
-  // openings: [{ a, b, y1, y2, glass? }] — doors, windows, arches.
+  // openings: [{ a, b, y1, y2, glass? }]: doors, windows, arches.
   function wall(axis, c1, c2, from, to, y1, y2, mat, openings = [], opts = {}) {
     const put = (a, b, ya, yb, material, extra = {}) => {
       if (Math.abs(b - a) < 1e-6 || Math.abs(yb - ya) < 1e-6) return;

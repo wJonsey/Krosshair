@@ -1,4 +1,4 @@
-// BREAKWATER — medium to large. A container quay under a gantry crane. Long lanes between the
+// BREAKWATER: medium to large. A container quay under a gantry crane. Long lanes between the
 // stacks, a walkway across the crane beam, and steel boxes that a rifle goes straight through.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 

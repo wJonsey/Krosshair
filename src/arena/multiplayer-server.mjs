@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
@@ -31,17 +31,17 @@ for (const file of envFiles) {
 }
 const port = Number(process.env.ARENA_PORT || 4174);
 const discord = new DiscordAuth();
-// Playing needs a Discord login. ALLOW_GUESTS=1 is the only way round it (local testing, or an emergency
-// while the Discord application is being set up).
-const LOGIN_REQUIRED = !['1', 'true', 'yes'].includes(String(process.env.ALLOW_GUESTS || '').toLowerCase());
+// Anyone can play as a guest with a callsign; guest progress is never saved (see ProfileStore.holdGuest).
+// A Discord login keeps progress and is needed for ranked. ALLOW_GUESTS=0 makes the login compulsory again.
+const LOGIN_REQUIRED = ['0', 'false', 'no'].includes(String(process.env.ALLOW_GUESTS || '').toLowerCase());
 // Say what was found (names only, never values) so a missing key is obvious in `journalctl -u krosshair`.
 {
   const has = (key) => (process.env[key] ? 'set' : 'MISSING');
   console.log(`discord: .env ${envLoaded.length ? `read from ${envLoaded.join(', ')}` : `not found (looked in ${envFiles.join(', ')})`} · node ${process.version}`);
   console.log(`discord: application id ${process.env.DISCORD_CLIENT_ID ? 'from env' : discord.clientId ? 'from shared/constants.js' : 'MISSING'} · DISCORD_CLIENT_SECRET ${has('DISCORD_CLIENT_SECRET')} · DISCORD_BOT_TOKEN ${has('DISCORD_BOT_TOKEN')} · PUBLIC_URL ${process.env.PUBLIC_URL || '(from request host)'}`);
   if (discord.clientId && !/^\d{15,25}$/.test(discord.clientId)) console.warn('discord: DISCORD_CLIENT_ID should be the numeric Application ID, not the public key or a token.');
-  console.log(`discord: login ${discord.enabled ? `ON (${discord.flow} flow)` : 'NOT CONFIGURED — set DISCORD_CLIENT_ID in shared/constants.js'} · ${LOGIN_REQUIRED ? 'required to play' : 'guests allowed (ALLOW_GUESTS)'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF (no DISCORD_BOT_TOKEN)'}`);
-  if (LOGIN_REQUIRED && !discord.enabled) console.warn('discord: NOBODY CAN PLAY until the application ID is set, or the server is started with ALLOW_GUESTS=1.');
+  console.log(`discord: login ${discord.enabled ? `ON (${discord.flow} flow)` : 'NOT CONFIGURED: set DISCORD_CLIENT_ID in shared/constants.js'} · ${LOGIN_REQUIRED ? 'required to play (ALLOW_GUESTS=0)' : 'guests allowed'} · auto-join ${discord.autoJoin ? 'ON' : 'OFF (no DISCORD_BOT_TOKEN)'}`);
+  if (LOGIN_REQUIRED && !discord.enabled) console.warn('discord: NOBODY CAN PLAY until the application ID is set, or ALLOW_GUESTS=0 is removed.');
 }
 const profiles = new ProfileStore(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json'));
 await profiles.load();
@@ -79,10 +79,10 @@ function cleanText(value, max) {
 async function saveFeedback(socket, message) {
   const reply = (ok, text, extra = {}) => send(socket, { type: 'feedback-result', ok, message: text, ...extra });
   const t = now();
-  if (socket.lastFeedback && t - socket.lastFeedback < 15) return reply(false, 'Wait a few seconds before sending another report.');
+  if (socket.lastFeedback && t - socket.lastFeedback < 15) return reply(false, 'Wait a few seconds.');
   const title = cleanText(message.title, 90), details = cleanText(message.details, 3000);
-  if (title.length < 4) return reply(false, 'Give it a title of at least 4 characters.');
-  if (details.length < 10) return reply(false, 'Add a few more words of detail (10 characters or more).');
+  if (title.length < 4) return reply(false, 'Title needs 4+ characters.');
+  if (details.length < 10) return reply(false, 'Add a bit more detail.');
   socket.lastFeedback = t;
   const device = message.device && typeof message.device === 'object' ? Object.fromEntries(Object.entries(message.device).slice(0, 12).map(([key, value]) => [cleanText(key, 24), cleanText(value, 240)])) : null;
   const ref = `FB-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -93,14 +93,22 @@ async function saveFeedback(socket, message) {
   } catch (error) {
     console.error('feedback save failed', error);
     socket.lastFeedback = 0;
-    return reply(false, 'The server could not save that. Try again in a minute.');
+    return reply(false, 'Couldn’t save. Try again in a minute.');
   }
   console.log(`feedback ${ref}: [${entry.kind}] ${title}`);
   reply(true, 'Sent.', { ref });
 }
 
+// A guest's progress goes once nobody is using it: a second tab on the same token keeps it alive.
+function dropGuest(socket) {
+  if (!socket.guest) return;
+  socket.guest = false;
+  if (![...sockets].some((other) => other !== socket && other.guest && other.token === socket.token)) profiles.releaseGuest(socket.token);
+}
+
 function signIn(socket, account, message, session = null) {
   if (socket.readyState !== 1) return;
+  dropGuest(socket);
   socket.token = account.profileToken;
   socket.session = typeof message.tab === 'string' ? message.tab.slice(0, 64) : ProfileStore.newToken();
   socket.name = account.username;
@@ -120,21 +128,22 @@ async function handleAuth(socket, message) {
     if (!account) return send(socket, { type: 'auth-required', expired: true });
     if (account.claimOpen) {
       const legacy = typeof message.legacyToken === 'string' && message.legacyToken.length >= 16 && message.legacyToken.length <= 64 && profiles.profiles.has(ProfileStore.key(message.legacyToken)) ? message.legacyToken : null;
-      if (accounts.claim(account, legacy)) console.log(`account ${account.username} kept guest progress`);
+      if (accounts.claim(account, legacy)) { profiles.keepGuest(legacy); console.log(`account ${account.username} kept guest progress`); }
     }
     return signIn(socket, account, message);
   }
   if (message.action === 'logout') {
     accounts.logout(message.session);
     leaveRoom(socket, true);
+    dropGuest(socket);
     Object.assign(socket, { identified: false, token: null, name: null, account: null });
     return send(socket, { type: 'logged-out' });
   }
-  if (!ACCOUNTS_ENABLED) return fail('Password accounts are switched off. Log in with Discord or play with a callsign.');
+  if (!ACCOUNTS_ENABLED) return fail('Password login is off. Use Discord or a callsign.');
   if (socket.authBusy) return;
   const t = now();
   socket.authAttempts = (socket.authAttempts || []).filter((at) => t - at < 60);
-  if (socket.authAttempts.length >= 10) return fail('Too many attempts. Wait a minute and try again.');
+  if (socket.authAttempts.length >= 10) return fail('Too many attempts. Wait a minute.');
   socket.authAttempts.push(t);
   socket.authBusy = true;
   try {
@@ -149,7 +158,7 @@ async function handleAuth(socket, message) {
     if (message.action === 'login') {
       const key = String(message.username || '').toLowerCase().slice(0, 32);
       const record = loginFailures.get(key);
-      if (record && record.count >= 8 && t - record.at < 300) return fail('Too many wrong passwords for this username. Try again in a few minutes.');
+      if (record && record.count >= 8 && t - record.at < 300) return fail('Too many wrong passwords. Try again later.');
       const result = await accounts.login(String(message.username || ''), message.password);
       if (!result) {
         loginFailures.set(key, { count: (record && t - record.at < 300 ? record.count : 0) + 1, at: t });
@@ -160,7 +169,7 @@ async function handleAuth(socket, message) {
     }
   } catch (error) {
     console.error('auth failed', error);
-    fail('Something went wrong on the server. Try again.');
+    fail('Server error. Try again.');
   } finally {
     socket.authBusy = false;
   }
@@ -168,14 +177,15 @@ async function handleAuth(socket, message) {
 
 // Leaderboards: accounts only (every pilot has one now), rebuilt at most every 30 s.
 const BOARDS = {
-  rating: { label: 'Skill rating', value: (p) => Math.round(p.rating), eligible: (p) => p.rankedMatches > 0 },
+  rating: { label: 'Skill rating', value: (p) => Math.round(p.rating), eligible: (p) => p.rankedMatches >= PLACEMENT_MATCHES },
   level: { label: 'Level', value: (p) => p.xp, eligible: (p) => p.xp > 0 },
   kills: { label: 'Player kills', value: (p) => p.stats?.playerKills || 0, eligible: (p) => (p.stats?.playerKills || 0) > 0 },
   wins: { label: 'Wins', value: (p) => p.stats?.wins || 0, eligible: (p) => (p.stats?.wins || 0) > 0 },
   headshots: { label: 'Headshots', value: (p) => p.stats?.headshots || 0, eligible: (p) => (p.stats?.headshots || 0) > 0 },
   longest: { label: 'Longest kill', value: (p) => p.stats?.longest || 0, eligible: (p) => (p.stats?.longest || 0) > 0 },
 };
-let boardCache = { at: 0, rows: {} };
+// now() counts from process start, so "never built" must be -Infinity, not 0 (0 looked fresh for the first 30 s).
+let boardCache = { at: -Infinity, rows: {} };
 function leaderboards() {
   if (now() - boardCache.at < 30) return boardCache.rows;
   const pilots = [];
@@ -230,9 +240,12 @@ setInterval(() => {
 function publicRooms() {
   return [...rooms.values()].filter((room) => room.isPublic && room.mode === 'match').map((room) => room.info()).filter((info) => info.players > 0);
 }
-function findQuickRoom(queue) {
+function findQuickRoom(queue, rating = 1000) {
   const open = [...rooms.values()].filter((room) => room.queue === queue && room.isPublic && !room.closed && room.connectedHumans().length < MAX_PLAYERS);
   open.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.connectedHumans().length - a.connectedHumans().length);
+  // Ranked prefers the lobby whose pilots are closest to your rating (never splits the queue, only orders it).
+  const gap = (room) => { const humans = room.connectedHumans(); return humans.length ? Math.abs(humans.reduce((sum, p) => sum + p.rating, 0) / humans.length - rating) : 400; };
+  if (queue === 'ranked') open.sort((a, b) => gap(a) - gap(b));
   // Ranked never drops you into a match that is already running.
   const pick = open.find((room) => queue !== 'ranked' || room.phase === 'lobby');
   return pick || createRoom(`${queue}-${roomCounter++}`, { queue, isPublic: true });
@@ -255,14 +268,14 @@ async function discordRoute(request, response, url) {
       const body = JSON.parse(raw || '{}');
       const { user, joined } = await discord.finishToken(body.access_token, String(body.state || ''));
       const result = accounts.discordSignIn(user);
-      if (!result) return reply(400, { error: 'Discord sent back an account we could not read.' });
+      if (!result) return reply(400, { error: 'Couldn’t read your Discord account.' });
       console.log(`discord ${result.created ? 'signup' : 'login'}: ${result.account.username}${joined ? ' (in the server)' : ''}`);
       return reply(200, { session: result.session, joined });
     } catch (error) { return reply(400, { error: error instanceof SyntaxError ? 'Bad request.' : error.message }); }
   }
   if (url.pathname === '/auth/discord') {
     const target = discord.start(request);
-    if (!target) return page(503, { error: 'Too many logins in progress. Try again in a minute.' });
+    if (!target) return page(503, { error: 'Too many logins right now. Try again in a minute.' });
     response.writeHead(302, { Location: target, 'Cache-Control': 'no-store' });
     return response.end();
   }
@@ -272,7 +285,7 @@ async function discordRoute(request, response, url) {
   try {
     const { user, joined } = await discord.finish(request, url.searchParams.get('code') || '', url.searchParams.get('state') || '');
     const result = accounts.discordSignIn(user);
-    if (!result) return page(400, { error: 'Discord sent back an account we could not read.' });
+    if (!result) return page(400, { error: 'Couldn’t read your Discord account.' });
     console.log(`discord ${result.created ? 'signup' : 'login'}: ${result.account.username}${joined ? ' (in the server)' : ''}`);
     page(200, { session: result.session, joined });
   } catch (error) { page(400, { error: error.message }); }
@@ -326,6 +339,7 @@ function leaveRoom(socket, deliberate = false) {
   socket.player = null;
 }
 
+const RANKED_LOGIN = 'Ranked needs a Discord login.';
 function enter(socket, message) {
   if (!socket.identified) return send(socket, { type: 'error', message: 'Log in to play.' });
   leaveRoom(socket, true);
@@ -337,18 +351,22 @@ function enter(socket, message) {
     if (!held) return send(socket, { type: 'rejoin-failed' });
   } else if (action === 'range') room = createRoom(`range-${roomCounter++}`, { queue: 'range' });
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
-  else if (action === 'quick') room = findQuickRoom(['casual', 'ranked', 'arcade'].includes(message.queue) ? message.queue : 'casual');
-  else {
+  else if (action === 'quick') {
+    const queue = ['casual', 'ranked', 'arcade'].includes(message.queue) ? message.queue : 'casual';
+    if (queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
+    room = findQuickRoom(queue, profiles.get(socket.token).rating);
+  } else {
     const name = cleanRoomName(message.room);
-    if (name.length < 3) return send(socket, { type: 'error', message: 'Room codes need at least 3 letters or numbers.' });
+    if (name.length < 3) return send(socket, { type: 'error', message: 'Room codes need 3+ characters.' });
     room = rooms.get(name);
+    if (room?.queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
     if (room && room.queue !== 'custom' && !room.isPublic) return send(socket, { type: 'error', message: 'That room is private.' });
     if (!room) room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic) });
   }
   if (message.difficulty && room.queue === 'bots') room.rules.botDifficulty = ['recruit', 'veteran', 'elite'].includes(message.difficulty) ? message.difficulty : 'veteran';
   const look = profiles.sanitizeCosmetics(socket.token, message.look || {});
   const player = room.join(socket, { token: socket.token, session: socket.session, name: socket.name }, look);
-  if (!player) send(socket, { type: 'error', message: 'Room is full. Try another room code.' });
+  if (!player) send(socket, { type: 'error', message: 'Room full.' });
 }
 
 wss.on('connection', (socket) => {
@@ -378,12 +396,16 @@ wss.on('connection', (socket) => {
       }
       if (message.type === 'identify') {
         if (LOGIN_REQUIRED) return send(socket, { type: 'auth-required' });
-        // Guest play: a callsign plus a device token the browser keeps.
+        // Guest play: a callsign and a token the tab keeps until it is closed. Only a token this process
+        // handed out is taken back, so nothing saved (and nothing an account owns) can be reached this way.
         const name = cleanName(message.name);
-        if (name.length < 2) return send(socket, { type: 'error', message: 'Choose a callsign with at least 2 characters.' });
-        socket.token = typeof message.token === 'string' && message.token.length >= 16 && message.token.length <= 64 ? message.token : ProfileStore.newToken();
-        // Progress that now belongs to an account is only reachable by logging in to it.
-        if (accounts.ownsProfile(socket.token)) socket.token = ProfileStore.newToken();
+        if (name.length < 2) return send(socket, { type: 'error', message: 'Callsign needs 2+ characters.' });
+        if (socket.account) return;
+        const token = typeof message.token === 'string' && message.token.length <= 64 && profiles.isGuest(message.token) ? message.token : ProfileStore.newToken();
+        if (socket.guest && socket.token !== token) dropGuest(socket);
+        socket.token = token;
+        socket.guest = true;
+        profiles.holdGuest(token);
         socket.session = typeof message.tab === 'string' ? message.tab.slice(0, 64) : ProfileStore.newToken();
         socket.name = name;
         socket.identified = true;
@@ -391,7 +413,7 @@ wss.on('connection', (socket) => {
         profile.name = name;
         profiles.scheduleSave();
         if (socket.player) { socket.player.name = name; socket.room.pushRoom(); }
-        return send(socket, { type: 'identity', token: socket.token, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
+        return send(socket, { type: 'identity', token: socket.token, guest: true, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
       }
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
       if (message.type === 'feedback') return void saveFeedback(socket, message);
@@ -408,14 +430,14 @@ wss.on('connection', (socket) => {
       console.error('message failed', message.type, error);
     }
   });
-  socket.on('close', () => { sockets.delete(socket); leaveRoom(socket); });
+  socket.on('close', () => { sockets.delete(socket); leaveRoom(socket); dropGuest(socket); });
   socket.on('error', () => {});
 });
 
 // The leaderboard channel hears about it when a podium changes hands. Checked every few minutes.
 const boardValue = (id, row) => (id === 'rating' ? `${row.value} SR` : id === 'level' ? `Lv ${row.level} · ${row.value.toLocaleString('en')} XP` : id === 'longest' ? `${row.value} m` : row.value.toLocaleString('en'));
 function checkBoards() {
-  boardCache.at = 0;
+  boardCache.at = -Infinity;
   const rows = leaderboards();
   webhooks.announceBoards(Object.fromEntries(Object.entries(BOARDS).map(([id, board]) => [id, { label: board.label, top: rows[id] }])), boardValue).catch((error) => console.warn('leaderboard webhook failed', error.message));
 }
@@ -436,7 +458,7 @@ process.on('SIGTERM', () => {
   const matches = [...rooms.values()].filter((room) => room.mode === 'match' && room.phase !== 'lobby').length;
   const seconds = pilots ? RESTART_GRACE : 0;
   console.log(`stopping for a deploy: ${pilots} online, ${matches} matches, ${seconds}s grace`);
-  for (const socket of sockets) send(socket, { type: 'notice', tone: 'warn', text: `New update: the server restarts in ${seconds} seconds. Matches in progress will end — your page refreshes itself when it is back.` });
+  for (const socket of sockets) send(socket, { type: 'notice', tone: 'warn', text: `Update incoming. Server restarts in ${seconds}s. Your match will end.` });
   const posted = webhooks.announceRestart({ seconds, pilots, matches });
   // Never let a slow webhook hold the deploy up: leave when the grace period is over, posted or not.
   Promise.race([Promise.all([posted, new Promise((resolve) => setTimeout(resolve, seconds * 1000))]), new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 3000))]).then(shutdown);

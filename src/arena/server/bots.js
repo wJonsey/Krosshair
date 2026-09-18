@@ -303,7 +303,7 @@ function strafe(room, bot, dt, speed) {
 }
 
 // Where someone walking this route would be looking: mostly where they are going, with glances at
-// doorways of interest — the last place a rival was heard, the far end of the map, a side angle.
+// doorways of interest: the last place a rival was heard, the far end of the map, a side angle.
 function pickGlance(room, bot, t, holding) {
   const ai = bot.ai, k = bot.traits;
   const forward = holding ? (ai.holdYaw ?? bot.yaw) : (ai.moveYaw ?? bot.yaw);

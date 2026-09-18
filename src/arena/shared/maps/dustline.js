@@ -1,4 +1,4 @@
-// DUSTLINE PASS — large. Two desert outposts face each other across a dry riverbed.
+// DUSTLINE PASS: large. Two desert outposts face each other across a dry riverbed.
 // One stone bridge and two plank crossings above, the whole wadi as a covered route
 // below; a watchtower, a roof-top house and a climbable mesa for the long guns.
 import { createBuilder, SYM, DECO, gateBarriers, mirrorZones, mirrorPoints, teamSpawns } from '../mapkit.js';

@@ -1,4 +1,4 @@
-// CAMPANILE — small to medium. An old-town piazza under a climbable bell tower:
+// CAMPANILE: small to medium. An old-town piazza under a climbable bell tower:
 // arcades, a two-storey balcony house on each side, a back alley and a sunken canal walk.
 import { createBuilder, SYM, DECO, gateBarriers, mirrorZones, mirrorPoints, teamSpawns } from '../mapkit.js';
 

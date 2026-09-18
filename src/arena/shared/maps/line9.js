@@ -1,4 +1,4 @@
-// LINE 9 — small. An underground station: two platforms, two parked trains you can run through,
+// LINE 9: small. An underground station: two platforms, two parked trains you can run through,
 // and a track bed down the middle. Everything is close, and the train walls are only sheet metal.
 import { createBuilder, SYM, DECO, arenaShell, mirrorZones, mirrorPoints } from '../mapkit.js';
 

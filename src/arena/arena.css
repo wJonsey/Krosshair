@@ -856,3 +856,32 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .vote-screen .lobby-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .vote-screen .lobby-head h2 { margin: 0; font: 400 clamp(26px, 3vw, 40px)/1.1 var(--display); text-transform: uppercase; }
 #lobby .vote-screen { margin-top: clamp(16px, 4vh, 48px); }
+
+/* ---------- socials ---------- */
+.socials { display: flex; gap: 4px; margin-right: 6px; }
+.social-link { display: grid; place-items: center; width: 30px; height: 30px; color: var(--haze); border: 1px solid transparent; transition: color .15s, border-color .15s; }
+.social-link:hover, .social-link:focus-visible { border-color: var(--hairline-strong); outline: none; }
+.social-link.discord:hover, .social-link.discord:focus-visible { color: #8b95ff; }
+.social-link.tiktok:hover, .social-link.tiktok:focus-visible { color: var(--frost); }
+
+/* ---------- guest play ---------- */
+.or-rule { display: flex; align-items: center; gap: 10px; margin: 16px 0 6px; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.or-rule::before, .or-rule::after { content: ''; flex: 1; border-top: 1px solid var(--hairline); }
+.guest-note { display: block; margin-top: 8px; color: var(--graphite); font-size: 12px; line-height: 1.5; }
+
+/* ---------- ranked ---------- */
+.rank-badge { display: block; flex: none; }
+.rank-chip { display: inline-flex; align-items: center; gap: 4px; color: var(--rank); vertical-align: middle; }
+.rank-panel, .rank-report { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+.rank-panel strong { display: block; margin: 2px 0 8px; color: var(--rank); font: 400 20px/1 var(--display); text-transform: uppercase; }
+.rank-panel small, .rank-report small { display: block; margin-top: 6px; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .06em; }
+.rank-panel.guest { display: block; }
+.rank-meter i { background: var(--rank) !important; }
+.rank-report { margin-top: 12px; padding-top: 12px; }
+.rank-report b { display: block; margin-bottom: 8px; color: var(--rank); font: 500 11px var(--mono); letter-spacing: .12em; }
+.rank-report.bad b { color: var(--loss); }
+.ranked-card { position: relative; }
+.ranked-card .rank-badge { position: absolute; top: 16px; right: 16px; }
+.ranked-card span { color: var(--rank, var(--haze)) !important; }
+.ranked-card.locked span { color: var(--graphite) !important; }
+.board-row em .rank-badge, .podium-card em .rank-badge { display: inline-block; margin-right: 6px; vertical-align: middle; }

@@ -11,8 +11,14 @@ export function stored(key, fallback) {
 export function store(key, value) {
   try { localStorage.setItem(`krosshair:${key}`, JSON.stringify(value)); } catch { /* private mode */ }
 }
+// Guest play is kept for this tab only: closing it forgets the callsign and the progress token.
+export function tabStored(key, fallback) {
+  try { const value = sessionStorage.getItem(`krosshair:${key}`); return value === null ? fallback : JSON.parse(value); } catch { return fallback; }
+}
+export function tabStore(key, value) {
+  try { if (value === null) sessionStorage.removeItem(`krosshair:${key}`); else sessionStorage.setItem(`krosshair:${key}`, JSON.stringify(value)); } catch { /* private mode */ }
+}
 
-const legacyName = (() => { try { return localStorage.getItem('neon-arena-name') || ''; } catch { return ''; } })();
 let session = null;
 try {
   session = sessionStorage.getItem('krosshair:session');
@@ -29,7 +35,7 @@ export const DEFAULT_SETTINGS = {
 };
 // When a default changes, players who saved settings before the change get the new default once; after
 // that their own choice sticks. v2: FPS counter and sound visualiser on. v3: music keeps playing during rounds.
-// v4: the Music slider was rescaled so its old 50% is the new 100% — positions are converted, loudness stays put.
+// v4: the Music slider was rescaled so its old 50% is the new 100%: positions are converted, loudness stays put.
 export function migrateSettings(settings) {
   if ((settings.settingsVersion || 1) < 2) { settings.showFps = true; settings.visualizeSound = true; }
   if ((settings.settingsVersion || 1) < 3) settings.musicInMatch = true;
@@ -47,8 +53,9 @@ export const GRAPHICS_PRESETS = {
 export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
-  name: stored('name', legacyName),
-  token: stored('token', null), // pre-accounts guest progress, claimed on sign-up
+  name: tabStored('name', ''),
+  token: tabStored('guest', null), // this tab's guest progress; a brand-new Discord account adopts it
+  legacyToken: stored('token', null), // progress from before accounts, same deal
   authSession: stored('authSession', null),
   username: null,
   avatar: null,

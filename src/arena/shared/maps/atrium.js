@@ -1,4 +1,4 @@
-// HALCYON ATRIUM — small. A marble gallery hall open to the sky, flanked by two
+// HALCYON ATRIUM: small. A marble gallery hall open to the sky, flanked by two
 // mezzanines with glass railings and joined by a skybridge. Close, fast, vertical.
 import { createBuilder, SYM, DECO, gateBarriers, mirrorZones, mirrorPoints, teamSpawns } from '../mapkit.js';
 

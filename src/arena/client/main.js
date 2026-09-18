@@ -84,9 +84,8 @@ function checkMapPrint(id, print) {
   if (ours === print) return;
   staleWarned = true;
   console.warn(`map mismatch: server ${print}, this page ${ours || 'unknown map'}`);
-  document.querySelector('#net-banner').textContent = 'This page is out of date with the server, so maps won’t match. Refresh to update.';
+  document.querySelector('#net-banner').textContent = 'Update available. Refresh the page.';
   document.querySelector('#net-banner').classList.remove('hidden');
-  toast('Your game files are older than the server. Refresh the page to get the current maps.', 'warn');
 }
 
 function feed(text, tone) { if (game.screen === 'game') hud.notice(text, tone); else toast(text, tone); }
@@ -101,7 +100,7 @@ net.on('identity', (message) => {
   if (invite && !inviteHandled && game.screen === 'home') { inviteHandled = true; toast(`Joining room ${invite}…`); net.enter({ action: 'join', room: invite }); }
 });
 net.on('error', (message) => { toast(message.message, 'warn'); play('deny'); });
-net.on('rejoin-failed', () => { toast('Your seat was released. Back to the lobby.', 'warn'); leaveToHome(); });
+net.on('rejoin-failed', () => { toast('Seat lost.', 'warn'); leaveToHome(); });
 bus.on('logged-out', () => { if (game.screen !== 'home') leaveToHome(); });
 net.on('left', (message) => { game.profile = message.profile; game.publicRooms = message.rooms; leaveToHome(); });
 
@@ -129,7 +128,7 @@ net.on('welcome', (message) => {
   message.shields.forEach((shield) => arena.addShield(shield, !isEnemyTeam(shield.team)));
   arena.setBarriers(Boolean(message.barriers));
   checkMapPrint(message.map, message.mapPrint);
-  if (message.reconnected) toast('Reconnected to your match.', 'good');
+  if (message.reconnected) toast('Reconnected.', 'good');
 });
 const isEnemyTeam = (team) => team !== (game.roster.get(game.id)?.team || 'A');
 
@@ -152,7 +151,7 @@ net.on('room', (message) => {
     setAmbience(message.variant);
     renderTutorial(message.mode === 'range');
     document.querySelector('#controls-hint').classList.toggle('hidden', false);
-    if (message.mode === 'range') toast('Practice range: everything is free. Press B for the armoury.', 'info');
+    if (message.mode === 'range') toast(`Everything's free. ${bindLabel('armoury')} for the armoury.`, 'info');
   }
   if (previousPhase !== message.phase && message.phase === 'buy') arena.setBarriers(true);
   hud.renderScoreboard();
@@ -167,8 +166,8 @@ net.on('you', (message) => {
   if (hud.buyOpen) hud.renderBuy();
 });
 
-net.on('match-start', (message) => { hideEnd(); pendingEnd = null; useMap(message.map); checkMapPrint(message.map, message.mapPrint); applyVariant(message.variant); toast(`${VARIANT_NAMES[message.variant] || 'Clear'} over ${arena.map.title}.`); });
-net.on('map-chosen', (message) => toast(message.random ? `The dice picked ${message.title}.` : `${message.title} wins the vote.`, 'good'));
+net.on('match-start', (message) => { hideEnd(); pendingEnd = null; useMap(message.map); checkMapPrint(message.map, message.mapPrint); applyVariant(message.variant); toast(`${arena.map.title} · ${VARIANT_NAMES[message.variant] || 'Clear'}`); });
+net.on('map-chosen', (message) => toast(message.random ? `Random pick: ${message.title}.` : `${message.title} wins the vote.`, 'good'));
 
 net.on('spawn', (message) => {
   hideEnd();
@@ -186,7 +185,7 @@ net.on('round', (message) => {
   hud.blips.clear();
   if (game.room) { game.room.phase = 'buy'; game.room.round = message.round; game.room.scores = message.scores; }
   const title = message.decider ? 'DECIDER' : message.matchPoint ? 'MATCH POINT' : `ROUND ${message.round}`;
-  hud.banner(title, message.swapped ? 'Sides switched — you now attack from the other gate.' : 'Buy phase — press B for the armoury', message.swapped ? 'SWITCHING SIDES' : arena.map.title.toUpperCase(), 'neutral', 3200);
+  hud.banner(title, message.swapped ? 'Sides switched.' : 'Buy phase', arena.map.title.toUpperCase(), 'neutral', 3200);
   announce(roundIntroVoice(message), true);
   setTimeout(() => { if (game.room?.phase === 'buy' && player.alive && !player.uiBlocked()) hud.openBuy(); }, 1100);
 });
@@ -198,11 +197,11 @@ net.on('phase', (message) => {
     arena.setBarriers(false);
     hud.closeBuy();
     hud.prompt('');
-    hud.banner('ENGAGE', 'One life. Make every shot count.', '', 'go', 1500);
+    hud.banner('ENGAGE', 'One life.', '', 'go', 1500);
     play('roundStart');
   }
   if (message.phase === 'overtime') {
-    hud.banner('SUDDEN DEATH', 'Every pilot is revealed. Every hit is lethal.', 'OVERTIME', 'danger', 3200);
+    hud.banner('SUDDEN DEATH', 'Everyone revealed. Every hit kills.', 'OVERTIME', 'danger', 3200);
     play('overtime'); announce('Sudden death.', true);
   }
 });
@@ -213,9 +212,9 @@ net.on('round-end', (message) => {
   hud.closeBuy(false);
   const mine = game.roster.get(game.id)?.team;
   const won = message.winner === mine;
-  const reason = { elimination: won ? 'Rival team eliminated.' : 'Your team was eliminated.', timeout: 'Time ran out — survivors and damage decided it.', draw: 'Nobody left standing. Round replayed.' }[message.reason] || '';
+  const reason = { elimination: won ? 'Enemy team down.' : 'Your team is down.', timeout: 'Time. Survivors and damage decide it.', draw: 'Nobody left. Replaying the round.' }[message.reason] || '';
   const tags = message.tags.length ? message.tags.join(' · ') : '';
-  const hero = message.hero ? ` — ${nameOf(message.hero)}` : '';
+  const hero = message.hero ? ` · ${nameOf(message.hero)}` : '';
   if (!message.winner) hud.banner('DRAW', reason, '', 'neutral', 3800);
   else hud.banner(won ? 'ROUND WON' : 'ROUND LOST', reason, tags ? `${tags}${hero}` : `${message.scores[mine]} – ${message.scores[mine === 'A' ? 'B' : 'A']}`, won ? 'win' : 'loss', 3800);
   play(won ? 'roundWin' : 'roundLoss');
@@ -283,7 +282,7 @@ net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (pl
 
 net.on('hit', (message) => {
   if (message.blocked) { hud.hitmarker('blocked'); play('deny', { volume: 0.5 }); return; }
-  if (message.decoy) { hud.hitmarker('blocked'); hud.notice('That was a decoy — you are marked!', 'warn'); play('decoyPop'); return; }
+  if (message.decoy) { hud.hitmarker('blocked'); hud.notice('Decoy. You’re marked.', 'warn'); play('decoyPop'); return; }
   hud.hitmarker(message.killed ? 'kill' : message.zone === 'head' ? 'head' : 'body');
   play(message.zone === 'head' ? 'headshot' : 'hitmarker');
   if (message.helmetBroke) play('helmet', { volume: 0.5 });
@@ -296,7 +295,7 @@ net.on('hit', (message) => {
 net.on('hurt', (message) => {
   hud.damageFrom(message.x, message.z);
   play('hurt');
-  if (message.helmetBroke) { play('helmet'); hud.notice('Helmet destroyed', 'warn'); }
+  if (message.helmetBroke) { play('helmet'); hud.notice('Helmet broken', 'warn'); }
 });
 
 net.on('kill', (message) => {
@@ -306,11 +305,11 @@ net.on('kill', (message) => {
   const entry = game.roster.get(message.victim);
   if (entry) entry.alive = false;
   if (mine) player.onDeath();
-  else if (message.killer === game.id && game.room?.mode !== 'range') hud.notice(`Eliminated ${nameOf(message.victim)}${message.zone === 'head' ? ' — headshot' : ''}${message.distance >= 50 ? ` — ${message.distance} m` : ''}`, 'good');
+  else if (message.killer === game.id && game.room?.mode !== 'range') hud.notice(`Killed ${nameOf(message.victim)}${message.zone === 'head' ? ' · headshot' : ''}${message.distance >= 50 ? ` · ${message.distance} m` : ''}`, 'good');
   if (player.mode === 'spectate' && message.victim === player.spectateId) player.cycleSpectate(1);
 });
 net.on('killcam', (message) => { player.pendingKillcam = message.replay; });
-net.on('clutch', (message) => { hud.banner('LAST ONE STANDING', `1 v ${message.rivals} — they can hear your heartbeat.`, 'CLUTCH', 'danger', 2800); play('clutch'); announce('Last one standing.', true); });
+net.on('clutch', (message) => { hud.banner('LAST ONE STANDING', `1 v ${message.rivals}`, 'CLUTCH', 'danger', 2800); play('clutch'); announce('Last one standing.', true); });
 
 net.on('glass', (message) => {
   const box = arena.breakGlass(message.id);
@@ -325,7 +324,7 @@ net.on('shield-end', (message) => { const position = arena.removeShield(message.
 net.on('pulse', (message) => {
   effects.ring(message.x, message.y, message.z, message.radius, isEnemy(message.id) ? '#ff7148' : '#6ce6d1');
   play('pulse', { pos: message.id === game.id ? null : [message.x, message.y + 1, message.z], ref: 10 });
-  if (message.id === game.id) hud.notice(message.found ? `Radar pulse — ${message.found} rival${message.found === 1 ? '' : 's'} revealed` : 'Radar pulse — nobody in range', message.found ? 'good' : 'info');
+  if (message.id === game.id) hud.notice(message.found ? `Pulse: ${message.found} ${message.found === 1 ? 'enemy' : 'enemies'} revealed` : 'Pulse: nobody in range', message.found ? 'good' : 'info');
 });
 net.on('mark', (message) => {
   const fresh = !game.marks.has(message.id) || game.marks.get(message.id).until < net.time();
@@ -345,21 +344,21 @@ net.on('gadget-used', (message) => {
 net.on('decoy-end', (message) => { if (message.popped) { effects.burst([message.x, message.y + 1, message.z], '#6ce6d1', 50); play('decoyPop', { pos: [message.x, message.y + 1, message.z] }); } });
 net.on('drone-start', (message) => player.startDrone(message));
 net.on('drone-end', (message) => {
-  if (message.id === game.id) { player.endDrone(); if (message.destroyed) hud.notice(`Drone destroyed by ${nameOf(message.by)}`, 'warn'); }
-  if (message.destroyed) { effects.burst([message.x, message.y, message.z], '#ffb45e', 40); play('droneDown', { pos: [message.x, message.y, message.z] }); if (message.by === game.id) hud.notice('Recon drone destroyed', 'good'); }
+  if (message.id === game.id) { player.endDrone(); if (message.destroyed) hud.notice(`Drone shot down by ${nameOf(message.by)}`, 'warn'); }
+  if (message.destroyed) { effects.burst([message.x, message.y, message.z], '#ffb45e', 40); play('droneDown', { pos: [message.x, message.y, message.z] }); if (message.by === game.id) hud.notice('Enemy drone down', 'good'); }
 });
 
 // ---------------------------------------------------------------- social
 net.on('ping-loc', (message) => {
   effects.ping(message.x, message.y, message.z, message.where, message.danger);
   hud.addPing(message.x, message.z, message.danger);
-  hud.notice(`${nameOf(message.from)} ${message.danger ? 'spotted a rival at' : 'pinged'} ${message.where}`, message.danger ? 'warn' : 'info');
+  hud.notice(message.danger ? `${nameOf(message.from)}: enemy at ${message.where}` : `${nameOf(message.from)} pinged ${message.where}`, message.danger ? 'warn' : 'info');
   play('ping');
 });
 net.on('chat', (message) => { if (game.screen === 'lobby') { lobbyChat(message); play('chat'); } else hud.chat(message); });
 net.on('quick', (message) => {
-  const command = { push: 'Pushing now', hold: 'Hold this angle', help: 'Need backup', spotted: 'Rival spotted', nice: 'Nice shot', sorry: 'My bad' }[message.id];
-  hud.chat({ name: message.name, team: game.roster.get(game.id)?.team, text: `${command} — ${message.where}`, scope: 'team' });
+  const command = { push: 'Pushing now', hold: 'Hold this angle', help: 'Need backup', spotted: 'Enemy spotted', nice: 'Nice shot', sorry: 'My bad' }[message.id];
+  hud.chat({ name: message.name, team: game.roster.get(game.id)?.team, text: `${command} · ${message.where}`, scope: 'team' });
   if (message.from !== game.id) announce(command);
 });
 net.on('react', (message) => feed(`${message.name} ${message.emoji}`, 'info'));
@@ -404,7 +403,7 @@ function watchFrameRate(rawDt) {
   slowTime = 0;
   game.settings.quality = STEP_DOWN[game.settings.quality];
   saveSettings();
-  toast(`Graphics lowered to ${game.settings.quality} to keep the frame rate up. Change it back in Settings.`, 'info');
+  toast(`Low frame rate. Graphics set to ${game.settings.quality}.`, 'info');
 }
 
 // FPS readout: frames over the last half second, plus the slowest frame in that window and the ping.
@@ -436,7 +435,7 @@ function frame(now = 0) {
   const wallDt = Math.min(rawDt, 0.3); // cinematic timers (death cam, replays) follow the wall clock even on slow machines
   if (game.screen === 'game') {
     player.update(dt, wallDt);
-    if (game.room?.phase === 'buy' && player.alive && !hud.buyOpen) hud.prompt(`${bindLabel('armoury')} — OPEN ARMOURY`); else if (game.room?.phase !== 'range') hud.prompt('');
+    if (game.room?.phase === 'buy' && player.alive && !hud.buyOpen) hud.prompt(`${bindLabel('armoury')} ARMOURY`); else if (game.room?.phase !== 'range') hud.prompt('');
     if (player.alive && game.you && game.you.hp < 35) { heartbeat -= dt; if (heartbeat <= 0) { heartbeat = 0.9; play('heartbeat', { volume: 0.8 }); } }
   } else {
     // Slow cinematic drift over the yard behind the menus.

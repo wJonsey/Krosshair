@@ -1,5 +1,5 @@
 // WebSocket transport: identify, clock sync, automatic reconnect.
-import { bus, game, store, stored } from './state.js';
+import { bus, game, store, tabStore, tabStored } from './state.js';
 
 const handlers = new Map();
 let socket = null;
@@ -7,8 +7,7 @@ let offsetSamples = [];
 let retry = 0;
 let pingTimer = null;
 let build = null; // the server's build stamp when this page loaded
-const pagesBackend = 'https://sturdy-couscous-wr4gp496w77g25jpp-4174.app.github.dev';
-const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.KROSSHAIR_SERVER_URL || (location.hostname.endsWith('github.io') ? pagesBackend : '');
+const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.KROSSHAIR_SERVER_URL || '';
 const serverOrigin = configuredServer ? new URL(configuredServer, location.href) : location;
 // Room to rejoin after a dropped connection or a page refresh (the tab keeps its session id).
 let wantRoom = (() => { try { return sessionStorage.getItem('krosshair:room'); } catch { return null; } })();
@@ -70,7 +69,7 @@ function connect() {
     if (message.type === 'pong') return sample(message);
     if (message.type === 'identity') {
       if (message.session) { game.authSession = message.session; store('authSession', message.session); }
-      if (message.token) { game.token = message.token; store('token', message.token); }
+      if (message.token) { game.token = message.token; tabStore('guest', message.token); }
       if (message.username) { game.username = message.username; game.name = message.username; game.avatar = message.avatar || null; }
       net.identified = true;
       if (wantRoom) net.send({ type: 'enter', action: 'rejoin', room: wantRoom, look: game.look });
@@ -91,7 +90,7 @@ function connect() {
       build = message.build || build;
       game.discord = { enabled: Boolean(message.discord), invite: message.invite || '' };
       game.loginRequired = Boolean(message.loginRequired);
-      if (game.authSession) net.auth('resume', { legacyToken: game.token || undefined });
+      if (game.authSession) net.auth('resume', { legacyToken: game.token || game.legacyToken || undefined });
       else if (!game.loginRequired) { if (game.name.trim().length >= 2) net.identify(); }
       else bus.emit('auth-required', {});
       bus.emit('config');
@@ -100,7 +99,7 @@ function connect() {
       game.authSession = null; store('authSession', null);
       game.username = null; game.avatar = null; game.profile = null; net.identified = false;
       // Back to guest play: the callsign this browser used before logging in.
-      if (!game.loginRequired) { game.name = stored('name', ''); if (game.name.trim().length >= 2) net.identify(); }
+      if (!game.loginRequired) { game.name = tabStored('name', ''); if (game.name.trim().length >= 2) net.identify(); }
     }
     handlers.get(message.type)?.(message);
   });

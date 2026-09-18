@@ -4,7 +4,7 @@ import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIO
 import { zoneAt } from '../shared/map.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
-import { bindsFor, codeLabel, isBound } from './input.js';
+import { bindLabel, bindsFor, codeLabel, isBound } from './input.js';
 import { crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, announce } from './audio.js';
 import { weaponArt } from './weaponart.js';
@@ -99,7 +99,7 @@ export class Hud {
     this.chatOpen = true; this.chatTeam = team;
     const input = this.dom.chatInput;
     input.classList.remove('hidden');
-    input.placeholder = team ? 'Team message…' : 'Message everyone…';
+    input.placeholder = team ? 'Message team…' : 'Message all…';
     input.value = '';
     document.exitPointerLock?.();
     setTimeout(() => input.focus(), 0);
@@ -147,7 +147,7 @@ export class Hud {
     if (event.distance >= 50) tags.push(`<i class="tag">${event.distance} M</i>`);
     const killer = event.killer ? `<b class="${side(event.killer)}">${escapeHtml(nameOf(event.killer))}</b>` : '';
     const assist = event.assist ? `<small> + ${escapeHtml(nameOf(event.assist))}</small>` : '';
-    line.innerHTML = `${killer}${assist}<span class="gun">${WEAPON_SHORT[event.weapon] || (event.reason === 'disconnect' ? 'LOST LINK' : '—')}</span><b class="${side(event.victim)}">${escapeHtml(nameOf(event.victim))}</b>${tags.join('')}`;
+    line.innerHTML = `${killer}${assist}<span class="gun">${WEAPON_SHORT[event.weapon] || (event.reason === 'disconnect' ? 'LOST LINK' : '?')}</span><b class="${side(event.victim)}">${escapeHtml(nameOf(event.victim))}</b>${tags.join('')}`;
     if (event.killer === game.id || event.victim === game.id) line.classList.add('mine');
     this.dom.killfeed.prepend(line);
     while (this.dom.killfeed.children.length > 6) this.dom.killfeed.lastChild.remove();
@@ -214,7 +214,7 @@ export class Hud {
   // ------------------------------------------------------------ buy menu
   openBuy() {
     const phase = game.room?.phase;
-    if (!this.player.alive || (phase !== 'buy' && phase !== 'range')) { if (phase === 'live' || phase === 'overtime') this.notice('The armoury only opens between rounds.', 'warn'); return; }
+    if (!this.player.alive || (phase !== 'buy' && phase !== 'range')) { if (phase === 'live' || phase === 'overtime') this.notice('Armoury opens between rounds.', 'warn'); return; }
     this.buyOpen = true;
     this.renderBuy();
     this.dom.buy.classList.remove('hidden');
@@ -310,7 +310,7 @@ export class Hud {
       <header class="armoury-head">
         <h2>Armoury</h2>
         <div class="armoury-credits"><span>Credits</span><b>${free ? '∞' : you.credits}</b></div>
-        <button type="button" class="ghost-button" data-close>Deploy <kbd>B</kbd></button>
+        <button type="button" class="ghost-button" data-close>Deploy <kbd>${bindLabel('armoury')}</kbd></button>
       </header>
       <div class="armoury-body">
         <nav class="arsenal" aria-label="Weapons">
@@ -319,14 +319,14 @@ export class Hud {
             return `<button type="button" role="tab" aria-selected="${c.id === this.buyTab}" class="${c.id === this.buyTab ? 'active' : ''}${equipped ? ' equipped' : ''}" data-tab="${c.id}">${c.name}</button>`;
           }).join('')}</div>
           ${shown.map(weaponRow).join('')}
-          ${missing ? `<p class="arsenal-note">${missing} more ${missing === 1 ? 'weapon arrives' : 'weapons arrive'} when this server updates.</p>` : ''}
+          ${missing ? `<p class="arsenal-note">${missing} more after the next update.</p>` : ''}
         </nav>
         ${this.inspectHtml(WEAPONS[this.buyFocus])}
       </div>
       <div class="gear">
         <div><h3>Armour</h3><div class="gear-row">${['light', 'heavy', 'helmet'].map((id) => gearChip(id, ARMOR[id].name, ARMOR[id].cost, ARMOR[id].desc, armorOwned(id), bought.has(id === 'helmet' ? 'helmet' : 'armor') && armorOwned(id))).join('')}</div></div>
-        <div><h3>Gadgets <small>${you.gadgets.length} / 2 · Q and E</small></h3><div class="gear-row">${Object.values(GADGETS).map((gadget) => gearChip(gadget.id, gadget.name, gadget.cost, gadget.desc, you.gadgets.includes(gadget.id), bought.has(`gadget:${gadget.id}`) || (free && you.gadgets.includes(gadget.id)), gadget.icon)).join('')}</div></div>
-        <p class="gear-caption">${free ? 'Everything is free on the range.' : 'Survive the round to keep your gear. Die and you respawn with the M-44 and P9.'}</p>
+        <div><h3>Gadgets <small>${you.gadgets.length} / 2 · ${bindLabel('gadget1')} ${bindLabel('gadget2')}</small></h3><div class="gear-row">${Object.values(GADGETS).map((gadget) => gearChip(gadget.id, gadget.name, gadget.cost, gadget.desc, you.gadgets.includes(gadget.id), bought.has(`gadget:${gadget.id}`) || (free && you.gadgets.includes(gadget.id)), gadget.icon)).join('')}</div></div>
+        <p class="gear-caption">${free ? 'Free on the range.' : 'Survive to keep your gear. Die and you’re back to the M-44 and P9.'}</p>
       </div>
       ${modifier && modifier !== 'standard' ? `<p class="buy-foot"><b>${MODIFIERS[modifier].name}</b> ${MODIFIERS[modifier].desc}</p>` : ''}`;
   }
@@ -345,9 +345,9 @@ export class Hud {
     const table = (team) => {
       const players = room.players.filter((p) => p.team === team).sort((a, b) => b.score - a.score);
       const friendly = team === mine;
-      return `<section class="${friendly ? 'friendly' : 'rival'}"><h3>${friendly ? 'YOUR TEAM' : 'RIVALS'} <b>${room.scores[team]}</b></h3>
+      return `<section class="${friendly ? 'friendly' : 'rival'}"><h3>${friendly ? 'YOUR TEAM' : 'ENEMY TEAM'} <b>${room.scores[team]}</b></h3>
         <div class="score-row head"><span>PILOT</span><span title="Player kills">K</span><span title="Bot kills">BOT</span><span>D</span><span>A</span><span>SCORE</span><span>${friendly ? 'CR' : ''}</span><span>MS</span></div>
-        ${players.map((p) => `<div class="score-row${p.id === game.id ? ' you' : ''}${p.alive ? '' : ' dead'}"><span class="pilot"><i style="background:${p.color}"></i>${escapeHtml(p.name)}${p.bot ? ' <em>BOT</em>' : ` <em>LV ${p.level}</em>`}${p.connected ? '' : ' <em>OFFLINE</em>'}</span><span>${p.playerKills ?? p.kills}</span><span>${p.botKills ?? 0}</span><span>${p.deaths}</span><span>${p.assists}</span><span>${p.score}</span><span>${friendly ? p.credits : ''}</span><span>${p.bot ? '—' : p.ping}</span></div>`).join('')}</section>`;
+        ${players.map((p) => `<div class="score-row${p.id === game.id ? ' you' : ''}${p.alive ? '' : ' dead'}"><span class="pilot"><i style="background:${p.color}"></i>${escapeHtml(p.name)}${p.bot ? ' <em>BOT</em>' : ` <em>LV ${p.level}</em>`}${p.connected ? '' : ' <em>OFFLINE</em>'}</span><span>${p.playerKills ?? p.kills}</span><span>${p.botKills ?? 0}</span><span>${p.deaths}</span><span>${p.assists}</span><span>${p.score}</span><span>${friendly ? p.credits : ''}</span><span>${p.bot ? '-' : p.ping}</span></div>`).join('')}</section>`;
     };
     const rules = room.rules;
     this.dom.scoreboard.innerHTML = `<div class="scoreboard-head"><span>${escapeHtml(room.name.toUpperCase())} // ${room.queue.toUpperCase()}</span><b>FIRST TO ${rules.roundsToWin} · ${VARIANT_NAMES[room.variant] || ''} · ${MODIFIERS[rules.modifier]?.name || ''}</b></div>${table(mine)}${table(mine === 'A' ? 'B' : 'A')}`;
@@ -479,12 +479,12 @@ export class Hud {
       const weapon = player.weapon, ammo = player.ammo;
       dom.weaponName.textContent = spectated ? `WATCHING ${spectated.name.toUpperCase()}` : weapon.name.toUpperCase();
       dom.weaponTag.textContent = player.reloadEnd ? 'RELOADING…' : weapon.tag;
-      dom.ammo.textContent = weapon.melee ? '—' : String(ammo?.mag ?? 0).padStart(2, '0');
+      dom.ammo.textContent = weapon.melee ? '-' : String(ammo?.mag ?? 0).padStart(2, '0');
       dom.ammo.classList.toggle('empty', !weapon.melee && (ammo?.mag ?? 0) === 0);
       dom.reserve.textContent = weapon.melee ? '' : ` / ${room.mode === 'range' ? '∞' : ammo?.reserve ?? 0}`;
       const slots = ['primary', 'sidearm', 'melee'].filter((slot) => you.weapons[slot]).map((slot, index) => `<div class="${slot === player.active ? 'active' : ''}"><b>${['primary', 'sidearm', 'melee'].indexOf(slot) + 1}</b>${WEAPON_SHORT[you.weapons[slot]]}</div>`).join('');
       if (dom.slots.innerHTML !== slots) dom.slots.innerHTML = slots;
-      const gadgets = [0, 1].map((index) => { const gadget = GADGETS[you.gadgets[index]]; return `<div class="${gadget ? 'ready' : 'empty'}"><b>${index ? 'E' : 'Q'}</b><span>${gadget ? `${gadget.icon} ${gadget.name}` : 'EMPTY'}</span></div>`; }).join('');
+      const gadgets = [0, 1].map((index) => { const gadget = GADGETS[you.gadgets[index]]; return `<div class="${gadget ? 'ready' : 'empty'}"><b>${bindLabel(index ? 'gadget2' : 'gadget1')}</b><span>${gadget ? `${gadget.icon} ${gadget.name}` : 'EMPTY'}</span></div>`; }).join('');
       if (dom.gadgets.innerHTML !== gadgets) dom.gadgets.innerHTML = gadgets;
       dom.fxLow.style.opacity = player.alive && you.hp < 40 ? String((40 - you.hp) / 40) : '0';
     }
@@ -554,7 +554,7 @@ export class Hud {
 }
 
 export function roundIntroVoice(message) {
-  if (message.decider) return 'Final round. Winner takes the match.';
+  if (message.decider) return 'Final round.';
   if (message.matchPoint) return 'Match point.';
   if (message.swapped) return 'Switching sides.';
   return `Round ${message.round}.`;

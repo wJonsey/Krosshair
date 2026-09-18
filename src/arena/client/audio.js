@@ -3,10 +3,10 @@
 // How a sound is built
 //  · Layers. A gunshot is not one noise: it is a mechanical click, a supersonic crack, the muzzle blast
 //    (distorted, so it has grit), a sub thump you feel, two or three body resonances that give each weapon
-//    its voice, then the tail — the sound coming back off the arena — and finally the action cycling and a
+//    its voice, then the tail (the sound coming back off the arena), and finally the action cycling and a
 //    casing landing. Footsteps are heel then toe. Metal rings with inharmonic partials, like real plate.
 //  · Space. Positional sounds get HRTF panning, a distance low-pass and speed-of-sound delay, so a far rifle
-//    arrives late and as a dull thud — you can range a shooter by ear. Two generated reverbs (open yard,
+//    arrives late and as a dull thud, so you can range a shooter by ear. Two generated reverbs (open yard,
 //    hard room) are cross-faded by how sheltered the listener is.
 //  · Variation. Nothing plays the same twice: pitch, level and timing all move a few percent per trigger.
 //
@@ -257,7 +257,7 @@ export function playShot(weaponId, pos = null, volume = 1) {
   const tailLength = tailDecay * (1 - room * 0.55) * (1 + far * 0.5);
   noise(out, at + 0.012, { freq: tailLp * (1 - far * 0.45), sweepTo: 260, q: 0.5, attack: 0.02, decay: tailLength, gain: tailGain * g * (1 + far * 0.7 + room * 0.3) });
   if (room < 0.5 && tailDecay > 0.5) noise(out, at + rnd(0.1, 0.17), { freq: tailLp * 0.6, sweepTo: 220, q: 0.5, attack: 0.015, decay: tailLength * 0.6, gain: tailGain * 0.4 * g });
-  // What the gun itself does next — only worth hearing when it is yours or close.
+  // What the gun itself does next: only worth hearing when it is yours or close.
   if (own || dist < 12) {
     const near = own ? 1 : 0.5;
     if (spec.action === 'auto' || spec.action === 'semi') { clack(out, at + 0.042 / p, 2300 * p, 0.2 * near); if (own || dist < 7) casing(out, at); }
@@ -373,7 +373,7 @@ const SOUNDS = {
   stim: (out, at) => { click(out, at, 2400, 0.3, 0.01); noise(out, at + 0.02, { type: 'highpass', freq: 5500, attack: 0.01, decay: 0.35, gain: 0.22 }); tone(out, at + 0.25, { freq: 392, to: 784, attack: 0.1, decay: 0.6, gain: 0.07 }); },
   ghost: (out, at) => { noise(out, at, { type: 'bandpass', freq: 2400, sweepTo: 180, q: 2, attack: 0.03, decay: 0.7, gain: 0.25 }); tone(out, at, { freq: 660, to: 110, attack: 0.03, decay: 0.7, gain: 0.05 }); },
   droneDown: (out, at) => { tone(out, at, { wave: 'sawtooth', freq: 340, to: 50, attack: 0.002, decay: 0.55, gain: 0.25 }); noise(out, at, { freq: 2200, sweepTo: 300, attack: 0.002, decay: 0.3, gain: 0.4, drive: true }); grains(out, at + 0.3, 6, 0.3, { low: 1500, high: 4000, decay: 0.012, gain: 0.15 }); },
-  // Thunder: the crack, then the roll — the same event arriving by longer and longer paths.
+  // Thunder: the crack, then the roll: the same event arriving by longer and longer paths.
   thunder: (out, at) => { noise(out, at, { type: 'highpass', freq: 1200, attack: 0.002, decay: 0.18, gain: 0.5, drive: true }); noise(out, at + 0.04, { freq: 900, sweepTo: 90, attack: 0.03, decay: 1.2, gain: 0.9, drive: true }); for (let i = 0; i < 5; i += 1) noise(out, at + 0.5 + i * rnd(0.35, 0.6), { freq: rnd(90, 190), attack: 0.2, decay: rnd(0.8, 1.5), gain: 0.55 / (i + 1) }); },
 };
 
@@ -386,7 +386,7 @@ export function play(name, options = {}) {
   make(out, at + (options.delay || 0));
 }
 
-// Leaving a match cuts its sound dead — tails, echoes and anything already scheduled included — instead of
+// Leaving a match cuts its sound dead (tails, echoes and anything already scheduled) instead of
 // letting the last firefight ring on over the menu. Coming back in opens it up again.
 let worldOn = true;
 export function setWorldAudio(on) {
@@ -454,7 +454,7 @@ export function setAmbience(variant) {
     bed('highpass', 2800, 0.3, 0.024); bed('bandpass', 1100, 0.4, 0.022, 0.23);   // rain: hiss and body
     timer = setInterval(() => { if (ctx.state === 'running' && ambience && Math.random() < 0.8) grains(gain, ctx.currentTime + 0.01, 3, 0.25, { type: 'bandpass', low: 1800, high: 5200, q: 2.5, decay: 0.012, gain: 0.05 }); }, 260);   // drops landing close by
   } else if (variant === 'night') {
-    bed('lowpass', 260, 0.5, 0.035, 0.07, 60); bed('lowpass', 120, 0.4, 0.02);   // still air: no pitched drone — under the soundtrack a fixed note reads as a buzz
+    bed('lowpass', 260, 0.5, 0.035, 0.07, 60); bed('lowpass', 120, 0.4, 0.02);   // still air: no pitched drone, under the soundtrack a fixed note reads as a buzz
     timer = setInterval(() => { if (ctx.state === 'running' && ambience && Math.random() < 0.35) { const t = ctx.currentTime + 0.02, f = rnd(4100, 4700); for (let i = 0; i < 3; i += 1) tone(gain, t + i * 0.055, { freq: f, attack: 0.008, decay: 0.03, gain: 0.006 }); } }, 900);    // a cricket, far off
   } else if (variant === 'snow') {
     bed('bandpass', 520, 1.4, 0.06, 0.09, 260); bed('lowpass', 240, 0.5, 0.04, 0.05);
@@ -482,13 +482,13 @@ export function setAmbienceVolume(value) { ambienceLevel = Math.max(0, Math.min(
 //   { "menu": ["my-theme.mp3"], "match": ["buy-phase.mp3"] }
 // "menu" plays in the menus and lobby, "match" between rounds. With no files (or no manifest) a quiet
 // generated pad plays in the menus instead, so the game is never silent. During live rounds music drops
-// out unless Settings → Audio → "Keep music during rounds" is on — footsteps matter more than a chorus.
+// out unless Settings → Audio → "Music during rounds" is on. Footsteps matter more than a chorus.
 let tracks = null;            // null = not loaded yet, { menu: [], match: [] } once it is
 let musicScene = 'menu';
 let musicEl = null, musicList = null, musicIndex = 0, musicFade = null;
 let pad = null;
 const musicBase = new URL('../music/', import.meta.url).href;
-// In a match the music sits just under the menu level — a touch lower again while a round is live — and all
+// In a match the music sits just under the menu level (a touch lower again while a round is live) and all
 // of it rides the Music volume slider (and the master volume, since it plays through `master`).
 const sceneLevel = () => (musicScene === 'combat' ? (game.settings.musicInMatch ? 0.8 : 0) : musicScene === 'match' ? 0.88 : 1);
 // The slider's 100% is deliberately half of full scale: that is as loud as the soundtrack should ever get
@@ -519,7 +519,7 @@ function fadeElement(el, to, seconds, then) {
 const decoded = new Map();
 const CROSSFADE = 2.6; // seconds; a little over a bar at 110 BPM
 // `phase` (seconds into the loop) lets a new track come in at the same point in the bar the old one had
-// reached. When two loops share a tempo and length — the lobby and in-game themes do — a crossfade between
+// reached. When two loops share a tempo and length (the lobby and in-game themes do), a crossfade between
 // them then stays on the beat instead of smearing two rhythms together.
 async function loopPlayer(entry, phase = 0, phaseNow = null) {
   if (!decoded.has(entry.file)) decoded.set(entry.file, fetch(`${musicBase}${encodeURIComponent(entry.file)}`).then((r) => r.arrayBuffer()).then((data) => ctx.decodeAudioData(data)));
@@ -577,7 +577,7 @@ function playFromList(list) {
   el.volume = 0;
   el.src = `${musicBase}${encodeURIComponent(trackName(entry))}`;
   el.addEventListener('ended', () => { musicIndex = (musicIndex + 1) % list.length; el.src = `${musicBase}${encodeURIComponent(trackName(list[musicIndex]))}`; el.play().catch(() => {}); });
-  el.addEventListener('error', () => console.warn(`music: could not play ${trackName(list[musicIndex])} — check the name in music/tracks.json`));
+  el.addEventListener('error', () => console.warn(`music: could not play ${trackName(list[musicIndex])}. Check the name in music/tracks.json`));
   musicEl = el;
   el.play().then(() => fadeElement(el, musicLevel() * game.settings.volume, 1.5)).catch(() => { /* needs a click first; startMusic runs again on the next one */ musicEl = null; musicList = null; });
 }

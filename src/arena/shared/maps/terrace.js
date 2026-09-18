@@ -1,4 +1,4 @@
-// SKYLINE TERRACE — medium. A tower rooftop: a glass greenhouse in the middle that will not stay
+// SKYLINE TERRACE: medium. A tower rooftop: a glass greenhouse in the middle that will not stay
 // glass for long, water tanks on stilts to climb, and plant rooms humming on both flanks.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 

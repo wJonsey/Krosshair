@@ -94,7 +94,7 @@ test('implicit login only trusts a token that Discord says was issued to this ap
     assert.equal(ok.joined, true);
     assert.equal(puts.length, 1);
     appId = '999999999999999999';
-    await assert.rejects(discord.finishToken('token-from-another-app', state()), /not issued for Krosshair/);
+    await assert.rejects(discord.finishToken('token-from-another-app', state()), /isn’t for Krosshair/);
     await assert.rejects(discord.finishToken('a-real-looking-token', 'made-up-state'), /expired/);
   } finally { globalThis.fetch = realFetch; }
 });

@@ -384,7 +384,7 @@ export class Arena {
     for (const key of ['neonCyan', 'neonOrange', 'neonPink', 'lamp']) if (this.materials.has(key)) this.materials.get(key).emissiveIntensity = MATERIALS[key].emissive * (0.5 + v.lamps * 0.9);
   }
 
-  // g: { renderScale, shadows: off|low|high|ultra, streetLights, brightness } — see graphics() in state.js.
+  // g: { renderScale, shadows: off|low|high|ultra, streetLights, brightness }. See graphics() in state.js.
   setGraphics(g) {
     const size = { low: 1024, high: 2048, ultra: 4096 }[g.shadows] || 0;
     this.sun.castShadow = size > 0;

@@ -1,4 +1,4 @@
-// FROSTBITE STATION — medium to large. An arctic research base: a helipad on stilts in
+// FROSTBITE STATION: medium to large. An arctic research base: a helipad on stilts in
 // the middle, lab modules with walkable roofs, snow berms across open ground and an
 // ice trench that runs the length of the west side under the pump house.
 import { createBuilder, SYM, DECO, gateBarriers, mirrorZones, mirrorPoints, teamSpawns } from '../mapkit.js';

@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { dailyContracts, dateKey, levelFromXp, COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
+import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
 
 const HISTORY_LIMIT = 25;
 // Settings a pilot's account remembers, with the values the server will accept.
@@ -42,6 +42,8 @@ export class ProfileStore {
     this.file = file;
     this.profiles = new Map();
     this.saveTimer = null;
+    // Guest profiles live in memory only: never written to disk, dropped once the guest has gone.
+    this.guests = new Map(); // key → release timer (or null while connected)
   }
 
   async load() {
@@ -51,13 +53,16 @@ export class ProfileStore {
     } catch { /* first boot */ }
   }
 
+  // What goes to disk: everything except guests.
+  snapshot() { return JSON.stringify(Object.fromEntries([...this.profiles].filter(([key]) => !this.guests.has(key)))); }
+
   scheduleSave() {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(async () => {
       this.saveTimer = null;
       try {
         await mkdir(path.dirname(this.file), { recursive: true });
-        await writeFile(`${this.file}.tmp`, JSON.stringify(Object.fromEntries(this.profiles)));
+        await writeFile(`${this.file}.tmp`, this.snapshot());
         await rename(`${this.file}.tmp`, this.file);
       } catch (error) { console.warn('profile save failed', error.message); }
     }, 1500);
@@ -67,11 +72,38 @@ export class ProfileStore {
   flush() {
     if (!this.saveTimer) return;
     clearTimeout(this.saveTimer); this.saveTimer = null;
-    try { mkdirSync(path.dirname(this.file), { recursive: true }); writeFileSync(`${this.file}.tmp`, JSON.stringify(Object.fromEntries(this.profiles))); renameSync(`${this.file}.tmp`, this.file); } catch (error) { console.warn('profile save failed', error.message); }
+    try { mkdirSync(path.dirname(this.file), { recursive: true }); writeFileSync(`${this.file}.tmp`, this.snapshot()); renameSync(`${this.file}.tmp`, this.file); } catch (error) { console.warn('profile save failed', error.message); }
   }
 
   static key(token) { return createHash('sha256').update(token).digest('hex').slice(0, 32); }
   static newToken() { return randomUUID(); }
+
+  // Guests: a token only counts as a guest's while this process remembers handing it out, so a restart
+  // or a closed tab (the browser keeps the token for that tab only) starts from nothing.
+  isGuest(token) { return typeof token === 'string' && this.guests.has(ProfileStore.key(token)) && this.profiles.has(ProfileStore.key(token)); }
+  holdGuest(token) {
+    const key = ProfileStore.key(token);
+    clearTimeout(this.guests.get(key));
+    this.guests.set(key, null);
+  }
+  // Called when the guest's last connection closes. The grace period covers a refresh, a dropped
+  // connection, and the trip to Discord and back for a guest who decides to log in.
+  releaseGuest(token, after = 15 * 60 * 1000) {
+    const key = ProfileStore.key(token);
+    if (!this.guests.has(key) || this.guests.get(key) === 'gone') return;
+    clearTimeout(this.guests.get(key));
+    // The key stays marked as a guest's, so a late write (a match ending) can never land on disk.
+    const timer = setTimeout(() => { if (this.guests.get(key) === timer) { this.guests.set(key, 'gone'); this.profiles.delete(key); } }, after);
+    timer.unref?.();
+    this.guests.set(key, timer);
+  }
+  // A guest who logs in keeps what they earned: the profile becomes a normal, saved one.
+  keepGuest(token) {
+    const key = ProfileStore.key(token);
+    clearTimeout(this.guests.get(key));
+    this.guests.delete(key);
+    this.scheduleSave();
+  }
 
   get(token) {
     const key = ProfileStore.key(token);
@@ -102,7 +134,7 @@ export class ProfileStore {
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
-        ...contract, text: contract.text.replace('{n}', contract.n),
+        ...contract, text: contractText(contract),
         progress: Math.min(contract.n, profile.contracts.progress[contract.id] || 0),
         done: Boolean(profile.contracts.claimed[contract.id]),
       })),
@@ -162,10 +194,11 @@ export class ProfileStore {
       if (value >= contract.n && !profile.contracts.claimed[contract.id]) {
         profile.contracts.claimed[contract.id] = true;
         xp += contract.xp;
-        completed.push({ text: contract.text.replace('{n}', contract.n), xp: contract.xp });
+        completed.push({ text: contractText(contract), xp: contract.xp });
       }
     }
     profile.xp += xp;
+    const ratingBefore = Math.round(profile.rating), rankedBefore = profile.rankedMatches;
     if (summary.ranked) { profile.rating = Math.max(100, profile.rating + summary.ratingDelta); profile.rankedMatches += 1; }
     profile.history.unshift({
       at: Date.now(), result: summary.draw ? 'draw' : summary.won ? 'win' : 'loss', score: summary.score, mode: summary.mode,
@@ -182,6 +215,7 @@ export class ProfileStore {
     if (after > before) {
       for (const [kind, items] of Object.entries(COSMETICS)) for (const item of items) if (item.level > before && item.level <= after) unlocks.push({ kind, name: item.name });
     }
-    return { xp, levelBefore: before, levelAfter: after, completed, unlocks, ratingDelta: summary.ranked ? Math.round(summary.ratingDelta) : 0 };
+    const rank = summary.ranked ? { before: ratingBefore, after: Math.round(profile.rating), matchesBefore: rankedBefore, matchesAfter: profile.rankedMatches } : null;
+    return { xp, levelBefore: before, levelAfter: after, completed, unlocks, ratingDelta: summary.ranked ? Math.round(profile.rating) - ratingBefore : 0, rank };
   }
 }

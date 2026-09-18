@@ -224,10 +224,11 @@ export const WEAPONS = {
 // Flip to true to bring back login and sign-up (server/accounts.js keeps working either way).
 export const ACCOUNTS_ENABLED = false;
 // Discord application that pilots log in through. This is the app's public Application ID (Developer
-// Portal → General Information) — safe to commit, unlike the client secret or bot token, which go in .env.
+// Portal → General Information). Safe to commit, unlike the client secret or bot token, which go in .env.
 export const DISCORD_CLIENT_ID = '1550238088758825050';
 // Community server. Logging in with Discord adds pilots to it; this link is for everyone else.
 export const DISCORD_INVITE = 'https://discord.gg/uFVygVtKzt';
+export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair78';
 
 // Sight types (weapon.sight): scope = full scope overlay, prism = magnified lens, dot = red dot,
 // holo = holographic window, iron = iron sights on the model, bead = shotgun bead.
@@ -243,20 +244,20 @@ export const DEFAULT_LOADOUT = { primary: 'm44', sidearm: 'p9', melee: 'knife' }
 export const SLOT_ORDER = ['primary', 'sidearm', 'melee'];
 
 export const ARMOR = {
-  light: { id: 'light', name: 'Light Vest', cost: 400, points: 50, desc: '50 armour. Enough to survive one M-44 body shot.' },
-  heavy: { id: 'heavy', name: 'Heavy Plate', cost: 900, points: 100, desc: '100 armour. Soaks a body shot and keeps absorbing through a long fight.' },
-  helmet: { id: 'helmet', name: 'Ballistic Helmet', cost: 350, desc: 'Cuts headshot damage by 35%. Breaks after one hit.' },
+  light: { id: 'light', name: 'Light Vest', cost: 400, points: 50, desc: '50 armour. Survives one M-44 body shot.' },
+  heavy: { id: 'heavy', name: 'Heavy Plate', cost: 900, points: 100, desc: '100 armour. Lasts the fight.' },
+  helmet: { id: 'helmet', name: 'Ballistic Helmet', cost: 350, desc: '35% less headshot damage. Breaks after one hit.' },
 };
 export const ARMOR_ABSORB = 0.42;
 export const HELMET_FACTOR = 0.65;
 
 export const GADGETS = {
-  pulse: { id: 'pulse', name: 'Radar Pulse', cost: 300, icon: '◎', desc: 'Reveals every rival within 45 m to your team for 3.5 s.', radius: 45, duration: 3.5 },
-  drone: { id: 'drone', name: 'Recon Drone', cost: 450, icon: '✣', desc: 'Pilot a drone for 12 s. Rivals it sees are marked for your team.', duration: 12, range: 42, hp: 25 },
-  decoy: { id: 'decoy', name: 'Decoy Hologram', cost: 200, icon: '◈', desc: 'Sends a running copy of you forward. Whoever shoots it is marked.', duration: 8, markTime: 4 },
-  shield: { id: 'shield', name: 'Deploy Shield', cost: 350, icon: '▮', desc: 'Drops a bulletproof barrier. 350 HP, lasts the round.', hp: 350, width: 2.4, height: 1.55, depth: 0.25 },
-  ghost: { id: 'ghost', name: 'Silent Step', cost: 250, icon: '〰', desc: '15 s of soundless movement. No footsteps, no radar noise.', duration: 15 },
-  stim: { id: 'stim', name: 'Field Stim', cost: 300, icon: '✚', desc: 'Restores 50 health over 5 s. One per round.', heal: 50, duration: 5 },
+  pulse: { id: 'pulse', name: 'Radar Pulse', cost: 300, icon: '◎', desc: 'Reveals enemies within 45 m for 3.5 s.', radius: 45, duration: 3.5 },
+  drone: { id: 'drone', name: 'Recon Drone', cost: 450, icon: '✣', desc: 'Fly it for 12 s. Marks every enemy it sees.', duration: 12, range: 42, hp: 25 },
+  decoy: { id: 'decoy', name: 'Decoy Hologram', cost: 200, icon: '◈', desc: 'A fake you, running ahead. Whoever shoots it gets marked.', duration: 8, markTime: 4 },
+  shield: { id: 'shield', name: 'Deploy Shield', cost: 350, icon: '▮', desc: 'Bulletproof cover. 350 HP. Lasts the round.', hp: 350, width: 2.4, height: 1.55, depth: 0.25 },
+  ghost: { id: 'ghost', name: 'Silent Step', cost: 250, icon: '〰', desc: '15 s of silent movement.', duration: 15 },
+  stim: { id: 'stim', name: 'Field Stim', cost: 300, icon: '✚', desc: '+50 health over 5 s. Once per round.', heal: 50, duration: 5 },
 };
 export const GADGET_SLOTS = 2;
 
@@ -281,11 +282,11 @@ export const DEFAULT_RULES = {
   swapSides: true,
 };
 export const MODIFIERS = {
-  standard: { name: 'Standard', desc: 'Best-of-nine. One life. Buy between rounds.' },
+  standard: { name: 'Standard', desc: 'Best of nine. One life. Buy between rounds.' },
   headhunter: { name: 'Headhunter', desc: 'Only headshots deal damage.' },
   instagib: { name: 'One Tap', desc: 'Every hit is lethal. No armour.' },
   lowgrav: { name: 'Low Orbit', desc: 'A third of the gravity. Rooftops are for everyone.' },
-  sidearms: { name: 'Sidearms Only', desc: 'No primaries. Pistols, revolvers and knives.' },
+  sidearms: { name: 'Sidearms Only', desc: 'Pistols, revolvers and blades only.' },
 };
 export const VARIANTS = ['dusk', 'night', 'storm', 'noon'];
 export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm Front', noon: 'High Noon', snow: 'Whiteout', haze: 'Dust Haze' };
@@ -302,7 +303,7 @@ export const QUICK_COMMANDS = [
   { id: 'push', text: 'Pushing now', voice: 'Pushing' },
   { id: 'hold', text: 'Hold this angle', voice: 'Holding' },
   { id: 'help', text: 'Need backup', voice: 'Need backup' },
-  { id: 'spotted', text: 'Rival spotted', voice: 'Contact' },
+  { id: 'spotted', text: 'Enemy spotted', voice: 'Contact' },
   { id: 'nice', text: 'Nice shot', voice: 'Nice shot' },
   { id: 'sorry', text: 'My bad', voice: 'Sorry' },
 ];
@@ -315,15 +316,37 @@ export function levelFromXp(xp) {
   while (xpForLevel(level + 1) <= xp) level += 1;
   return level;
 }
-export const RANKS = [
-  [0, 'Unranked'], [1, 'Bronze'], [1100, 'Silver'], [1250, 'Gold'], [1400, 'Platinum'], [1600, 'Diamond'], [1850, 'Apex'],
+// Ranked ladder. Six tiers of three divisions (Apex is one open-ended tier), cut from skill rating.
+// A pilot has no rank until the placement matches are played; those move the rating twice as far.
+export const PLACEMENT_MATCHES = 5;
+export const RANK_TIERS = [
+  { id: 'bronze', name: 'Bronze', min: 950, color: '#c7875a' },
+  { id: 'silver', name: 'Silver', min: 1100, color: '#c3ced8' },
+  { id: 'gold', name: 'Gold', min: 1250, color: '#f2c14e' },
+  { id: 'platinum', name: 'Platinum', min: 1400, color: '#6ce6d1' },
+  { id: 'diamond', name: 'Diamond', min: 1600, color: '#8fb4ff' },
+  { id: 'apex', name: 'Apex', min: 1850, color: '#ff5a6e' },
 ];
-export function rankName(rating, ranked) {
-  if (!ranked) return 'Unranked';
-  let name = 'Bronze';
-  for (const [min, label] of RANKS) if (rating >= min && min > 0) name = label;
-  return name;
+const DIVISIONS = ['III', 'II', 'I'];
+// Everything the menus need to draw a rank: tier, division, how far into it, and what comes next.
+// `step` orders ranks (0 = Bronze III … 15 = Apex) so promotions and demotions can be told apart.
+export function rankInfo(rating, rankedMatches = PLACEMENT_MATCHES) {
+  const sr = Math.round(rating);
+  if (rankedMatches < PLACEMENT_MATCHES) return { placed: false, name: 'Unranked', tier: null, color: '#7d8a96', step: -1, rating: sr, placement: { played: rankedMatches, total: PLACEMENT_MATCHES } };
+  let t = 0;
+  RANK_TIERS.forEach((tier, index) => { if (sr >= tier.min) t = index; });
+  const tier = RANK_TIERS[t], next = RANK_TIERS[t + 1];
+  if (!next) return { placed: true, name: tier.name, tier: tier.id, color: tier.color, division: null, step: t * 3, rating: sr, progress: 1, next: null };
+  const width = (next.min - tier.min) / 3;
+  const d = Math.max(0, Math.min(2, Math.floor((sr - tier.min) / width)));
+  const floor = tier.min + d * width, ceiling = floor + width;
+  const progress = sr < tier.min ? 0 : Math.min(1, (sr - floor) / width);
+  return {
+    placed: true, name: `${tier.name} ${DIVISIONS[d]}`, tier: tier.id, color: tier.color, division: DIVISIONS[d], step: t * 3 + d, rating: sr, progress,
+    next: d < 2 ? `${tier.name} ${DIVISIONS[d + 1]}` : next.id === 'apex' ? 'Apex' : `${next.name} III`, toNext: Math.max(0, Math.ceil(ceiling - sr)),
+  };
 }
+export function rankName(rating, rankedMatches) { return rankInfo(rating, rankedMatches).name; }
 export const MASTERY_TIERS = [[0, 'Unproven'], [10, 'Bronze'], [40, 'Silver'], [120, 'Gold'], [300, 'Obsidian']];
 export function masteryTier(kills) {
   let tier = 0;
@@ -361,20 +384,22 @@ export function cosmeticUnlocked(kind, id, level) {
 }
 
 export const CONTRACTS = [
-  { id: 'kills', text: 'Eliminate {n} rivals', n: 12, xp: 300 },
-  { id: 'headshots', text: 'Land {n} headshot kills', n: 5, xp: 350 },
+  { id: 'kills', text: 'Get {n} kills', n: 12, xp: 300 },
+  { id: 'headshots', text: 'Get {n} headshot kills', n: 5, xp: 350 },
   { id: 'rounds', text: 'Win {n} rounds', n: 8, xp: 300 },
-  { id: 'wins', text: 'Win {n} matches', n: 2, xp: 450 },
+  { id: 'wins', text: 'Win {n} match{es}', n: 2, xp: 450 },
   { id: 'damage', text: 'Deal {n} damage', n: 1500, xp: 300 },
-  { id: 'longshots', text: 'Get {n} kills from beyond 50 m', n: 3, xp: 400 },
-  { id: 'wallbangs', text: 'Get {n} kills through cover', n: 2, xp: 450 },
-  { id: 'knife', text: 'Get {n} blade kills', n: 1, xp: 400 },
+  { id: 'longshots', text: 'Get {n} kills over 50 m', n: 3, xp: 400 },
+  { id: 'wallbangs', text: 'Get {n} wallbang kills', n: 2, xp: 450 },
+  { id: 'knife', text: 'Get {n} blade kill{s}', n: 1, xp: 400 },
   { id: 'sidearm', text: 'Get {n} sidearm kills', n: 4, xp: 350 },
   { id: 'gadgets', text: 'Use {n} gadgets', n: 6, xp: 250 },
-  { id: 'clutches', text: 'Win {n} rounds as the last one standing', n: 1, xp: 450 },
-  { id: 'matches', text: 'Finish {n} matches', n: 3, xp: 250 },
+  { id: 'clutches', text: 'Win {n} clutch{es}', n: 1, xp: 450 },
+  { id: 'matches', text: 'Finish {n} match{es}', n: 3, xp: 250 },
 ];
 // Deterministic daily pick so every pilot sees the same board.
+// Contract text: {n} is the target, {s} and {es} pluralise the word before them.
+export function contractText(contract) { return contract.text.replace('{n}', contract.n).replace('{s}', contract.n === 1 ? '' : 's').replace('{es}', contract.n === 1 ? '' : 'es'); }
 export function dailyContracts(dateKey) {
   let seed = 0;
   for (const char of dateKey) seed = (seed * 31 + char.charCodeAt(0)) >>> 0;

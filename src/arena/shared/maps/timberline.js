@@ -1,4 +1,4 @@
-// TIMBERLINE — large. A logging camp in a mountain clearing: a lodge in the middle, a watchtower
+// TIMBERLINE: large. A logging camp in a mountain clearing: a lodge in the middle, a watchtower
 // for each team, rock outcrops that stop everything and hedgerows that stop nothing.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 

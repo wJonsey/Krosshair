@@ -1,4 +1,4 @@
-// SAFFRON MARKET — small to medium. A covered souk: cloth and plank stalls that hide you and
+// SAFFRON MARKET: small to medium. A covered souk: cloth and plank stalls that hide you and
 // stop nothing, two flat-roofed houses to climb, and a kiosk in the middle of the square.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 

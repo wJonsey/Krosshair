@@ -64,15 +64,15 @@ export function mapThumb(id, size = 220) {
 
 // <option> list for the lobby rules grid.
 export function mapRuleOptions() {
-  return [['vote', 'Lobby vote'], ['random', 'Random each match'], ...MAP_INFO.map((info) => [info.id, `${info.title} — ${info.size}`])];
+  return [['vote', 'Lobby vote'], ['random', 'Random each match'], ...MAP_INFO.map((info) => [info.id, `${info.title} (${info.size})`])];
 }
 
 // One-line summary shown under the rules.
 export function mapRuleSummary(rule) {
-  if (rule === 'vote') return `Arena: everyone votes between all ${MAP_INFO.length} maps before each match.`;
-  if (rule === 'random') return 'Arena: picked at random before each match, never the same twice running.';
+  if (rule === 'vote') return `Lobby votes from all ${MAP_INFO.length} arenas.`;
+  if (rule === 'random') return 'Random arena. Never the same twice.';
   const info = mapInfo(rule);
-  return `Arena: ${info.title} (${info.size.toLowerCase()}, ${info.players}) — ${info.blurb}`;
+  return `${info.title} (${info.size.toLowerCase()}, ${info.players}). ${info.blurb}`;
 }
 
 let voteTimer = null;
@@ -85,7 +85,7 @@ export function renderMapVote(container, room) {
   const cast = Object.keys(room.mapVotes || {}).length;
   const card = (id) => {
     const random = id === 'random';
-    const info = random ? { title: 'Surprise me', size: 'Any size', players: '', style: 'Any arena, picked for you', blurb: 'Counts as a vote for whatever the dice say.' } : mapInfo(id);
+    const info = random ? { title: 'Surprise me', size: 'Any size', players: '', style: 'Any arena', blurb: 'Let the dice decide.' } : mapInfo(id);
     const votes = room.mapTally?.[id] || 0;
     const variants = random ? '' : getMap(id).env.variants.map((v) => VARIANT_NAMES[v]).join(' · ');
     return `<button type="button" class="vote-card${mine === id ? ' chosen' : ''}${random ? ' random' : ''}" data-map-vote="${id}" aria-pressed="${mine === id}">
@@ -97,7 +97,7 @@ export function renderMapVote(container, room) {
   };
   container.innerHTML = `<div class="lobby-card vote-screen vote-all">
       <div class="lobby-head"><div><p class="eyebrow">Arena vote // ${escapeHtml(room.name)}</p><h2>Pick the ground.</h2></div><div class="vote-clock"><b id="vote-seconds">–</b><small>SECONDS</small></div></div>
-      <p class="lobby-status ok" id="vote-status">${cast}/${humans} pilots have voted${mine ? ' — you can still change yours.' : '. Ties are broken at random.'}</p>
+      <p class="lobby-status ok" id="vote-status">${cast}/${humans} voted.${mine ? ' You can still switch.' : ' Ties go random.'}</p>
       <div class="vote-grid">${(room.mapChoices || []).map(card).join('')}${card('random')}</div>
     </div>`;
   const label = container.querySelector('#vote-seconds');

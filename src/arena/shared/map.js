@@ -350,18 +350,18 @@ function buildRange() {
 
 // Playable arenas, in rotation order. Geometry is only built the first time a map is asked for.
 export const MAP_INFO = [
-  { id: 'yard', title: 'Kestrel Yard', size: 'Medium', players: '2v2 – 4v4', style: 'Industrial rail yard', blurb: 'Depot roofs, a glass-fronted office and a plus-shaped underpass.' },
-  { id: 'atrium', title: 'Halcyon Atrium', size: 'Small', players: '1v1 – 2v2', style: 'Glass-and-marble gallery', blurb: 'Two mezzanines, a skybridge and glass railings that do not stay intact for long.' },
-  { id: 'campanile', title: 'Campanile', size: 'Small – medium', players: '2v2 – 3v3', style: 'Old-town piazza', blurb: 'A bell tower over the square, arcades, a balcony house and a sunken canal walk.' },
-  { id: 'frostbite', title: 'Frostbite Station', size: 'Medium – large', players: '3v3 – 4v4', style: 'Arctic research base', blurb: 'A helipad on stilts, lab roofs, snow berms and an ice trench under the pipes.' },
-  { id: 'foundry', title: 'Foundry 4', size: 'Small – medium', players: '2v2 – 3v3', style: 'Steel mill floor', blurb: 'A dead furnace, catwalks down both sides, two bridges and sheet metal that stops nothing.' },
-  { id: 'saffron', title: 'Saffron Market', size: 'Small – medium', players: '2v2 – 3v3', style: 'Covered souk', blurb: 'Cloth and plank stalls that stop nothing, two flat roofs to climb and a kiosk in the square.' },
-  { id: 'breakwater', title: 'Breakwater', size: 'Medium – large', players: '3v3 – 4v4', style: 'Container quay', blurb: 'Long lanes between the stacks and a walkway across the crane beam.' },
-  { id: 'line9', title: 'Line 9', size: 'Small', players: '1v1 – 2v2', style: 'Underground station', blurb: 'Two platforms, two parked trains to run through and a track bed down the middle.' },
-  { id: 'terrace', title: 'Skyline Terrace', size: 'Medium', players: '2v2 – 4v4', style: 'Tower rooftop', blurb: 'A glass greenhouse that will not stay glass, water tanks to climb and plant rooms on both flanks.' },
-  { id: 'ravelin', title: 'Ravelin', size: 'Large', players: '3v3 – 4v4', style: 'Desert fort', blurb: 'Crenellated ramparts down both walls, a keep in the courtyard and a lot of open stone.' },
-  { id: 'timberline', title: 'Timberline', size: 'Large', players: '3v3 – 4v4', style: 'Mountain logging camp', blurb: 'A lodge, a watchtower each, rock that stops everything and hedgerows that stop nothing.' },
-  { id: 'dustline', title: 'Dustline Pass', size: 'Large', players: '3v3 – 4v4', style: 'Desert canyon outpost', blurb: 'One stone bridge, a dry riverbed beneath it, watchtowers and a climbable mesa.' },
+  { id: 'yard', title: 'Kestrel Yard', size: 'Medium', players: '2v2 – 4v4', style: 'Industrial rail yard', blurb: 'Depot roofs, a glass office, an underpass.' },
+  { id: 'atrium', title: 'Halcyon Atrium', size: 'Small', players: '1v1 – 2v2', style: 'Glass-and-marble gallery', blurb: 'Two mezzanines, a skybridge, and glass that won’t last.' },
+  { id: 'campanile', title: 'Campanile', size: 'Small – medium', players: '2v2 – 3v3', style: 'Old-town piazza', blurb: 'A bell tower, arcades, a sunken canal walk.' },
+  { id: 'frostbite', title: 'Frostbite Station', size: 'Medium – large', players: '3v3 – 4v4', style: 'Arctic research base', blurb: 'A helipad on stilts, lab roofs, an ice trench.' },
+  { id: 'foundry', title: 'Foundry 4', size: 'Small – medium', players: '2v2 – 3v3', style: 'Steel mill floor', blurb: 'A dead furnace and two catwalks. Sheet metal stops nothing.' },
+  { id: 'saffron', title: 'Saffron Market', size: 'Small – medium', players: '2v2 – 3v3', style: 'Covered souk', blurb: 'Stalls that stop nothing. Two roofs to climb.' },
+  { id: 'breakwater', title: 'Breakwater', size: 'Medium – large', players: '3v3 – 4v4', style: 'Container quay', blurb: 'Long lanes between the stacks. A walkway over the crane.' },
+  { id: 'line9', title: 'Line 9', size: 'Small', players: '1v1 – 2v2', style: 'Underground station', blurb: 'Two platforms, two trains, one track bed.' },
+  { id: 'terrace', title: 'Skyline Terrace', size: 'Medium', players: '2v2 – 4v4', style: 'Tower rooftop', blurb: 'A greenhouse that won’t stay glass. Water tanks to climb.' },
+  { id: 'ravelin', title: 'Ravelin', size: 'Large', players: '3v3 – 4v4', style: 'Desert fort', blurb: 'Ramparts, a keep, and a lot of open stone.' },
+  { id: 'timberline', title: 'Timberline', size: 'Large', players: '3v3 – 4v4', style: 'Mountain logging camp', blurb: 'Rock stops everything. Hedges stop nothing.' },
+  { id: 'dustline', title: 'Dustline Pass', size: 'Large', players: '3v3 – 4v4', style: 'Desert canyon outpost', blurb: 'One bridge, a dry riverbed, a mesa to climb.' },
 ];
 export const MAP_IDS = MAP_INFO.map((info) => info.id);
 const BUILDERS = { yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline, foundry: buildFoundry, breakwater: buildBreakwater, saffron: buildSaffron, timberline: buildTimberline, line9: buildLine9, terrace: buildTerrace, ravelin: buildRavelin };

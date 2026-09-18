@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Krosshair // Kestrel Yard</title>
+  <title>Krosshair</title>
   <link rel="icon" type="image/svg+xml" href="brand/krosshair-logo-dark.svg" />
   <link rel="icon" type="image/png" sizes="1024x1024" href="brand/krosshair-logo-dark.png" />
   <link rel="apple-touch-icon" href="brand/apple-touch-icon.png" />
@@ -32,7 +32,7 @@
         <div class="breath"><span>HOLD BREATH // SHIFT</span><div class="meter"><i id="breath-meter"></i></div></div>
       </div>
       <div id="sight-overlay" class="sight hidden" aria-hidden="true"><div class="sight-glass"><span class="reticle"></span></div><span class="sight-label" id="sight-label"></span></div>
-      <div id="drone-overlay" class="drone-overlay hidden"><span class="drone-title">RECON DRONE // LIVE FEED</span><span id="drone-time">12.0</span><span class="drone-help">WASD fly · SPACE / CTRL altitude · CLICK to recall</span></div>
+      <div id="drone-overlay" class="drone-overlay hidden"><span class="drone-title">RECON DRONE // LIVE FEED</span><span id="drone-time">12.0</span><span class="drone-help">WASD fly · SPACE / CTRL up and down · CLICK recall</span></div>
 
       <div id="crosshair" class="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
       <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
@@ -65,7 +65,7 @@
 
       <div id="prompt" class="prompt hidden"></div>
       <div id="banner" class="banner hidden"><small id="banner-eyebrow"></small><h2 id="banner-title"></h2><p id="banner-sub"></p></div>
-      <div id="spectate-bar" class="cam-bar hidden"><span>SPECTATING</span><b id="spectate-name"></b><small id="spectate-weapon"></small><small>CLICK to switch pilot</small><div id="reactions" class="reactions"></div></div>
+      <div id="spectate-bar" class="cam-bar hidden"><span>SPECTATING</span><b id="spectate-name"></b><small id="spectate-weapon"></small><small>CLICK next pilot</small><div id="reactions" class="reactions"></div></div>
       <div id="pov-card" class="pov-card hidden" aria-live="polite">
         <div class="pov-label"><span id="pov-label">KILLCAM</span><em id="pov-skip">SPACE to skip</em></div>
         <div class="pov-main">
@@ -83,7 +83,7 @@
     <div id="scoreboard" class="overlay-card scoreboard hidden"></div>
     <div id="pause-card" class="pause-card hidden">
       <p class="eyebrow">Paused</p><h2>Hold position.</h2>
-      <p>The match keeps running. Click resume to lock your aim again.</p>
+      <p>The match is still live.</p>
       <div class="button-row"><button id="resume-button" type="button">Resume <span>→</span></button><button id="pause-settings" class="secondary-button" type="button">Settings</button><button id="pause-feedback" class="ghost-button" type="button">Report a bug</button><button id="leave-button" class="ghost-button" type="button">Leave match</button></div>
     </div>
 
@@ -97,7 +97,7 @@
     <div id="net-banner" class="net-banner hidden"></div>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </main>
-  <!-- ===== Loading screen (client/boot.js) — sits in the page itself so it shows before the engine downloads ===== -->
+  <!-- ===== Loading screen (client/boot.js): in the page itself so it shows before the engine downloads ===== -->
   <div id="boot" class="boot" role="status" aria-live="polite">
     <div id="boot-range" class="boot-range" aria-hidden="true"></div>
     <div class="boot-core">
@@ -112,9 +112,9 @@
       </ul>
       <div class="meter boot-meter"><i id="boot-bar"></i></div>
       <p id="boot-status" class="boot-status">Downloading engine…</p>
-      <button id="boot-enter" class="boot-enter hidden" type="button">Enter the yard <span>→</span></button>
+      <button id="boot-enter" class="boot-enter hidden" type="button">Enter <span>→</span></button>
     </div>
-    <p class="boot-score">WARM-UP // <b id="boot-hits">0</b> HITS · <span id="boot-acc">—</span> <small>shoot the plates while you wait</small></p>
+    <p class="boot-score">WARM-UP // <b id="boot-hits">0</b> HITS · <span id="boot-acc">-</span> <small>shoot the plates while you wait</small></p>
     <div id="boot-reticle" class="boot-reticle" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
   </div>
   <script src="client/boot.js"></script>

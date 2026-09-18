@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
-  HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE,
+  HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE,
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { getMap, zoneAt } from '../shared/map.js';
@@ -106,7 +106,7 @@ export class Room {
         id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, connected: player.connected, ready: player.ready,
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
-        title: player.title, level: player.level, rating: player.rating, primary: player.weapons.primary, armor: player.armor > 0,
+        title: player.title, level: player.level, rating: player.rating, rankedMatches: player.rankedMatches, primary: player.weapons.primary, armor: player.armor > 0,
       })),
     };
   }
@@ -125,7 +125,7 @@ export class Room {
   newPlayer(base) {
     const player = {
       id: `p${this.nextPlayer++}`, name: 'Pilot', team: 'A', bot: false, dummy: false, socket: null, connected: true, ready: false, host: false,
-      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', level: 1, rating: 1000, difficulty: null, ping: 0,
+      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
       token: null, session: null, credits: this.rules.startCredits, match: freshMatchStats(),
       alive: false, hp: 100, armor: 0, helmet: false, weapons: { ...DEFAULT_LOADOUT }, ammo: {}, active: 'primary', gadgets: [], bought: {},
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,
@@ -164,7 +164,7 @@ export class Room {
     const profile = this.profiles.get(hello.token);
     const player = this.newPlayer({
       name: hello.name, token: hello.token, session: hello.session, socket, ...look,
-      level: levelFromXp(profile.xp), rating: Math.round(profile.rating),
+      level: levelFromXp(profile.xp), rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
     });
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
     const replaceable = midMatch && [...this.players.values()].some((p) => p.bot && !p.dummy) && this.queue !== 'custom';
@@ -469,14 +469,16 @@ export class Room {
     for (const player of this.humans()) {
       const won = winner === player.team;
       const expected = player.team === 'A' ? expectedA : 1 - expectedA;
-      const ratingDelta = ranked ? 30 * ((winner ? (won ? 1 : 0) : 0.5) - expected) : 0;
+      // Placement matches swing twice as far, so a new pilot finds their level quickly.
+      const k = player.rankedMatches < PLACEMENT_MATCHES ? 60 : 30;
+      const ratingDelta = ranked ? k * ((winner ? (won ? 1 : 0) : 0.5) - expected) : 0;
       const report = this.profiles.recordMatch(player.token, {
         ...player.match, won, draw: !winner, ranked, ratingDelta, mode: this.queue, variant: this.variant,
         score: `${this.scores[player.team]}–${this.scores[player.team === 'A' ? 'B' : 'A']}`, mvp: mvp && mvp.id === player.id,
         rivals: everyone.filter((p) => !p.bot && p.id !== player.id).map((p) => p.name),
       });
       const view = this.profiles.view(player.token);
-      player.level = view.level; player.rating = view.rating;
+      player.level = view.level; player.rating = view.rating; player.rankedMatches = view.rankedMatches;
       this.send(player, { type: 'report', report, profile: view });
     }
     this.pushRoom();
@@ -606,7 +608,7 @@ export class Room {
         if (player.host && this.phase === 'lobby' && bot?.bot) { this.removePlayer(bot); this.pushRoom(); }
         return;
       }
-      case 'start': if (player.host && this.phase === 'lobby') { if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Both teams need at least one pilot. Add a bot or invite a rival.', 'warn'); else beginMatch(this); } return;
+      case 'start': if (player.host && this.phase === 'lobby') { if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Each team needs a pilot or a bot.', 'warn'); else beginMatch(this); } return;
       case 'map-vote': return castMapVote(this, player, message.id);
       case 'rematch': if (this.phase === 'matchEnd') { this.rematch.add(player.id); this.pushRoom(); } return;
       case 'respawn': if (this.mode === 'range' && !player.alive) this.spawn(player); return;
@@ -930,7 +932,7 @@ export class Room {
   // ---------------------------------------------------------------- economy
   buy(player, item) {
     const free = this.mode === 'range';
-    if (!free && this.phase !== 'buy') return this.notice(player, 'The armoury only opens between rounds.', 'warn');
+    if (!free && this.phase !== 'buy') return this.notice(player, 'Armoury opens between rounds.', 'warn');
     if (!player.alive) return;
     const modifier = this.rules.modifier;
     const charge = (cost) => {
@@ -941,7 +943,7 @@ export class Room {
     };
     if (WEAPONS[item] && !WEAPONS[item].melee) {
       const weapon = WEAPONS[item];
-      if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only in this mode.', 'warn');
+      if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
       if (player.weapons[weapon.slot] === item) return;
       const previous = player.bought[`slot:${weapon.slot}`];
       const refund = previous ? previous.cost : 0;
@@ -953,7 +955,7 @@ export class Room {
       player.ammo[weapon.slot] = { mag: weapon.mag, reserve: weapon.reserve };
       if (player.active === weapon.slot || weapon.slot === 'primary') { player.active = weapon.slot; player.reloadEnd = 0; }
     } else if (item === 'light' || item === 'heavy') {
-      if (modifier === 'instagib') return this.notice(player, 'Armour is useless in One Tap.', 'warn');
+      if (modifier === 'instagib') return this.notice(player, 'No armour in One Tap.', 'warn');
       const armor = ARMOR[item];
       if (player.armor >= armor.points) return;
       const previous = player.bought.armor;
@@ -967,10 +969,10 @@ export class Room {
       player.helmet = true; player.bought.helmet = { cost: ARMOR.helmet.cost, item };
     } else if (GADGETS[item]) {
       if (player.gadgets.includes(item)) return;
-      if (player.gadgets.length >= GADGET_SLOTS) return this.notice(player, 'Both gadget slots are full. Click one to sell it.', 'warn');
+      if (player.gadgets.length >= GADGET_SLOTS) return this.notice(player, 'Gadget slots full. Click one to sell it.', 'warn');
       if (!charge(GADGETS[item].cost)) return;
       player.gadgets.push(item); player.bought[`gadget:${item}`] = { cost: GADGETS[item].cost, item };
-    } else return this.notice(player, 'That item is not available on this server.', 'warn');
+    } else return this.notice(player, 'Not available.', 'warn');
     this.pushYou(player);
     this.pushRoom();
   }
@@ -981,14 +983,14 @@ export class Room {
     const refund = (key) => { const entry = player.bought[key]; if (!entry) return free; if (!free) player.credits += entry.cost; delete player.bought[key]; return true; };
     if (WEAPONS[item] && player.weapons[WEAPONS[item].slot] === item && WEAPONS[item].cost > 0) {
       const slot = WEAPONS[item].slot;
-      if (!refund(`slot:${slot}`)) return this.notice(player, 'Only gear bought this round can be refunded.', 'warn');
+      if (!refund(`slot:${slot}`)) return this.notice(player, 'Only this round’s buys can be refunded.', 'warn');
       player.weapons[slot] = DEFAULT_LOADOUT[slot];
       const weapon = WEAPONS[player.weapons[slot]];
       player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
     } else if ((item === 'light' || item === 'heavy') && player.bought.armor?.item === item) {
       player.armor = player.bought.armor.before || 0; refund('armor');
     } else if (item === 'helmet' && player.bought.helmet) { player.helmet = false; refund('helmet'); } else if (GADGETS[item] && player.gadgets.includes(item)) {
-      if (!refund(`gadget:${item}`)) return this.notice(player, 'Only gear bought this round can be refunded.', 'warn');
+      if (!refund(`gadget:${item}`)) return this.notice(player, 'Only this round’s buys can be refunded.', 'warn');
       player.gadgets = player.gadgets.filter((id) => id !== item);
     } else return;
     this.pushYou(player);
@@ -1000,11 +1002,11 @@ export class Room {
     const gadget = GADGETS[id];
     if (!gadget || !player.alive || !this.live || player.drone) return;
     const t = now();
-    if (id === 'stim') { if (player.hp >= 100) return this.notice(player, 'Already at full health.', 'warn'); player.stimUntil = t + gadget.duration; }
+    if (id === 'stim') { if (player.hp >= 100) return this.notice(player, 'Full health.', 'warn'); player.stimUntil = t + gadget.duration; }
     if (id === 'ghost') player.ghostUntil = t + gadget.duration;
     if (id === 'pulse') {
       const found = this.enemiesOf(player).filter((enemy) => Math.hypot(enemy.x - player.x, enemy.z - player.z) <= gadget.radius && !enemy.dummy);
-      found.forEach((enemy) => { this.mark(enemy, gadget.duration, 'pulse'); this.notice(enemy, 'Radar pulse — you are revealed', 'warn'); });
+      found.forEach((enemy) => { this.mark(enemy, gadget.duration, 'pulse'); this.notice(enemy, 'You’ve been pulsed', 'warn'); });
       this.broadcast({ type: 'pulse', id: player.id, x: round2(player.x), y: round2(player.y), z: round2(player.z), radius: gadget.radius, found: found.length });
       if (this.mode === 'range') [...this.players.values()].filter((p) => p.dummy && p.alive).forEach((dummy) => this.mark(dummy, gadget.duration, 'pulse', player.team));
     }
@@ -1014,7 +1016,7 @@ export class Room {
       this.decoys.set(decoy.id, decoy);
     }
     if (id === 'shield') {
-      if (!(player.flags & FLAG.ground)) return this.notice(player, 'Plant your feet to deploy the shield.', 'warn');
+      if (!(player.flags & FLAG.ground)) return this.notice(player, 'Land first.', 'warn');
       const fx = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
       const alongX = Math.abs(fz) >= Math.abs(fx);
       const cx = player.x + fx * 1.5, cz = player.z + fz * 1.5;
@@ -1025,7 +1027,7 @@ export class Room {
       };
       const blocked = this.world.overlaps(box.min[0], box.min[1] + 0.5, box.min[2], box.max[0], box.max[1], box.max[2]);
       const occupied = [...this.players.values()].some((p) => p.alive && p.x + BODY.radius > box.min[0] && p.x - BODY.radius < box.max[0] && p.z + BODY.radius > box.min[2] && p.z - BODY.radius < box.max[2] && Math.abs(p.y - player.y) < 1.8);
-      if (blocked || occupied) return this.notice(player, 'No room to deploy the shield here.', 'warn');
+      if (blocked || occupied) return this.notice(player, 'No room for the shield.', 'warn');
       const shield = { hp: gadget.hp, view: { id: box.id, min: box.min, max: box.max, team: player.team } };
       this.shields.set(box.id, shield);
       this.world.addDynamic(box);
@@ -1088,7 +1090,7 @@ export class Room {
     this.mark(shooter, GADGETS.decoy.markTime, 'decoy', decoy.team);
     this.send(shooter, { type: 'hit', target: id, zone: 'torso', damage: 0, decoy: true });
     const owner = this.players.get(decoy.owner);
-    if (owner) this.notice(owner, `Your decoy fooled ${shooter.name} — they are marked`, 'good');
+    if (owner) this.notice(owner, `Decoy hit. ${shooter.name} is marked`, 'good');
   }
 
   // ---------------------------------------------------------------- social

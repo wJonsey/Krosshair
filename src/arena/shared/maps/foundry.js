@@ -1,4 +1,4 @@
-// FOUNDRY — small to medium. A steel mill floor around a dead furnace: catwalks down both
+// FOUNDRY: small to medium. A steel mill floor around a dead furnace: catwalks down both
 // sides, two bridges across, and a lot of sheet metal that stops nothing.
 import { createBuilder, SYM, DECO, arenaShell, flight, mirrorZones, mirrorPoints } from '../mapkit.js';
 
