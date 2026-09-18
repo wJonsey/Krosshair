@@ -23,7 +23,7 @@ MAP=foundry node --test src/arena/tests/maps.test.mjs   # one arena's fairness t
 
 The server sends `Cache-Control: no-cache` for everything, but a browser tab that only changes its `#hash` does **not** reload modules. Force a real reload (`location.reload()` or a changed query string) after editing client code before trusting what you see.
 
-For the Claude desktop app there is a `.claude/launch.json` in this repo (`preview_start` name `krosshair`). Restart the preview server after changing anything under `server/`, `shared/` or the entry point; client-only edits just need a page reload.
+For the Claude desktop app there is a `.claude/launch.json` in this repo (`preview_start` name `krosshair`). It turns the Discord webhooks off: a local server with webhook URLs in `.env` posts "Update live" on boot and "Update incoming" on SIGTERM to the real channel. Stop a local server with Ctrl+C (SIGINT), which skips the webhook. Restart the preview server after changing anything under `server/`, `shared/` or the entry point; client-only edits just need a page reload.
 
 ## Where things are
 
@@ -35,6 +35,8 @@ For the Claude desktop app there is a `.claude/launch.json` in this repo (`previ
 | Bots | `server/bots.js`, `server/nav.js` | Each bot rolls `traits` (skill offset + habits) around `BOT_DIFFICULTY`. Turning is a damped spring, movement eases, aim tracks with lag. Tune levels in `constants.js`, behaviour in `bots.js`. |
 | Maps | `shared/map.js` (registry + Kestrel Yard), `shared/mapkit.js`, `shared/maps/*.js` | See "Adding an arena" below. |
 | Accounts, login, progression | `server/accounts.js`, `server/discord.js`, `server/profiles.js` | Discord login, or guest play with a callsign. Guest profiles are memory-only (`holdGuest`/`releaseGuest` in `profiles.js`, token in the tab's `sessionStorage`) and must never reach disk. Settings sync is whitelisted in `profiles.js` (`SETTING_RULES`, `cleanBinds`, `cleanCrosshair`). |
+| Gun skins | `FINISHES` in `shared/economy.js`; painters, suit patterns and shader effects in `client/skins.js` | A finish is a tiling canvas texture sampled triplanar in part space. `shader:` finishes add a GLSL snippet (`EFFECTS`) run after the emissive map, animated by one shared `uTime`. Keep metalness moderate: there is no environment map. |
+| Coins, shop, wagers | `shared/economy.js` (rates, prices, odds), `server/economy.js` (shop, crates, games, transfers), `ProfileStore` coin methods (`credit`/`debit`/`hold`/`settle`), wager flow in `room.js` (`takeStakes`, `settleWager`, `checkForfeit`), `client/shop.js`, `client/skins.js` | Every balance change goes through `credit`/`debit` so it is logged. Guests never hold coins. Wager stakes sit in `profile.escrow` until settled; `load()` refunds any left over after a crash. All randomness is `crypto.randomInt` on the server. |
 | Ranked ladder | `rankInfo`, `RANK_TIERS`, `PLACEMENT_MATCHES` in `shared/constants.js`; Elo in `room.js` `endMatch`; emblems in `client/ranks.js` | Accounts only. Placement matches use double K. |
 | Discord channel posts | `server/webhooks.js` | Deploy warnings, "update live", leaderboard podium changes. Never mentions users. |
 | Client boot, loading screen, mobile block | `client/boot.js`, `index.html` | `boot.js` is a classic script that loads `main.js`; phones never download the engine. |
@@ -46,6 +48,8 @@ For the Claude desktop app there is a `.claude/launch.json` in this repo (`previ
 | Styling | `arena.css` | One file, sections marked with `/* ---------- name ---------- */`. Design language: "rangefinder glass": frost type on smoked glass, corner brackets, tick-scale meters, amber for money/selection, cyan = friendly, red = rival. |
 
 ## Conventions
+
+- **One WebGL renderer per purpose, created once.** The menus redraw on every click; a renderer made inside a redraw leaks a context until the browser kills the oldest (the game's) and the match renders white. Keep the canvas outside the redraw and move it into a placeholder (see `ensurePreview` in `menu.js`, `mountShop` in `shop.js`).
 
 - **Comments explain why, briefly, in plain English.** The existing files are the model. No "what" comments, no essays, no changelogs in code.
 - **Naming:** camelCase JS, kebab-case ids and classes, arena ids are one lower-case word. Player-facing copy is short, sentence case, British spelling ("armour", "colour").

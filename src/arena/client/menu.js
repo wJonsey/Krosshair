@@ -9,7 +9,10 @@ import { net } from './net.js';
 import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind } from './input.js';
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
-import { buildOperator, styleOperator, animateOperator } from './characters.js';
+import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
+import { COIN, coins, initShop, keepShopInput, mountShop, onShopClick, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
+import { patternSwatch } from './skins.js';
+import { WAGER } from '../shared/economy.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -107,9 +110,15 @@ net.on('auth-required', (message) => {
 net.on('logged-out', () => { toast('Logged out.'); bus.emit('logged-out'); if (game.screen === 'home') renderHome(); });
 
 // ------------------------------------------------------------------ operator preview
-function ensurePreview(canvas) {
-  if (preview?.canvas === canvas) return;
-  preview?.renderer.dispose();
+// One canvas and one WebGL context for the whole session: the page is redrawn on every click, and a new
+// renderer per redraw used up the browser's contexts until it killed the game's own (a white screen).
+// Each redraw leaves a placeholder canvas that the real one is swapped into.
+function ensurePreview(placeholder) {
+  if (preview) {
+    if (placeholder !== preview.canvas) placeholder.replaceWith(preview.canvas);
+    return;
+  }
+  const canvas = placeholder;
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(canvas.clientWidth || 200, canvas.clientHeight || 260, false);
@@ -137,14 +146,19 @@ export function renderPreview() {
   animateOperator(preview.model, { speed: 0, crouch: false, pitch: Math.sin(now / 1700) * 0.08, weapon: 'm44', dt });
   preview.renderer.render(preview.scene, preview.camera);
 }
-function refreshPreviewLook() { if (preview) styleOperator(preview.model, { color: game.look.color, accent: game.look.accent }); }
+function refreshPreviewLook() { if (preview) styleOperator(preview.model, lookOf(game.look)); }
 
 // ------------------------------------------------------------------ home
+// Colour swatches: level ones show the level they need, coin ones show a coin until bought.
 function swatchRow(kind, key, level) {
+  const owned = game.profile?.owned || [];
   return COSMETICS[kind].map((item) => {
-    const locked = level < item.level;
+    const forSale = item.price && !owned.includes(`${kind}:${item.id}`);
+    const locked = forSale || (!item.price && level < item.level);
     const selected = game.look[key] === item.id;
-    return `<button type="button" class="swatch${selected ? ' selected' : ''}${locked ? ' locked' : ''}" data-kind="${key}" data-value="${item.id}" style="--swatch:${item.id}" title="${item.name}${locked ? ` · level ${item.level}` : ''}" aria-pressed="${selected}" ${locked ? 'aria-disabled="true"' : ''}>${locked ? `<small>${item.level}</small>` : ''}</button>`;
+    const armed = armedGear === `gear:${kind}:${item.id}`;
+    const label = forSale ? `${item.name} · ${item.price.toLocaleString('en')} coins` : `${item.name}${locked ? ` · level ${item.level}` : ''}`;
+    return `<button type="button" class="swatch${selected ? ' selected' : ''}${locked ? ' locked' : ''}${forSale ? ' for-sale' : ''}${armed ? ' armed' : ''}" data-gear-kind="${kind}" data-gear="${item.id}" data-look-key="${key}" style="--swatch:${item.id}" title="${label}" aria-pressed="${selected}">${forSale ? (armed ? '<small>BUY?</small>' : COIN) : locked ? `<small>${item.level}</small>` : ''}</button>`;
   }).join('');
 }
 
@@ -201,12 +215,13 @@ function pilotHtml() {
 }
 
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
-const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['career', 'Career'], ['leaderboard', 'Leaderboard'], ['rooms', 'Rooms']];
+const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['shop', 'Shop'], ['career', 'Career'], ['leaderboard', 'Leaderboard'], ['rooms', 'Rooms']];
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
 const pageFromHash = () => ([...HOME_PAGES, ...TOOL_PAGES].some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
 let homePage = pageFromHash();
 let pageEntering = true;
 let roomDraft = { code: null, isPublic: false };
+let wagerDraft = { size: 1, stake: 50, isPublic: false };
 function setHomePage(page) {
   if (page === homePage) return;
   homePage = page;
@@ -294,9 +309,19 @@ function playPageHtml() {
     </aside>`;
 }
 
+let armedGear = null;
 function operatorPageHtml(level) {
   const nameOfLook = (kind, key) => COSMETICS[kind].find((item) => item.id === game.look[key])?.name || '';
   const group = (label, kind, key) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, key))}</small></p><div class="swatches">${swatchRow(kind, key, level)}</div></div>`;
+  // Gear: level items unlock with XP, priced ones are bought once with coins (click twice to confirm).
+  const owned = game.profile?.owned || [];
+  const gear = (label, kind) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, kind))}</small></p><div class="gear-options">${COSMETICS[kind].map((item) => {
+    const bought = owned.includes(`${kind}:${item.id}`), key = `gear:${kind}:${item.id}`;
+    const locked = item.price ? !bought : level < item.level;
+    const tag = item.price && !bought ? `${armedGear === key ? 'Confirm ' : ''}${coins(item.price)}` : locked ? `LV ${item.level}` : '';
+    const swatch = kind === 'pattern' ? `<i class="pattern-swatch" style="background-color:${game.look.color};${item.id === 'solid' ? '' : `background-image:url(${patternSwatch(item.id)})`}"></i>` : '';
+    return `<button type="button" class="gear-option${game.look[kind] === item.id ? ' selected' : ''}${locked ? ' locked' : ''}${armedGear === key ? ' armed' : ''}" data-gear-kind="${kind}" data-gear="${item.id}">${swatch}<span>${item.name}</span>${tag ? `<small>${tag}</small>` : ''}</button>`;
+  }).join('')}</div></div>`;
   return `
     <section class="page-main operator-stage">
       <p class="eyebrow">Operator</p>
@@ -304,20 +329,34 @@ function operatorPageHtml(level) {
       <div class="stage"><canvas id="operator-preview" width="360" height="460"></canvas><div class="stage-tag"><small>${escapeHtml(game.look.title)}</small><b>${escapeHtml(game.profile?.name || game.name || 'Unnamed pilot')}</b><span>LEVEL ${level}</span></div></div>
     </section>
     <aside class="page-side">
-      ${group('Suit', 'suit', 'color')}${group('Visor', 'visor', 'accent')}${group('Tracer', 'tracer', 'tracer')}
-      <div class="panel look-group"><p class="eyebrow">Title</p><select id="title-select">${COSMETICS.title.map((t) => `<option value="${t.id}" ${game.look.title === t.id ? 'selected' : ''} ${level < t.level ? 'disabled' : ''}>${t.name}${level < t.level ? ` (level ${t.level})` : ''}</option>`).join('')}</select><small class="muted">Numbers show the level needed.</small></div>
+      ${group('Suit', 'suit', 'color')}${gear('Pattern', 'pattern')}${gear('Headgear', 'headgear')}${gear('Face', 'face')}${gear('Pack', 'pack')}${group('Visor', 'visor', 'accent')}${group('Tracer', 'tracer', 'tracer')}
+      ${gear('Title', 'title')}${gear('Gun charm', 'charm')}
     </aside>`;
+}
+
+// Wager rooms: everyone stakes the same, the winning side splits the pot.
+function wagerPanelHtml() {
+  if (!game.username) return '<div class="panel wager-panel"><p class="eyebrow">Wager match</p><p class="muted">Wagers need a Discord login.</p></div>';
+  const stake = Math.floor(Number(wagerDraft.stake)) || 0;
+  return `<div class="panel wager-panel"><p class="eyebrow">Wager match <small>you have ${coins(game.profile?.coins || 0)}</small></p>
+    <div class="segmented">${WAGER.sizes.map((n) => `<button type="button" data-wager-size="${n}" class="${wagerDraft.size === n ? 'active' : ''}">${n}v${n}</button>`).join('')}</div>
+    <label class="field">Stake each<input id="wager-stake" type="number" min="${WAGER.minStake}" max="${WAGER.maxStake}" step="1" value="${escapeHtml(wagerDraft.stake)}" /></label>
+    <p class="wager-pot">Pot <b>${coins(stake * wagerDraft.size * 2)}</b></p>
+    <label class="check"><input type="checkbox" id="wager-public" ${wagerDraft.isPublic ? 'checked' : ''} /> List publicly</label>
+    <div class="button-row"><button type="button" id="create-wager">Create wager room</button></div>
+    <small class="muted">Winners split the pot. A draw refunds everyone.</small></div>`;
 }
 
 function roomsPageHtml() {
   const inviteRoom = new URLSearchParams(location.search).get('room') || '';
-  const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms. Start one.</p>';
+  const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.wager ? `${room.wager.size}V${room.wager.size} ${coins(room.wager.stake)}` : room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms. Start one.</p>';
   return `
     <section class="page-main">
       <p class="eyebrow">Rooms</p>
       <h1 class="page-title">Bring your <em>own rivals.</em></h1>
       <div class="panel private"><p class="eyebrow">Private room</p><div class="room-row-input"><input id="room-input" maxlength="24" placeholder="room-code" value="${escapeHtml(roomDraft.code ?? inviteRoom)}" /><button type="button" id="join-room">Create / join <span>↗</span></button></div><label class="check"><input type="checkbox" id="room-public" ${roomDraft.isPublic ? 'checked' : ''} /> List publicly</label>
         <small class="muted">New code, new room. You host.</small></div>
+      ${wagerPanelHtml()}
     </section>
     <aside class="page-side"><div class="panel"><p class="eyebrow">Live rooms <small>${game.publicRooms.length}</small></p><div id="room-list">${rooms}</div></div></aside>`;
 }
@@ -326,17 +365,19 @@ export function renderHome() {
   const level = game.profile?.level || 1;
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
   if ($('#room-input')) roomDraft = { code: $('#room-input').value, isPublic: $('#room-public').checked };
+  const kept = keepShopInput();
+  if ($('#wager-stake')) wagerDraft = { ...wagerDraft, stake: $('#wager-stake').value, isPublic: $('#wager-public').checked };
   const keep = { name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') listening = null;
-  const pageHtml = homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = homePage === 'shop' ? shopPageHtml() : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
         <nav class="menu-nav" aria-label="Menu">${HOME_PAGES.map(([id, label], index) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${id === 'rooms' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</nav>
-        <div class="menu-tools"><div class="socials">${socialHtml()}</div><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="ghost-button${id === homePage ? ' active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</div>
+        <div class="menu-tools">${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="shop" title="Coins">${coins(game.profile.coins)}</button>` : ''}<div class="socials">${socialHtml()}</div><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="ghost-button${id === homePage ? ' active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
     </div>`;
@@ -354,7 +395,34 @@ export function renderHome() {
   if (keep.focus && home.querySelector(`#${keep.focus}`)) { const field = home.querySelector(`#${keep.focus}`); field.focus(); if (field.setSelectionRange && field.type === 'text') field.setSelectionRange(field.value.length, field.value.length); }
   if ($('#operator-preview')) { ensurePreview($('#operator-preview')); refreshPreviewLook(); }
   if (feedbackDraft && home.querySelector('#feedback-form')) writeFeedbackDraft(feedbackDraft);
+  restoreShopInput(kept);
+  mountShop();
 }
+
+// kind: the COSMETICS list; key: the look field it sets (the same, except colours: suit → color, visor → accent).
+function chooseGear(kind, id, key = kind) {
+  const item = COSMETICS[kind]?.find((entry) => entry.id === id);
+  if (!item) return;
+  const armKey = `gear:${kind}:${id}`;
+  if (item.price && !(game.profile?.owned || []).includes(`${kind}:${id}`)) {
+    if (!game.username) { toast('Coins need a Discord login.', 'warn'); play('deny'); return; }
+    if ((game.profile?.coins || 0) < item.price) { toast('Not enough coins.', 'warn'); play('deny'); return; }
+    if (armedGear !== armKey) { armedGear = armKey; play('ui'); renderHome(); return; }
+    armedGear = null;
+    net.send({ type: 'shop', action: 'gear', kind, id });
+    return;
+  }
+  if (!item.price && (game.profile?.level || 1) < item.level) { toast(`Unlocks at level ${item.level}.`, 'warn'); play('deny'); return; }
+  armedGear = null;
+  game.look[key] = id; saveLook(); play('ui'); renderHome();
+}
+const LOOK_KEY = { suit: 'color', visor: 'accent' };
+function refreshCoins() { const chip = $('.coin-chip'); if (chip && game.profile) chip.innerHTML = coins(game.profile.coins); }
+initShop({
+  rerender: () => renderHome(), onShop: () => game.screen === 'home' && homePage === 'shop', toast, saveLook, refreshCoins,
+  onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind].find((item) => item.id === id).name} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
+});
+home.addEventListener('input', (event) => { if (homePage !== 'shop') return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
 
@@ -380,6 +448,10 @@ home.addEventListener('click', (event) => {
   if (!target) return;
   if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
   if (onSettingsClick(event)) return;
+  if (homePage === 'shop' && onShopClick(target)) { renderHome(); return; }
+  if (target.dataset.gear) { chooseGear(target.dataset.gearKind, target.dataset.gear, target.dataset.lookKey); return; }
+  if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
+  if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }
   if (target.dataset.board) { boardTab = target.dataset.board; play('ui'); renderHome(); return; }
   if (target.dataset.kind) {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
@@ -401,7 +473,6 @@ home.addEventListener('click', (event) => {
   }
 });
 home.addEventListener('change', (event) => {
-  if (event.target.id === 'title-select') { game.look.title = event.target.value; saveLook(); }
   if (event.target.id === 'name-input') { game.name = event.target.value.trim().slice(0, 16); tabStore('name', game.name); if (game.name.length >= 2 && net.connected) net.identify(); }
 });
 home.addEventListener('submit', (event) => {
@@ -458,29 +529,33 @@ export function renderLobby() {
   const mine = room.players.find((p) => p.id === game.id);
   const host = Boolean(mine?.host);
   const custom = room.queue === 'custom';
+  const wager = room.wager;
+  const seats = wager ? wager.size : 4;
   const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}` : `${escapeHtml(p.title || '')} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
   const teamColumn = (team, label) => {
     const players = room.players.filter((p) => p.team === team);
-    const open = Math.max(0, 4 - players.length);
-    return `<section class="team-column team-${team}"><h3>${label} <small>${players.length}/4</small></h3>${players.map(slot).join('')}${Array.from({ length: open }, () => '<div class="lobby-player open"><small>OPEN SEAT</small></div>').join('')}
-      ${custom ? `<div class="team-actions">${mine?.team !== team ? `<button type="button" class="mini" data-team="${team}">Join ${label}</button>` : ''}${host ? `<button type="button" class="mini" data-addbot="${team}">+ Bot</button>` : ''}</div>` : ''}</section>`;
+    const open = Math.max(0, seats - players.length);
+    return `<section class="team-column team-${team}"><h3>${label} <small>${players.length}/${seats}</small></h3>${players.map(slot).join('')}${Array.from({ length: open }, () => '<div class="lobby-player open"><small>OPEN SEAT</small></div>').join('')}
+      ${custom ? `<div class="team-actions">${mine?.team !== team && players.length < seats ? `<button type="button" class="mini" data-team="${team}">Join ${label}</button>` : ''}${host && !wager ? `<button type="button" class="mini" data-addbot="${team}">+ Bot</button>` : ''}</div>` : ''}</section>`;
   };
   const rules = room.rules;
   const select = (key, options, value) => `<select data-rule="${key}" ${host ? '' : 'disabled'}>${options.map(([v, label]) => `<option value="${v}" ${String(v) === String(value) ? 'selected' : ''}>${label}</option>`).join('')}</select>`;
-  const rulesHtml = custom ? `<div class="panel rules"><p class="eyebrow">Match rules ${host ? '' : '<small>host only</small>'}</p><div class="rule-grid">
+  const wagerHtml = wager ? `<div class="panel wager-terms"><p class="eyebrow">Wager <small>you have ${coins(game.profile?.coins || 0)}</small></p><div class="wager-line"><div><small>STAKE</small><b>${coins(wager.stake)}</b></div><div><small>POT</small><b>${coins(wager.stake * wager.size * 2)}</b></div><div><small>FORMAT</small><b>${wager.size}v${wager.size}</b></div></div><small class="muted">Stakes are taken when the match starts. Winners split the pot. A draw refunds everyone.</small></div>` : '';
+  const rulesHtml = custom ? `${wagerHtml}<div class="panel rules"><p class="eyebrow">Match rules ${host ? '' : '<small>host only</small>'}</p><div class="rule-grid">
       <label>Arena${select('map', mapRuleOptions(), rules.map)}</label>
       <label>Format${select('roundsToWin', [[3, 'Best of 5'], [5, 'Best of 9'], [7, 'Best of 13']], rules.roundsToWin)}</label>
       <label>Round time${select('roundTime', [[60, '60 s'], [100, '100 s'], [140, '140 s']], rules.roundTime)}</label>
       <label>Starting credits${select('startCredits', [[400, '400'], [800, '800'], [2000, '2000'], [9000, '9000 (rich)']], rules.startCredits)}</label>
       <label>Conditions${select('variant', [['auto', 'Rotating'], ...Object.entries(VARIANT_NAMES)], rules.variant)}</label>
       <label>Modifier${select('modifier', Object.entries(MODIFIERS).map(([id, m]) => [id, m.name]), rules.modifier)}</label>
-      <label>Bot skill${select('botDifficulty', Object.entries(BOT_DIFFICULTY).map(([id, d]) => [id, d.name]), rules.botDifficulty)}</label>
+      ${wager ? '' : `<label>Bot skill${select('botDifficulty', Object.entries(BOT_DIFFICULTY).map(([id, d]) => [id, d.name]), rules.botDifficulty)}</label>`}
       <label>Friendly fire${select('friendlyFire', [['false', 'Off'], ['true', 'On']], rules.friendlyFire)}</label>
       <label>Sudden death${select('overtimeOn', [['true', 'On'], ['false', 'Off']], rules.overtime > 0)}</label>
     </div><small class="muted">${mapRuleSummary(rules.map)}<br />${MODIFIERS[rules.modifier].desc}</small></div>` : `<div class="panel rules"><p class="eyebrow">${room.queue.toUpperCase()} queue</p><p class="muted">${room.queue === 'ranked' ? 'Starts when a second pilot joins.' : room.queue === 'arcade' ? `<b>${MODIFIERS[rules.modifier].name}.</b> ${MODIFIERS[rules.modifier].desc}` : 'Bots hold empty seats until pilots join.'}</p></div>`;
   const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.name)}`;
   const humans = room.players.filter((p) => !p.bot).length;
-  const canStart = room.players.some((p) => p.team === 'A') && room.players.some((p) => p.team === 'B');
+  const canStart = wager ? ['A', 'B'].every((team) => room.players.filter((p) => p.team === team && !p.bot).length === wager.size) && room.players.every((p) => p.bot || p.ready)
+    : room.players.some((p) => p.team === 'A') && room.players.some((p) => p.team === 'B');
   if (!custom || (lobbyTab !== 'rules' && lobbyTab !== 'invite')) lobbyTab = 'rules';
   const readyCount = room.players.filter((p) => !p.bot && p.ready).length;
   const inviteHtml = `<div class="panel invite"><p class="eyebrow">Invite link</p><div class="room-row-input"><input readonly value="${escapeHtml(link)}" id="invite-link" /><button type="button" id="copy-invite">Copy</button></div><small class="muted">Room code: <b>${escapeHtml(room.name)}</b></small></div>`;
@@ -488,7 +563,7 @@ export function renderLobby() {
     <div class="menu-shell lobby-shell">
       <header class="menu-bar">
         <div class="brand"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="Krosshair" width="40" height="40" /><b>Kross<em>hair</em></b></div>
-        <div class="lobby-crumb"><small>${custom ? 'PRIVATE ROOM' : `${room.queue.toUpperCase()} QUEUE`}</small><b>${escapeHtml(room.name)}</b></div>
+        <div class="lobby-crumb"><small>${wager ? 'WAGER ROOM' : custom ? 'PRIVATE ROOM' : `${room.queue.toUpperCase()} QUEUE`}</small><b>${escapeHtml(room.name)}</b></div>
         <div class="menu-tools"><span><i class="live-dot"></i>${humans} PILOT${humans === 1 ? '' : 'S'}${custom ? ` · ${readyCount} READY` : ''}</span><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
       </header>
       <main class="menu-page lobby-grid">
@@ -497,7 +572,7 @@ export function renderLobby() {
           <h1 class="page-title" id="lobby-title">${custom ? 'Ready <em>room.</em>' : 'Finding a <em>match.</em>'}</h1>
           <p id="lobby-status" class="lobby-status"></p>
           <div class="teams">${teamColumn('A', 'Alpha')}<div class="versus"><i></i>VS<i></i></div>${teamColumn('B', 'Bravo')}</div>
-          <div class="lobby-actions">${custom ? `<button type="button" id="ready-toggle" class="${mine?.ready ? 'secondary-button' : ''}">${mine?.ready ? 'Unready' : 'Ready up'}</button>${host ? `<button type="button" id="start-match" ${canStart ? '' : 'disabled'}>Start match <span>→</span></button>` : '<span class="muted">Waiting for host…</span>'}` : ''}</div>
+          <div class="lobby-actions">${custom ? `<button type="button" id="ready-toggle" class="${mine?.ready ? 'secondary-button' : ''}">${mine?.ready ? 'Unready' : wager ? `Ready · stake ${wager.stake}` : 'Ready up'}</button>${host ? `<button type="button" id="start-match" ${canStart ? '' : 'disabled'}>Start match <span>→</span></button>` : '<span class="muted">Waiting for host…</span>'}` : ''}</div>
         </section>
         <aside class="page-side">
           ${custom ? `<div class="side-tabs"><button type="button" class="tab${lobbyTab === 'rules' ? ' active' : ''}" data-lobby-tab="rules">Match rules</button><button type="button" class="tab${lobbyTab === 'invite' ? ' active' : ''}" data-lobby-tab="invite">Invite</button></div>` : ''}
@@ -516,7 +591,7 @@ export function renderLobby() {
     if (!game.room || game.room.phase !== 'lobby') return;
     if (custom) {
       const ready = room.players.filter((p) => !p.bot && p.ready).length;
-      status.textContent = !canStart ? 'Each team needs a pilot or a bot.' : `${ready}/${humans} ready`;
+      status.textContent = wager ? (humans < wager.size * 2 ? `Waiting for ${wager.size * 2 - humans} more. Needs a full ${wager.size}v${wager.size}.` : `${ready}/${humans} ready`) : !canStart ? 'Each team needs a pilot or a bot.' : `${ready}/${humans} ready`;
       status.classList.toggle('ok', canStart);
     } else if (room.autoStartAt) {
       const seconds = Math.max(0, Math.ceil(room.autoStartAt - net.time()));
@@ -874,7 +949,9 @@ function renderEnd() {
     const profile = game.profile;
     const base = xpForLevel(level), next = xpForLevel(level + 1);
     const percent = profile ? Math.round(((profile.xp - base) / (next - base)) * 100) : 0;
-    progress = `<div class="panel xp"><div class="xp-head"><b>+${report.xp} XP</b>${report.ratingDelta ? `<b class="${report.ratingDelta > 0 ? 'good' : 'bad'}">${report.ratingDelta > 0 ? '+' : ''}${report.ratingDelta} SR</b>` : ''}<span>LEVEL ${level}${report.levelAfter > report.levelBefore ? ' · LEVEL UP' : ''}</span></div><div class="meter"><i style="width:${percent}%"></i></div>
+    progress = `<div class="panel xp"><div class="xp-head"><b>+${report.xp} XP</b>${report.ratingDelta ? `<b class="${report.ratingDelta > 0 ? 'good' : 'bad'}">${report.ratingDelta > 0 ? '+' : ''}${report.ratingDelta} SR</b>` : ''}${report.coins?.total ? `<b class="coin-gain">+${report.coins.total} ${COIN}</b>` : ''}<span>LEVEL ${level}${report.levelAfter > report.levelBefore ? ' · LEVEL UP' : ''}</span></div><div class="meter"><i style="width:${percent}%"></i></div>
+      ${report.coins?.lines?.length ? `<p class="coin-lines">${report.coins.lines.map((line) => `${line.label} +${line.amount}`).join(' · ')}</p>` : ''}
+      ${report.wager ? `<p class="unlock ${report.wager.payout > report.wager.stake ? '' : 'bad'}">WAGER · ${report.wager.payout > report.wager.stake ? `WON THE POT +${report.wager.payout}` : report.wager.payout === report.wager.stake ? 'STAKE REFUNDED' : `LOST THE STAKE -${report.wager.stake}`}</p>` : ''}
       ${rankReportHtml(report.rank)}
       ${report.completed.map((c) => `<p class="unlock">CONTRACT COMPLETE · ${escapeHtml(c.text)} <em>+${c.xp} XP</em></p>`).join('')}${report.unlocks.map((u) => `<p class="unlock">UNLOCKED · ${escapeHtml(u.name)} ${u.kind}</p>`).join('')}</div>`;
   }

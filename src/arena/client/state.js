@@ -1,4 +1,5 @@
 // Shared client state + a tiny event bus so modules stay decoupled.
+import { DEFAULT_LOOK } from '../shared/constants.js';
 const listeners = new Map();
 export const bus = {
   on(type, handler) { if (!listeners.has(type)) listeners.set(type, new Set()); listeners.get(type).add(handler); },
@@ -62,7 +63,7 @@ export const game = {
   discord: { enabled: false, invite: '' }, // from the server's 'config' message
   loginRequired: false, // set by the server's 'config' message: true once it can offer a login
   session,
-  look: stored('look', { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' }),
+  look: { ...DEFAULT_LOOK, ...stored('look', {}) },
   settings: migrateSettings({ ...DEFAULT_SETTINGS, settingsVersion: 1, ...stored('settings', {}) }),
   tutorialDone: stored('tutorialDone', false),
   profile: null,

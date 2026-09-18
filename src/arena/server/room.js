@@ -6,6 +6,7 @@ import {
   HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE,
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
+import { killCoins } from '../shared/economy.js';
 import { getMap, zoneAt } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
@@ -18,12 +19,16 @@ const round2 = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
 
 function freshMatchStats() {
-  return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, weaponKills: {} };
+  return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, coinKills: 0, weaponKills: {} };
 }
 
 export class Room {
-  constructor({ name, queue = 'custom', isPublic = false, profiles, onEmpty }) {
+  constructor({ name, queue = 'custom', isPublic = false, profiles, onEmpty, wager = null }) {
     this.name = name;
+    // Wager rooms are private-room rules with a stake: { size: players a side, stake: coins each }.
+    this.wager = wager;
+    this.pot = null;
+    this.forfeitAt = { A: 0, B: 0 };
     this.queue = queue;
     this.mode = queue === 'range' ? 'range' : 'match';
     this.isPublic = isPublic;
@@ -71,7 +76,7 @@ export class Room {
     this.interval = setInterval(() => this.tick(), 1000 / 30);
   }
 
-  close() { this.closed = true; clearInterval(this.interval); }
+  close() { this.refundWager('room closed'); this.closed = true; clearInterval(this.interval); }
 
   // ---------------------------------------------------------------- messaging
   send(player, message) {
@@ -94,19 +99,20 @@ export class Room {
   get live() { return this.phase === 'live' || this.phase === 'overtime' || this.phase === 'range'; }
 
   info() {
-    return { name: this.name, queue: this.queue, phase: this.phase, players: this.connectedHumans().length, bots: [...this.players.values()].filter((p) => p.bot && !p.dummy).length, max: MAX_PLAYERS, scores: this.scores, variant: this.variant };
+    return { name: this.name, queue: this.queue, wager: this.wager, phase: this.phase, players: this.connectedHumans().length, bots: [...this.players.values()].filter((p) => p.bot && !p.dummy).length, max: MAX_PLAYERS, scores: this.scores, variant: this.variant };
   }
 
   roomState() {
     return {
       type: 'room', name: this.name, queue: this.queue, mode: this.mode, isPublic: this.isPublic, phase: this.phase, phaseEnds: this.phaseEnds,
       round: this.round, scores: this.scores, rules: this.rules, variant: this.variant, swapped: this.swapped, map: this.map.id, ...mapState(this),
-      autoStartAt: this.autoStartAt, rematch: [...this.rematch],
+      autoStartAt: this.autoStartAt, rematch: [...this.rematch], wager: this.wager, pot: this.pot && !this.pot.settled ? this.pot.stake * this.pot.entries.length : 0,
       players: [...this.players.values()].filter((player) => !player.dummy).map((player) => ({
         id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, connected: player.connected, ready: player.ready,
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
-        title: player.title, level: player.level, rating: player.rating, rankedMatches: player.rankedMatches, primary: player.weapons.primary, armor: player.armor > 0,
+        title: player.title, headgear: player.headgear, face: player.face, pack: player.pack, pattern: player.pattern, charm: player.charm, skins: player.skins,
+        level: player.level, rating: player.rating, rankedMatches: player.rankedMatches, primary: player.weapons.primary, armor: player.armor > 0,
       })),
     };
   }
@@ -125,7 +131,7 @@ export class Room {
   newPlayer(base) {
     const player = {
       id: `p${this.nextPlayer++}`, name: 'Pilot', team: 'A', bot: false, dummy: false, socket: null, connected: true, ready: false, host: false,
-      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
+      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {}, level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
       token: null, session: null, credits: this.rules.startCredits, match: freshMatchStats(),
       alive: false, hp: 100, armor: 0, helmet: false, weapons: { ...DEFAULT_LOADOUT }, ammo: {}, active: 'primary', gadgets: [], bought: {},
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,
@@ -154,6 +160,7 @@ export class Room {
         return existing;
       }
     }
+    if (this.wager && this.humans().length >= this.wager.size * 2) return null;
     const seats = this.team('A').length + this.team('B').length;
     if (this.mode === 'range' ? this.connectedHumans().length >= 4 : seats >= MAX_PLAYERS) {
       // A full lobby can still make room by dropping one of its matchmaking bots.
@@ -258,6 +265,7 @@ export class Room {
   // ---------------------------------------------------------------- match flow
   startMatch() {
     if (this.mode !== 'match') return;
+    if (this.wager && !this.takeStakes()) { this.phase = 'lobby'; this.phaseEnds = 0; this.broadcast({ type: 'phase', phase: 'lobby', phaseEnds: 0 }); this.pushRoom(); return; }
     if (this.queue !== 'custom') this.fillBots();
     if (!this.team('A').length || !this.team('B').length) return;
     this.round = 0;
@@ -466,22 +474,94 @@ export class Room {
       type: 'match-end', winner, scores: this.scores, table, mvp: mvp?.id || null, phaseEnds: this.phaseEnds, variant: this.variant,
       modifier: this.rules.modifier, queue: this.queue, replay: this.lastKill,
     });
+    const wagers = this.settleWager(winner);
+    const humansInMatch = everyone.filter((p) => !p.bot).length;
+    const topKills = Math.max(1, ...everyone.map((p) => p.match.kills));
     for (const player of this.humans()) {
       const won = winner === player.team;
+      const vsHumans = this.team(player.team === 'A' ? 'B' : 'A').some((p) => !p.bot);
       const expected = player.team === 'A' ? expectedA : 1 - expectedA;
       // Placement matches swing twice as far, so a new pilot finds their level quickly.
       const k = player.rankedMatches < PLACEMENT_MATCHES ? 60 : 30;
       const ratingDelta = ranked ? k * ((winner ? (won ? 1 : 0) : 0.5) - expected) : 0;
       const report = this.profiles.recordMatch(player.token, {
-        ...player.match, won, draw: !winner, ranked, ratingDelta, mode: this.queue, variant: this.variant,
+        ...player.match, won, draw: !winner, ranked, ratingDelta, mode: this.wager ? 'wager' : this.queue, variant: this.variant,
+        vsHumans, topKills: humansInMatch >= 2 && player.match.kills === topKills,
         score: `${this.scores[player.team]}–${this.scores[player.team === 'A' ? 'B' : 'A']}`, mvp: mvp && mvp.id === player.id,
         rivals: everyone.filter((p) => !p.bot && p.id !== player.id).map((p) => p.name),
       });
       const view = this.profiles.view(player.token);
       player.level = view.level; player.rating = view.rating; player.rankedMatches = view.rankedMatches;
+      if (wagers[player.token]) report.wager = wagers[player.token];
       this.send(player, { type: 'report', report, profile: view });
     }
     this.pushRoom();
+  }
+
+  // ---------------------------------------------------------------- wagers
+  wagerReady() {
+    const size = this.wager.size;
+    return ['A', 'B'].every((team) => { const side = this.team(team); return side.length === size && side.every((p) => !p.bot && p.connected); });
+  }
+  // Everyone's stake is taken as the match starts. If anyone can't cover it, nobody pays and it's back to the lobby.
+  takeStakes() {
+    const { stake } = this.wager;
+    if (!this.wagerReady()) { this.broadcast({ type: 'notice', text: `Wagers need a full ${this.wager.size}v${this.wager.size}.`, tone: 'warn' }); return false; }
+    const held = [];
+    for (const player of this.humans()) {
+      if (!this.profiles.hold(player.token, stake, this.name)) {
+        held.forEach((p) => this.profiles.settle(p.token, stake, 'Wager refunded (cancelled)'));
+        this.broadcast({ type: 'notice', text: `${player.name} can't cover the stake.`, tone: 'warn' });
+        return false;
+      }
+      held.push(player);
+    }
+    this.pot = { stake, settled: false, entries: held.map((p) => ({ token: p.token, name: p.name, team: p.team })) };
+    this.broadcast({ type: 'notice', text: `Stakes in. Pot: ${stake * held.length} coins.`, tone: 'good' });
+    return true;
+  }
+  // The winning team splits the pot; a draw hands every stake back.
+  settleWager(winner) {
+    const pot = this.pot;
+    if (!pot || pot.settled) return {};
+    pot.settled = true;
+    const total = pot.stake * pot.entries.length;
+    const winners = winner ? pot.entries.filter((entry) => entry.team === winner) : [];
+    const results = {};
+    if (!winners.length) {
+      for (const entry of pot.entries) { this.profiles.settle(entry.token, pot.stake, 'Wager refunded (draw)'); results[entry.token] = { stake: pot.stake, payout: pot.stake }; }
+      return results;
+    }
+    const share = Math.floor(total / winners.length);
+    let spare = total - share * winners.length;
+    for (const entry of pot.entries) {
+      const payout = entry.team === winner ? share + (spare-- > 0 ? 1 : 0) : 0;
+      this.profiles.settle(entry.token, payout, payout ? `Won the pot in ${this.name}` : `Lost the wager in ${this.name}`);
+      results[entry.token] = { stake: pot.stake, payout };
+    }
+    this.broadcast({ type: 'feed', text: `${winners.map((w) => w.name).join(' & ')} ${winners.length === 1 ? 'takes' : 'take'} the pot: ${total} coins`, tone: 'good' });
+    return results;
+  }
+  refundWager(reason) {
+    const pot = this.pot;
+    if (!pot || pot.settled) return;
+    pot.settled = true;
+    for (const entry of pot.entries) this.profiles.settle(entry.token, pot.stake, `Wager refunded (${reason})`);
+  }
+  // A side with nobody connected for the reconnect window forfeits the match (and the pot).
+  checkForfeit(t) {
+    if (!this.pot || this.pot.settled || !['buy', 'live', 'overtime', 'roundEnd'].includes(this.phase)) return;
+    for (const team of ['A', 'B']) {
+      if (this.team(team).some((p) => !p.bot && p.connected)) { this.forfeitAt[team] = 0; continue; }
+      if (!this.forfeitAt[team]) { this.forfeitAt[team] = t + RECONNECT_GRACE; continue; }
+      if (t < this.forfeitAt[team]) continue;
+      const other = team === 'A' ? 'B' : 'A';
+      this.forfeitAt = { A: 0, B: 0 };
+      this.scores[other] = this.rules.roundsToWin;
+      this.broadcast({ type: 'feed', text: 'The other side left. Match forfeited.', tone: 'warn' });
+      this.endMatch();
+      return;
+    }
   }
 
   toLobby() {
@@ -509,6 +589,7 @@ export class Room {
     this.time = t;
     if (this.emptySince && t - this.emptySince > (this.phase === 'lobby' || this.mode === 'range' ? 5 : RECONNECT_GRACE + 5)) { this.onEmpty(this); return; }
 
+    if (this.wager) this.checkForfeit(t);
     if (this.phase === 'lobby' && this.autoStartAt && t >= this.autoStartAt) {
       if (this.queue === 'ranked' && this.connectedHumans().length < 2) this.autoStartAt = 0; else beginMatch(this);
     } else if (this.phase === 'mapvote') tickMapVote(this, t);
@@ -599,16 +680,18 @@ export class Room {
       case 'chat': return this.onChat(player, message);
       case 'quick': return this.onQuick(player, message);
       case 'react': return this.onReact(player, message);
-      case 'ready': player.ready = Boolean(message.ready); return this.pushRoom();
+      case 'ready':
+        if (message.ready && this.wager && this.profiles.coins(player.token) < this.wager.stake) return this.notice(player, 'Not enough coins for the stake.', 'warn');
+        player.ready = Boolean(message.ready); return this.pushRoom();
       case 'team': return this.onTeam(player, message.team);
       case 'rules': return this.onRules(player, message.rules);
-      case 'addbot': if (player.host && this.phase === 'lobby') { this.addBot(message.team === 'B' ? 'B' : 'A', message.difficulty); this.pushRoom(); } return;
+      case 'addbot': if (player.host && this.phase === 'lobby' && !this.wager) { this.addBot(message.team === 'B' ? 'B' : 'A', message.difficulty); this.pushRoom(); } return;
       case 'removebot': {
         const bot = this.players.get(message.id);
         if (player.host && this.phase === 'lobby' && bot?.bot) { this.removePlayer(bot); this.pushRoom(); }
         return;
       }
-      case 'start': if (player.host && this.phase === 'lobby') { if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Each team needs a pilot or a bot.', 'warn'); else beginMatch(this); } return;
+      case 'start': if (player.host && this.phase === 'lobby') { if (this.wager && (!this.wagerReady() || this.humans().some((p) => !p.ready))) this.notice(player, `Needs a full ${this.wager.size}v${this.wager.size}, everyone ready.`, 'warn'); else if (!this.team('A').length || !this.team('B').length) this.notice(player, 'Each team needs a pilot or a bot.', 'warn'); else beginMatch(this); } return;
       case 'map-vote': return castMapVote(this, player, message.id);
       case 'rematch': if (this.phase === 'matchEnd') { this.rematch.add(player.id); this.pushRoom(); } return;
       case 'respawn': if (this.mode === 'range' && !player.alive) this.spawn(player); return;
@@ -617,7 +700,7 @@ export class Room {
   }
 
   onTeam(player, team) {
-    if (this.phase !== 'lobby' || this.queue !== 'custom' || (team !== 'A' && team !== 'B') || this.team(team).length >= MAX_PLAYERS / 2) return;
+    if (this.phase !== 'lobby' || this.queue !== 'custom' || (team !== 'A' && team !== 'B') || this.team(team).length >= (this.wager ? this.wager.size : MAX_PLAYERS / 2)) return;
     player.team = team; player.ready = false;
     this.pushRoom();
   }
@@ -635,6 +718,8 @@ export class Room {
     if (typeof rules.friendlyFire === 'boolean') next.friendlyFire = rules.friendlyFire;
     if (typeof rules.overtimeOn === 'boolean') next.overtime = rules.overtimeOn ? DEFAULT_RULES.overtime : 0;
     this.rules = next;
+    // Changing the terms after people have readied up for a stake means they ready again.
+    if (this.wager) for (const p of this.humans()) p.ready = false;
     for (const bot of this.players.values()) if (bot.bot && !bot.dummy) bot.difficulty = next.botDifficulty;
     this.pushRoom();
   }
@@ -845,7 +930,7 @@ export class Room {
       const friendlyKill = killer.team === victim.team;
       if (!victim.dummy && !friendlyKill) {
         killer.match.kills += 1;
-        if (victim.bot) killer.match.botKills += 1; else killer.match.playerKills += 1;
+        if (victim.bot) killer.match.botKills += 1; else { killer.match.playerKills += 1; killer.match.coinKills += killCoins(killer.level, victim.level); }
         this.roundKills?.set(killer.id, (this.roundKills.get(killer.id) || 0) + 1);
         const record = killer.match.weaponKills[weapon.id] || (killer.match.weaponKills[weapon.id] = { kills: 0, headshots: 0 });
         record.kills += 1;

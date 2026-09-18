@@ -21,11 +21,42 @@ function ensureStage() {
   return stage;
 }
 
+// Three-quarter side view, barrel to the right, framed to the model's length.
+function shoot(model) {
+  const { canvas, renderer, scene, camera } = ensureStage();
+  model.rotation.set(0.06, -0.42, 0);
+  scene.add(model);
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+  const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
+  const span = Math.max(Math.hypot(size.x, size.z), size.y * camera.aspect);
+  const distance = (span / 2) * 1.12 / Math.tan(hfov / 2) + size.x;
+  camera.position.set(center.x + distance, center.y + distance * 0.18, center.z);
+  camera.lookAt(center);
+  renderer.render(scene, camera);
+  scene.remove(model);
+  return canvas.toDataURL('image/png');
+}
+
+// The gun as it looks in hand with a finish on, for the shop.
+export function skinArt(id, finish) {
+  const key = `${id}:${finish}`;
+  if (cache.has(key)) return cache.get(key);
+  let url = '';
+  try {
+    const model = buildWeapon(id, '#ffb547', finish);
+    model.children.filter((child) => child.userData.arm).forEach((arm) => model.remove(arm));
+    url = shoot(model);
+  } catch { url = ''; }
+  cache.set(key, url);
+  return url;
+}
+
 export function weaponArt(id) {
   if (cache.has(id)) return cache.get(id);
   let url = '';
   try {
-    const { canvas, renderer, scene, camera } = ensureStage();
     const model = buildWeapon(id, '#ffb547');
     model.children.filter((child) => child.userData.arm).forEach((arm) => model.remove(arm));
     const fill = new THREE.MeshStandardMaterial({ color: '#4a5864', roughness: 0.5, metalness: 0.3 });
@@ -36,20 +67,7 @@ export function weaponArt(id) {
       mesh.material = glowing ? new THREE.MeshBasicMaterial({ color: '#ffb547' }) : fill;
       if (!glowing) mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 28), edge));
     });
-    // Three-quarter side view, barrel to the right, framed to the model's length.
-    model.rotation.set(0.06, -0.42, 0);
-    scene.add(model);
-    model.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-    const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect);
-    const span = Math.max(Math.hypot(size.x, size.z), size.y * camera.aspect);
-    const distance = (span / 2) * 1.12 / Math.tan(hfov / 2) + size.x;
-    camera.position.set(center.x + distance, center.y + distance * 0.18, center.z);
-    camera.lookAt(center);
-    renderer.render(scene, camera);
-    url = canvas.toDataURL('image/png');
-    scene.remove(model);
+    url = shoot(model);
     model.traverse((mesh) => { if (mesh.geometry) mesh.geometry.dispose(); });
     fill.dispose(); edge.dispose();
   } catch { url = ''; }

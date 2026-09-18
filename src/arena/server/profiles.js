@@ -4,9 +4,13 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
+import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, DEFAULT_LOOK, WEAPONS, cosmeticUnlocked } from '../shared/constants.js';
+import { COINS, finishInfo } from '../shared/economy.js';
 
 const HISTORY_LIMIT = 25;
+const COIN_LOG_LIMIT = 30;
+// Look keys and the cosmetics list that validates each.
+const LOOK_KINDS = { color: 'suit', accent: 'visor', tracer: 'tracer', title: 'title', headgear: 'headgear', face: 'face', pack: 'pack', pattern: 'pattern', charm: 'charm' };
 // Settings a pilot's account remembers, with the values the server will accept.
 // Key binds and the crosshair are structured, so they get their own checks: only the shapes the client
 // writes are kept, everything is bounded, and nothing unexpected reaches the saved file.
@@ -51,6 +55,14 @@ export class ProfileStore {
       const data = JSON.parse(await readFile(this.file, 'utf8'));
       Object.entries(data).forEach(([key, profile]) => this.profiles.set(key, profile));
     } catch { /* first boot */ }
+    // Coins held for a wager when the process died are handed back: the match never finished.
+    for (const profile of this.profiles.values()) {
+      if (!profile.escrow) continue;
+      this.logCoins(profile, profile.escrow.amount, 'refund', 'Wager refunded (server restart)');
+      profile.coins = (profile.coins || 0) + profile.escrow.amount;
+      profile.escrow = null;
+      this.scheduleSave();
+    }
   }
 
   // What goes to disk: everything except guests.
@@ -120,6 +132,55 @@ export class ProfileStore {
     return profile;
   }
 
+  // ---- coins. Guests have none: their profiles vanish, so nothing earned or sent could be kept.
+  // True for any guest token, live or already gone: nothing about it may be saved or paid.
+  unsaved(token) { return this.guests.has(ProfileStore.key(token)); }
+  wallet(token) {
+    const profile = this.get(token);
+    if (!Number.isFinite(profile.coins) && !this.unsaved(token)) {
+      profile.coins = 0; profile.coinLog = [];
+      this.logCoins(profile, COINS.starter, 'starter', 'Starter coins');
+      profile.coins = COINS.starter;
+      this.scheduleSave();
+    }
+    profile.owned ||= []; profile.skins ||= {};
+    return profile;
+  }
+  coins(token) { return this.unsaved(token) ? 0 : this.wallet(token).coins; }
+  logCoins(profile, amount, kind, note) {
+    profile.coinLog = [{ at: Date.now(), amount: Math.round(amount), kind, note: String(note).slice(0, 80) }, ...(profile.coinLog || [])].slice(0, COIN_LOG_LIMIT);
+  }
+  credit(token, amount, kind, note) {
+    amount = Math.floor(amount);
+    if (this.unsaved(token) || !(amount > 0)) return false;
+    const profile = this.wallet(token);
+    profile.coins += amount;
+    this.logCoins(profile, amount, kind, note);
+    this.scheduleSave();
+    return true;
+  }
+  debit(token, amount, kind, note) {
+    amount = Math.floor(amount);
+    if (this.unsaved(token) || !(amount > 0)) return false;
+    const profile = this.wallet(token);
+    if (profile.coins < amount) return false;
+    profile.coins -= amount;
+    this.logCoins(profile, -amount, kind, note);
+    this.scheduleSave();
+    return true;
+  }
+  // Wager stakes are held on the profile until the match settles, so a crash can refund them.
+  hold(token, amount, room) {
+    if (!this.debit(token, amount, 'wager', `Staked in ${room}`)) return false;
+    this.get(token).escrow = { amount, room, at: Date.now() };
+    return true;
+  }
+  settle(token, payout, note) {
+    const profile = this.get(token);
+    profile.escrow = null;
+    if (payout > 0) this.credit(token, payout, 'wager', note); else this.scheduleSave();
+  }
+
   rollContracts(profile) {
     const today = dateKey();
     if (profile.contracts.date !== today) profile.contracts = { date: today, progress: {}, claimed: {} };
@@ -127,9 +188,11 @@ export class ProfileStore {
 
   // Shape sent to the browser.
   view(token) {
-    const profile = this.get(token);
+    const guest = this.unsaved(token);
+    const profile = guest ? this.get(token) : this.wallet(token);
     const level = levelFromXp(profile.xp);
     return {
+      coins: guest ? 0 : profile.coins, owned: profile.owned || [], skins: profile.skins || {}, coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
@@ -159,10 +222,34 @@ export class ProfileStore {
     this.scheduleSave();
   }
 
+  // Only what this pilot has unlocked or bought survives; anything else falls back to the default.
   sanitizeCosmetics(token, look) {
-    const level = levelFromXp(this.get(token).xp);
-    const pick = (kind, value) => (cosmeticUnlocked(kind, value, level) ? value : COSMETICS[kind][0].id);
-    return { color: pick('suit', look.color), accent: pick('visor', look.accent), tracer: pick('tracer', look.tracer), title: pick('title', look.title) };
+    const profile = this.get(token);
+    const level = levelFromXp(profile.xp);
+    const owned = profile.owned || [];
+    const clean = {};
+    for (const [key, kind] of Object.entries(LOOK_KINDS)) clean[key] = cosmeticUnlocked(kind, look[key], level, owned) ? look[key] : DEFAULT_LOOK[key];
+    clean.skins = {};
+    if (look.skins && typeof look.skins === 'object') {
+      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && profile.skins?.[weapon]?.includes(finish)) clean.skins[weapon] = finish;
+    }
+    return clean;
+  }
+
+  // Coins for one match: finishing, winning (worth less against bots), topping the kills, and each kill
+  // (humans scaled by level, bots barely anything). Capped, rounded down, and never paid to guests.
+  matchCoins(token, summary, contracts) {
+    if (this.unsaved(token)) return null;
+    const lines = [['Match', COINS.finish]];
+    if (summary.won) lines.push(['Win', summary.vsHumans ? COINS.win : COINS.winVsBots]);
+    if (summary.topKills) lines.push(['Top kills', COINS.topKills]);
+    const kills = (summary.coinKills || 0) + (summary.botKills || 0) * COINS.botKill;
+    if (kills >= 1) lines.push(['Kills', Math.floor(kills)]);
+    if (contracts) lines.push(['Contracts', contracts * COINS.contract]);
+    let total = 0;
+    const paid = lines.map(([label, amount]) => { const take = Math.max(0, Math.min(Math.floor(amount), COINS.cap - total)); total += take; return { label, amount: take }; }).filter((line) => line.amount > 0);
+    if (total > 0) this.credit(token, total, 'match', `${summary.won ? 'Win' : summary.draw ? 'Draw' : 'Loss'} · ${summary.mode || 'match'}`);
+    return { total, lines: paid };
   }
 
   // summary: { won, draw, ranked, ratingDelta, mode, score, kills, deaths, ..., weaponKills: {id:{kills,headshots}}, rivals: [names] }
@@ -198,6 +285,7 @@ export class ProfileStore {
       }
     }
     profile.xp += xp;
+    const coins = this.matchCoins(token, summary, completed.length);
     const ratingBefore = Math.round(profile.rating), rankedBefore = profile.rankedMatches;
     if (summary.ranked) { profile.rating = Math.max(100, profile.rating + summary.ratingDelta); profile.rankedMatches += 1; }
     profile.history.unshift({
@@ -216,6 +304,6 @@ export class ProfileStore {
       for (const [kind, items] of Object.entries(COSMETICS)) for (const item of items) if (item.level > before && item.level <= after) unlocks.push({ kind, name: item.name });
     }
     const rank = summary.ranked ? { before: ratingBefore, after: Math.round(profile.rating), matchesBefore: rankedBefore, matchesAfter: profile.rankedMatches } : null;
-    return { xp, levelBefore: before, levelAfter: after, completed, unlocks, ratingDelta: summary.ranked ? Math.round(profile.rating) - ratingBefore : 0, rank };
+    return { xp, levelBefore: before, levelAfter: after, completed, unlocks, ratingDelta: summary.ranked ? Math.round(profile.rating) - ratingBefore : 0, rank, coins };
   }
 }

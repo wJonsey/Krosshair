@@ -3,8 +3,14 @@
   "configurations": [
     {
       "name": "krosshair",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "arena"],
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "DISCORD_WEBHOOK_UPDATES=off",
+        "DISCORD_WEBHOOK_LEADERBOARD=off",
+        "npm",
+        "run",
+        "arena"
+      ],
       "port": 4174
     }
   ]

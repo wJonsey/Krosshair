@@ -105,6 +105,7 @@ Radar Pulse · Recon Drone (pilotable) · Decoy Hologram · Deploy Shield · Sil
 | Arcade | The day's modifier: Headhunter, One Tap, Low Orbit or Sidearms Only. |
 | Bot match | 3v3 against Recruit, Veteran or Elite bots. The level is a centre point. Every bot rolls its own skill and habits around it, so no two play alike. |
 | Practice range | Free gear, moving targets, wall-penetration and glass lessons, guided drills. |
+| Wager | A private room where every pilot stakes the same coins (1v1, 2v2 or 3v3, humans with a Discord login only). Stakes are taken at the start; the winning side splits the pot; a draw refunds everyone. A side that leaves for good forfeits. |
 | Private room | Room code + invite link, team select, bots, custom rules (arena vote / random / fixed, format, round time, credits, weather, modifier, friendly fire, sudden death). |
 
 ### Arenas
@@ -140,7 +141,10 @@ Every sound effect is synthesised in code (`client/audio.js`): gunshots are laye
 - **Discord login** creates the account on the first visit; later logins find it by Discord ID.
 - The account keeps XP and level, skill rating, career stats, per-weapon mastery, the last 25 matches, three daily contracts (reset 00:00 UTC), the operator's look, and every setting (key binds and crosshair included), so they follow the pilot between devices.
 - **Ranked ladder:** the first five ranked matches are placements (rating moves twice as far) and show no rank. After that the skill rating maps to Bronze, Silver, Gold, Platinum and Diamond, each with divisions III → I, and Apex from 1850 SR. The rank emblem and progress to the next division are on the Play and Career pages; the end screen shows placements, promotions and demotions; ranked lobbies show everyone's rank and matchmaking prefers the lobby closest to your rating.
-- **Leaderboard** (menu tab 04): skill rating, level, player kills, wins, headshots and longest kill; podium, top 50, and your own position. The Play page shows the top five.
+- **Coins** are the account currency (Discord accounts only; guests earn none). They are slow to earn: a finished match 4, a win 12 (3 against bots only), most kills in a match with other people 8, each human kill 2 (a little more for higher-level victims, a little less for lower), each bot kill 0.4, each daily contract 5, and never more than 60 from one match. New accounts start with 50. Coins are never sold for money.
+- **Shop** (menu tab 03): 36 gun finishes bought per gun and seen by everyone in first and third person: Common 150, Rare 400, Epic 1,000, Legendary 2,500, Mythic 6,000. Legendary and Mythic finishes are their own shaders (a gold shine sweep, a parallax starfield, glowing magma cracks, shifting dragon scales, hex light waves, aurora ribbons, live fire, a glitching hologram, thin-film prism) and the shop shows every finish on a live turntable. Two crates (Field 120, Elite 450 with no commons; odds on the page, duplicates pay 30% back); coin flip, dice and slots, each keeping about 5%; and a wallet with history and **sending coins** to any pilot by username (their name and Discord picture are shown before you confirm). Neon Grid, Circuit, Toxic and Frostbite move too. The Kestrel Blade takes finishes like any gun.
+- **Operator**: suit, visor and tracer colours, titles, 9 suit patterns, 11 headgear (up to a crown), 9 face pieces (up to a cyber visor), 7 packs (up to a jetpack) and 9 gun charms that hang off your gun and swing as you move. Some unlock with level; the rest are bought once with coins, 300 to 8,000.
+- **Leaderboard** (menu tab 05): skill rating, level, player kills, wins, headshots and longest kill; podium, top 50, and your own position. The Play page shows the top five.
 - Phones and tablets are stopped at the loading screen: the game needs a mouse and keyboard, and the engine is never downloaded on them.
 
 ### Controls and settings
@@ -172,7 +176,8 @@ src/arena/
 ├── music/                       # Your soundtrack: audio files + tracks.json (see its README)
 ├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking, auth routes, status API
 ├── shared/                      # Runs on both sides: the simulation must agree
-│   ├── constants.js             # Weapons, gadgets, economy, rules, progression, bot levels, Discord IDs
+│   ├── constants.js             # Weapons, gadgets, match economy, rules, progression, cosmetics, bot levels, Discord IDs
+│   ├── economy.js               # Coins: earn rates, skin finishes and prices, crate odds, minigame maths, wagers
 │   ├── map.js, mapkit.js        # Map registry + Kestrel Yard; box-map authoring tools (arenaShell, flight, SYM …)
 │   ├── maps/                    # One file per arena
 │   ├── physics.js, combat.js    # Box world, movement, raycasts; hit zones, penetration, spread
@@ -181,7 +186,8 @@ src/arena/
 │   ├── room.js                  # Match state machine, authoritative combat, gadgets
 │   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
 │   ├── bots.js, nav.js          # Bot personalities + AI; generated navigation grid
-│   ├── profiles.js, accounts.js # JSON stores: progression and settings; accounts and sessions
+│   ├── profiles.js, accounts.js # JSON stores: progression, settings and coins (with wager escrow); accounts and sessions
+│   ├── economy.js               # Shop, crates, minigames and coin transfers (server-side dice)
 │   ├── discord.js               # "Log in with Discord" (implicit or code flow) and auto-join
 │   └── webhooks.js              # Discord channel posts: deploy warnings, leaderboard changes
 ├── client/                      # Three.js client
@@ -189,6 +195,8 @@ src/arena/
 │   ├── main.js, net.js, state.js
 │   ├── world.js, characters.js, viewmodel.js, effects.js, audio.js
 │   ├── player.js, input.js, hud.js, crosshair.js
+│   ├── skins.js, ranks.js       # Procedural gun finishes and suit patterns; rank emblems
+│   ├── shop.js                  # Shop page: skins, crates, games, wallet
 │   └── menu.js, mapvote.js      # Every screen outside the match
 └── tests/                       # `npm test`
 backend/                         # Unrelated legacy Python API (Call of Duty profile lookup); not part of the game

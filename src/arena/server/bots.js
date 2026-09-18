@@ -67,6 +67,8 @@ export function createBot(room, team, difficulty) {
     name, team, bot: true, ready: true, difficulty, title: difficulty === 'elite' ? 'Deadeye' : difficulty === 'veteran' ? 'Marksman' : 'Recruit',
     color: suits[Math.floor(Math.random() * suits.length)].id, accent: visors[Math.floor(Math.random() * visors.length)].id,
     level: difficulty === 'elite' ? 18 : difficulty === 'veteran' ? 9 : 2,
+    // Free gear only (level-unlocked), so bots never show off something a pilot has to buy.
+    ...Object.fromEntries(['headgear', 'face', 'pack'].map((kind) => { const free = COSMETICS[kind].filter((item) => !item.price); return [kind, free[Math.floor(Math.random() * free.length)].id]; })),
   });
   bot.traits = rollTraits();
   // What people see in the lobby follows the bot's own skill, not just the level picked for the room.

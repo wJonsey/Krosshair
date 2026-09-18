@@ -10,6 +10,8 @@ import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
 import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
+import { buyGear, buySkin, openCrate, playGame, sendCoins } from './server/economy.js';
+import { WAGER } from './shared/economy.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 // Secrets (Discord keys) live in a git-ignored .env next to package.json (or in the working directory).
@@ -106,6 +108,37 @@ function dropGuest(socket) {
   if (![...sockets].some((other) => other !== socket && other.guest && other.token === socket.token)) profiles.releaseGuest(socket.token);
 }
 
+const avatarOf = (account) => (account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null);
+
+// Coins: shop, crates, minigames, transfers, username lookup. Accounts only, one request at a time,
+// and a short cooldown so nobody can hammer the dice.
+function handleCoins(socket, message) {
+  const reply = (type, body) => send(socket, { type, ...body, profile: socket.token ? profiles.view(socket.token) : null });
+  if (!socket.account) return reply('coins-error', { error: 'Coins need a Discord login.' });
+  const t = now();
+  if (socket.coinsAt && t - socket.coinsAt < (message.type === 'lookup' ? 0.2 : 0.45)) return reply('coins-error', { error: 'Slow down.' });
+  socket.coinsAt = t;
+  if (message.type === 'lookup') {
+    const account = accounts.accounts.get(String(message.name || '').toLowerCase().slice(0, 32));
+    const profile = account && profiles.profiles.get(ProfileStore.key(account.profileToken));
+    return send(socket, { type: 'lookup-result', query: String(message.name || '').slice(0, 32), pilot: account ? { name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0), title: profile?.look?.title || 'Recruit', you: account.username.toLowerCase() === socket.account } : null });
+  }
+  let result;
+  if (message.type === 'shop') result = message.action === 'crate' ? openCrate(profiles, socket.token, message.crate) : message.action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, message.weapon, message.finish);
+  else if (message.type === 'game') result = playGame(profiles, socket.token, message);
+  else if (message.type === 'send-coins') {
+    result = sendCoins(profiles, accounts, socket.token, socket.name, message.to, message.amount);
+    if (result.sent) {
+      console.log(`coins: ${socket.name} sent ${result.sent.amount} to ${result.sent.to}`);
+      const view = profiles.view(result.account.profileToken);
+      for (const other of sockets) if (other.account === result.account.username.toLowerCase()) { send(other, { type: 'profile', profile: view }); send(other, { type: 'notice', tone: 'good', text: `${socket.name} sent you ${result.sent.amount} coins` }); }
+      delete result.account;
+    }
+  }
+  if (!result) return;
+  reply(result.error ? 'coins-error' : 'coins-result', result);
+}
+
 function signIn(socket, account, message, session = null) {
   if (socket.readyState !== 1) return;
   dropGuest(socket);
@@ -118,7 +151,7 @@ function signIn(socket, account, message, session = null) {
   profile.name = account.username;
   profiles.scheduleSave();
   if (socket.player) { socket.player.name = account.username; socket.room.pushRoom(); }
-  send(socket, { type: 'identity', username: account.username, avatar: account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null, session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
+  send(socket, { type: 'identity', username: account.username, avatar: avatarOf(account), session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
 }
 
 async function handleAuth(socket, message) {
@@ -197,7 +230,7 @@ function leaderboards() {
   for (const [id, board] of Object.entries(BOARDS)) {
     rows[id] = pilots.filter(({ profile }) => board.eligible(profile)).map(({ account, profile }) => ({
       key: account.username.toLowerCase(), name: account.username, title: profile.look?.title || 'Recruit', level: levelFromXp(profile.xp), value: board.value(profile),
-      avatar: account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null,
+      avatar: avatarOf(account),
     })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
   }
   boardCache = { at: now(), rows };
@@ -340,6 +373,7 @@ function leaveRoom(socket, deliberate = false) {
 }
 
 const RANKED_LOGIN = 'Ranked needs a Discord login.';
+const WAGER_LOGIN = 'Wagers need a Discord login.';
 function enter(socket, message) {
   if (!socket.identified) return send(socket, { type: 'error', message: 'Log in to play.' });
   leaveRoom(socket, true);
@@ -351,6 +385,16 @@ function enter(socket, message) {
     if (!held) return send(socket, { type: 'rejoin-failed' });
   } else if (action === 'range') room = createRoom(`range-${roomCounter++}`, { queue: 'range' });
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
+  else if (action === 'wager') {
+    if (!socket.account) return send(socket, { type: 'error', message: WAGER_LOGIN });
+    const size = WAGER.sizes.includes(message.size) ? message.size : 1;
+    const stake = Number.isInteger(message.stake) && message.stake >= WAGER.minStake && message.stake <= WAGER.maxStake ? message.stake : null;
+    if (!stake) return send(socket, { type: 'error', message: `Stakes are ${WAGER.minStake} to ${WAGER.maxStake} coins.` });
+    if (profiles.coins(socket.token) < stake) return send(socket, { type: 'error', message: 'Not enough coins for that stake.' });
+    let name;
+    do name = `wager-${Math.random().toString(36).slice(2, 6)}`; while (rooms.has(name));
+    room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic), wager: { size, stake } });
+  }
   else if (action === 'quick') {
     const queue = ['casual', 'ranked', 'arcade'].includes(message.queue) ? message.queue : 'casual';
     if (queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
@@ -360,6 +404,7 @@ function enter(socket, message) {
     if (name.length < 3) return send(socket, { type: 'error', message: 'Room codes need 3+ characters.' });
     room = rooms.get(name);
     if (room?.queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
+    if (room?.wager && !socket.account) return send(socket, { type: 'error', message: WAGER_LOGIN });
     if (room && room.queue !== 'custom' && !room.isPublic) return send(socket, { type: 'error', message: 'That room is private.' });
     if (!room) room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic) });
   }
@@ -418,6 +463,7 @@ wss.on('connection', (socket) => {
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
       if (message.type === 'feedback') return void saveFeedback(socket, message);
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
+      if (['shop', 'game', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {
