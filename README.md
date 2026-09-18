@@ -109,6 +109,12 @@ Every arena is mirrored so both teams play the same ground, names its locations 
 
 Conditions rotate per arena: Dusk, Night Fog, Storm Front and High Noon, plus Whiteout (snowfall) on Frostbite and Timberline and Dust Haze on Dustline, Saffron and Ravelin.
 
+### Sound and music
+
+Every sound effect is synthesised in code (`client/audio.js`): gunshots are layered from a crack, a distorted muzzle blast, a sub thump, per-weapon body resonances, a tail that changes with distance and shelter, then the action cycling and a casing landing. Footsteps are heel-then-toe and differ per surface, metal rings with inharmonic partials, and two generated reverbs (open yard, hard room) cross-fade as you move under cover. Nothing plays identically twice.
+
+**Music can be your own.** Drop audio files in `src/arena/music/` and list them in `tracks.json` — see `src/arena/music/README.md`. `menu` tracks play in the menus and lobby, `match` tracks in the match (quieter while a round is live; players can turn that off). Loops can be sample-accurate, and two loops of the same length cross-fade on the beat — the lobby and in-game themes do. With no tracks listed, a quiet generated pad plays in the menus.
+
 ### Accounts, progression, leaderboard
 
 - **Login is required to play** and is Discord-only. The first login creates the account and adopts any guest progress already in that browser; later logins find it by Discord ID.
@@ -133,7 +139,7 @@ Every key and mouse button is rebindable in Settings → Key binds (two slots pe
 | Enter / Y · Tab | Chat all / team · scoreboard |
 | Gamepad | Sticks move and aim, RT fire, LT scope, X reload, Y swap, B crouch, LB/RB gadgets |
 
-Settings pages: Aim (sensitivities, toggles), Graphics (presets or render scale / shadows / lights / brightness / FOV, frame-rate cap, FPS counter, automatic step-down), Audio & HUD (master and weather volume, announcer, sound visualiser), Crosshair (colour, outline, dot, inner and outer lines, dynamic spread, presets, share codes), Key binds.
+Settings pages: Aim (sensitivities, toggles), Graphics (presets or render scale / shadows / lights / brightness / FOV, frame-rate cap, FPS counter, automatic step-down), Audio & HUD (master, weather and music volume, music during rounds, announcer, sound visualiser), Crosshair (colour, outline, dot, inner and outer lines, dynamic spread, presets, share codes), Key binds.
 
 ## Project layout
 
@@ -142,6 +148,7 @@ index.html                       # Redirects to the game page
 src/arena/
 ├── index.html, arena.css        # UI shell, loading screen markup, all styling
 ├── brand/                       # Logo (SVG + PNG), favicon, touch icon
+├── music/                       # Your soundtrack: audio files + tracks.json (see its README)
 ├── multiplayer-server.mjs       # HTTP + WebSocket entry point, matchmaking, auth routes, status API
 ├── shared/                      # Runs on both sides — the simulation must agree
 │   ├── constants.js             # Weapons, gadgets, economy, rules, progression, bot levels, Discord IDs

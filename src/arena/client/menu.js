@@ -2,7 +2,7 @@
 // end-of-match report, share card, tutorial checklist, toasts.
 import * as THREE from 'three';
 import { BOT_DIFFICULTY, COSMETICS, MASTERY_TIERS, MODIFIERS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankName, xpForLevel } from '../shared/constants.js';
-import { bus, game, graphics, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
+import { bus, game, graphics, migrateSettings, saveSettings, store, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE } from '../shared/constants.js';
 import { net } from './net.js';
 import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind } from './input.js';
@@ -52,7 +52,7 @@ function accountRowHtml() {
 function discordHtml() {
   const required = game.loginRequired && !ACCOUNTS_ENABLED;
   // The button is always there. On a server with no Discord application yet it opens the setup steps.
-  const login = net.sameOrigin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'You need a Discord login to play. ' : ''}No email or password. Your level, stats, unlocks, settings, key binds and crosshair are saved to your account and follow you to any device. You’re also added to the Krosshair Discord — Discord asks you to approve that first.${game.discord.enabled || !net.connected ? '' : ' <b class="warn">This server’s Discord application is not set up yet — the button shows how.</b>'}</small>` : '<p class="muted">Discord login only works from the game’s own address. Open the game there to play.</p>';
+  const login = net.sameOrigin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'You need a Discord login to play. ' : ''}No email or password. Your level, stats, unlocks, settings, key binds and crosshair are saved to your account and follow you to any device. You’re also added to the Krosshair Discord — Discord asks you to approve that first.${game.discord.enabled || !net.connected ? '' : ' <b class="warn">Discord login is temporarily unavailable. Try again shortly.</b>'}</small>` : '<p class="muted">Discord login is not available from this address. Play at krosshair.online.</p>';
   return `<div class="discord-block${required ? ' required' : ''}">${login}<a class="discord-link" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">Join the Krosshair Discord →</a></div>`;
 }
 function authHtml() {
@@ -76,11 +76,12 @@ export function applyAccountPrefs(profile) {
   if (!profile) return;
   applyingPrefs = true;
   if (profile.look) { game.look = { ...game.look, ...profile.look }; store('look', game.look); bus.emit('look'); refreshPreviewLook(); }
-  if (profile.settings) { Object.assign(game.settings, profile.settings); saveSettings(); setVolume(game.settings.volume); }
+  if (profile.settings) { Object.assign(game.settings, migrateSettings({ settingsVersion: 1, ...profile.settings })); saveSettings(); setVolume(game.settings.volume); }
   if (profile.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); }
   applyingPrefs = false;
   // A brand-new account starts from whatever this browser already had.
-  if (!profile.settings || (game.tutorialDone && !profile.tutorialDone)) uploadPrefs(0);
+  // …and an account saved before a default changed is brought up to date once.
+  if (!profile.settings || (profile.settings.settingsVersion || 1) < DEFAULT_SETTINGS.settingsVersion || (game.tutorialDone && !profile.tutorialDone)) uploadPrefs(0);
 }
 function uploadPrefs(delay = 800) {
   if (applyingPrefs || !net.identified) return;
@@ -337,7 +338,7 @@ function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({
 
 function play_(payload) {
   unlockAudio();
-  if (!net.connected) { toast('Still connecting to the relay… start the server with npm run arena.', 'warn'); return; }
+  if (!net.connected) { toast('Still connecting to the relay… give it a moment.', 'warn'); return; }
   if (game.loginRequired && !ACCOUNTS_ENABLED) {
     if (!net.identified) { toast('Log in with Discord to play.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
   } else if (!ACCOUNTS_ENABLED) {
@@ -567,7 +568,7 @@ function settingsBodyHtml(tab) {
         ${toggle('autoQuality', 'Lower graphics automatically', 'Steps the preset down if the frame rate stays under 38 for a few seconds.')}</div></div>`;
   }
   if (tab === 'audio') {
-    return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Audio</p>${slider('volume', 'Master volume', 0, 1, 0.05, 'pct')}${slider('ambience', 'Weather volume', 0, 1, 0.05, 'pct', s.ambience, 'Rain, wind and the night hum. Footsteps and gunfire are not affected.')}${toggle('announcer', 'Announcer voice', 'Uses your browser’s speech voice, so it sounds different per system.')}</div>
+    return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Audio</p>${slider('volume', 'Master volume', 0, 1, 0.05, 'pct')}${slider('ambience', 'Weather volume', 0, 1, 0.05, 'pct', s.ambience, 'Rain, wind and the night hum. Footsteps and gunfire are not affected.')}${slider('music', 'Music volume', 0, 1, 0.05, 'pct', s.music, 'Plays in the menus and between rounds.')}${toggle('musicInMatch', 'Keep music during rounds', 'Turn it off to hear nothing but the match while a round is live.')}${toggle('announcer', 'Announcer voice', 'Uses your browser’s speech voice, so it sounds different per system.')}</div>
       <div class="panel"><p class="eyebrow">HUD</p>${toggle('visualizeSound', 'Visualize sound effects', 'Draws footsteps and gunfire as on-screen markers.')}${toggle('showFps', 'Show FPS counter')}</div></div>`;
   }
   if (tab === 'crosshair') {

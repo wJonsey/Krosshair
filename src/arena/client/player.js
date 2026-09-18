@@ -1,7 +1,7 @@
 // Local pilot: input (keyboard, mouse, gamepad), predicted movement, weapon
 // handling, scope sway + breath, gadgets, drone piloting, spectating, killcam.
 import * as THREE from 'three';
-import { BODY, FLAG, GADGETS, INTERP_DELAY, WEAPONS, clamp } from '../shared/constants.js';
+import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '../shared/constants.js';
 import { SpreadTracker, applySpread, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
@@ -658,5 +658,6 @@ export class LocalPlayer {
 const round = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
 const SOUND_OF = { asphalt: 'concrete', paving: 'concrete', gravel: 'gravel', grass: 'grass', concrete: 'concrete', wall: 'concrete', brick: 'concrete', plaster: 'concrete', stone: 'concrete', tunnel: 'concrete', metal: 'metal', rust: 'metal', teal: 'metal', wood: 'wood', crate: 'wood', cloth: 'cloth', clothAlt: 'cloth', glass: 'glass', shield: 'energy', barrier: 'energy', target: 'wood' };
-export function MATERIAL_SOUND(mat) { return SOUND_OF[mat] || 'concrete'; }
+// Arenas added later bring their own materials; those say what they sound like in MATERIALS.
+export function MATERIAL_SOUND(mat) { return SOUND_OF[mat] || MATERIALS[mat]?.sound || 'concrete'; }
 export { GADGETS };

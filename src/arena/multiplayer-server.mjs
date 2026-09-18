@@ -240,18 +240,18 @@ function findQuickRoom(queue) {
 
 // Only the game itself is served: never the profile store, never dotfiles.
 const allowed = [/^\/index\.html$/, /^\/src\/arena\/(?!server\/|tests\/|multiplayer-server)[\w./-]+$/, /^\/node_modules\/three\/build\/three\.(module|core)(\.min)?\.js$/];
-const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
+const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.flac': 'audio/flac' };
 
 async function discordRoute(request, response, url) {
   const page = (status, body) => { response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); response.end(callbackPage(body)); };
   const html = (status, body) => { response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); response.end(body); };
-  if (!discord.enabled) return html(503, setupPage(discord.redirectUri(request)));
+  if (!discord.enabled) return html(503, setupPage());
   if (url.pathname === '/auth/discord/token') {
     const reply = (status, body) => { response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(body)); };
-    if (request.method !== 'POST') return reply(405, { error: 'POST only.' });
+    if (request.method !== 'POST') return reply(405, { error: 'Login failed. Try again from the game.' });
     try {
       let raw = '';
-      for await (const chunk of request) { raw += chunk; if (raw.length > 4096) return reply(413, { error: 'Too large.' }); }
+      for await (const chunk of request) { raw += chunk; if (raw.length > 4096) return reply(413, { error: 'Login failed. Try again from the game.' }); }
       const body = JSON.parse(raw || '{}');
       const { user, joined } = await discord.finishToken(body.access_token, String(body.state || ''));
       const result = accounts.discordSignIn(user);
@@ -300,7 +300,17 @@ const server = createServer((request, response) => {
     return;
   }
   readFile(filePath).then((file) => {
-    response.writeHead(200, { 'Content-Type': contentTypes[path.extname(filePath)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    const type = contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    // Music: browsers (Safari especially) ask for audio in byte ranges and will not play without them.
+    const range = type.startsWith('audio/') && /^bytes=(\d*)-(\d*)$/.exec(request.headers.range || '');
+    if (range) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, file.length - Number(range[2] || 0));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), file.length - 1) : file.length - 1;
+      if (start > end || start >= file.length) { response.writeHead(416, { 'Content-Range': `bytes */${file.length}` }); return response.end(); }
+      response.writeHead(206, { 'Content-Type': type, 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1, 'Cache-Control': 'public, max-age=3600' });
+      return response.end(file.subarray(start, end + 1));
+    }
+    response.writeHead(200, { 'Content-Type': type, 'Cache-Control': type.startsWith('audio/') ? 'public, max-age=3600' : 'no-cache', ...(type.startsWith('audio/') ? { 'Accept-Ranges': 'bytes' } : {}) });
     response.end(file);
   }).catch(() => {
     response.writeHead(404);
@@ -317,7 +327,7 @@ function leaveRoom(socket, deliberate = false) {
 }
 
 function enter(socket, message) {
-  if (!socket.identified) return send(socket, { type: 'error', message: 'Identify first.' });
+  if (!socket.identified) return send(socket, { type: 'error', message: 'Log in to play.' });
   leaveRoom(socket, true);
   const action = String(message.action || 'quick');
   let room = null;

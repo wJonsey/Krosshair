@@ -12,7 +12,7 @@ import { ViewModel } from './viewmodel.js';
 import { SoundViz } from './soundviz.js';
 import { LocalPlayer, MATERIAL_SOUND } from './player.js';
 import { Hud, roundIntroVoice } from './hud.js';
-import { announce, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setVolume, stopAllLoops, unlockAudio } from './audio.js';
+import { announce, meter, musicState, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setMusicScene, setWorldAudio, refreshMusic, setVolume, stopAllLoops, unlockAudio } from './audio.js';
 import { mapFingerprint } from '../shared/version.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
@@ -258,6 +258,7 @@ net.on('gone', (message) => operators.remove(message.id));
 net.on('correct', (message) => player.onCorrect(message));
 
 net.on('shot', (message) => {
+  if (game.screen !== 'game') return; // a shot still in flight when you left the match
   const weapon = WEAPONS[message.w];
   const shooter = game.roster.get(message.id);
   const origin = message.o;
@@ -453,6 +454,9 @@ function frame(now = 0) {
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));
   hud.update(dt);
+  setWorldAudio(game.screen === 'game');
+  // Music follows the screen: full in the menus, lower between rounds, out of the way while a round is live.
+  setMusicScene(game.screen !== 'game' ? 'menu' : game.room?.phase === 'live' || game.room?.phase === 'overtime' || game.room?.phase === 'range' ? 'combat' : 'match');
   soundViz.update();
   renderer.clear();
   renderer.render(arena.scene, camera);
@@ -463,9 +467,9 @@ function frame(now = 0) {
 
 setVolume(game.settings.volume);
 setAmbienceVolume(game.settings.ambience);
-bus.on('settings', () => setAmbienceVolume(game.settings.ambience));
+bus.on('settings', () => { setAmbienceVolume(game.settings.ambience); refreshMusic(); });
 showScreen('home');
 bus.on('net-status', ({ state }) => { if (state === 'open') boot?.step('link'); else if (state === 'closed') boot?.step('link', 'warn'); });
 net.connect();
 frame();
-window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel };
+window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState } };

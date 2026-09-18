@@ -40,6 +40,7 @@ For the Claude desktop app there is a `.claude/launch.json` in this repo (`previ
 | Player input, key binds | `client/player.js`, `client/input.js` | Every action has two bind slots; mouse buttons are `Mouse0…4`. Use `held()/isBound()`; never hard-code key codes. |
 | HUD, crosshair, sights | `client/hud.js`, `client/crosshair.js`, `client/viewmodel.js` | Dot/holo optics are real geometry; the HUD draws only the reticle. |
 | Menus, settings, leaderboard, lobby | `client/menu.js` | Hash-routed pages (`#play #operator #career #leaderboard #rooms #settings #controls #feedback`). Re-renders are frequent — keep typed input via the `keep`/draft patterns already there. |
+| Sound and music | `client/audio.js`, `music/` | All effects are synthesised (layers: `noise`, `tone`, `modal`, `bell`, `grains`); weapons are `GUN_CLASS` + per-gun pitch/level in `GUNS`. You cannot hear — check output with `await window.__arena.audio.meter(800)` after a real click (peaks should stay under ~1.0 for own guns). Music is file-based: `music/tracks.json`; the server streams audio with byte ranges. |
 | Operator model | `client/characters.js` | `buildOperator` / `animateOperator`; proportions must match the hit zones in `combat.js` (head centre 1.6 m). |
 | Styling | `arena.css` | One file, sections marked with `/* ---------- name ---------- */`. Design language: "rangefinder glass" — frost type on smoked glass, corner brackets, tick-scale meters, amber for money/selection, cyan = friendly, red = rival. |
 

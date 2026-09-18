@@ -1,0 +1,4 @@
+{
+  "menu": [{ "file": "krosshair-lobby.m4a", "loopStart": 0.5, "loopEnd": 35.4091 }],
+  "match": [{ "file": "krosshair-game.m4a", "loopStart": 0.5, "loopEnd": 35.4091 }]
+}
