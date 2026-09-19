@@ -3,13 +3,14 @@
 import { BODY } from '../shared/constants.js';
 import { makeBody } from '../shared/physics.js';
 
-const CELL = 1;
 
 export class NavGrid {
   constructor(world, map) {
     this.world = world;
     this.nodes = [];
     this.cells = new Map();
+    // Arenas use 1 m cells; a map as big as the royale island asks for coarser ones (map.navCell).
+    this.cell = map.navCell || 1;
     this.build(map);
   }
 
@@ -18,15 +19,19 @@ export class NavGrid {
   build(map) {
     const { bounds } = map;
     const world = this.world;
-    const tops = [...new Set(world.boxes.map((box) => box.max[1]))].filter((y) => y >= bounds.minY - 0.1 && y < bounds.maxY).sort((a, b) => a - b);
+    const CELL = this.cell;
+    const r = BODY.radius - 0.01;
     for (let x = bounds.minX + CELL / 2; x < bounds.maxX; x += CELL) {
       for (let z = bounds.minZ + CELL / 2; z < bounds.maxZ; z += CELL) {
         const levels = [];
-        for (const y of tops) {
+        // Only the tops of boxes under this cell can hold a body here; asking about every height in the
+        // map made a big map's build take forever.
+        const tops = new Set();
+        world.query(x - r, z - r, x + r, z + r, (box) => { if (box.max[1] >= bounds.minY - 0.1 && box.max[1] < bounds.maxY) tops.add(box.max[1]); });
+        for (const y of [...tops].sort((a, b) => a - b)) {
           // A level is standable when a box top sits right under the point and the body fits.
           let supported = false;
           // Footprint, not centre: on stairs the body always rests on the highest step it touches.
-          const r = BODY.radius - 0.01;
           world.query(x - r, z - r, x + r, z + r, (box) => {
             if (Math.abs(box.max[1] - y) < 1e-6 && x + r > box.min[0] && x - r < box.max[0] && z + r > box.min[2] && z - r < box.max[2]) supported = true;
             return supported;
@@ -51,8 +56,9 @@ export class NavGrid {
         if (!neighbours) continue;
         for (const other of neighbours) {
           const rise = other.y - node.y;
-          if (rise > 0.8 || rise < -4.2) continue;
-          if (this.walkable(node, other)) node.edges.push({ to: other.id, cost: Math.hypot(dx, dz) + Math.abs(rise) * 0.6 + (rise < -1 ? 2 : 0) });
+          // A coarse cell spans more steps, so allow a bigger rise; walkable() still simulates the climb.
+          if (rise > (CELL > 1 ? 0.7 * CELL + 0.1 : 0.8) || rise < -4.2) continue;
+          if (this.walkable(node, other)) node.edges.push({ to: other.id, cost: Math.hypot(dx, dz) * CELL + Math.abs(rise) * 0.6 + (rise < -1 ? 2 : 0) });
         }
       }
     }
@@ -66,6 +72,8 @@ export class NavGrid {
       if (from.x !== to.x && from.z !== to.z) {
         if (!this.world.bodyFree(from.x, from.y, to.z) || !this.world.bodyFree(to.x, from.y, from.z)) return false;
       }
+      // Coarse cells are long steps: check the quarter points too so a thin wall can't slip between samples.
+      if (this.cell > 1) for (const k of [0.25, 0.75]) { const qx = from.x + (to.x - from.x) * k, qz = from.z + (to.z - from.z) * k; if (!this.world.bodyFree(qx, from.y, qz) || !(this.world.groundBelow(qx, from.y + 0.05, qz) > from.y - 0.5)) return false; }
       return this.world.bodyFree(mx, from.y, mz) && this.world.groundBelow(mx, from.y + 0.05, mz) > from.y - 0.5;
     }
     const body = makeBody(from.x, from.y, from.z);
@@ -84,7 +92,7 @@ export class NavGrid {
   }
 
   nearest(x, y, z, accept = null) {
-    const ix = Math.round((x - this.origin.x) / CELL), iz = Math.round((z - this.origin.z) / CELL);
+    const ix = Math.round((x - this.origin.x) / this.cell), iz = Math.round((z - this.origin.z) / this.cell);
     let best = null, bestScore = Infinity;
     // Always compare the immediate neighbours too: the exact cell may only hold a bench or crate top.
     for (let radius = 0; radius <= 3 && (!best || radius <= 1); radius += 1) {

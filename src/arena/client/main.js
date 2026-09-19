@@ -14,6 +14,7 @@ import { LocalPlayer, MATERIAL_SOUND } from './player.js';
 import { Hud, roundIntroVoice } from './hud.js';
 import { announce, meter, musicState, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setMusicScene, setWorldAudio, refreshMusic, setVolume, stopAllLoops, unlockAudio } from './audio.js';
 import { mapFingerprint } from '../shared/version.js';
+import { initRoyale } from './royale.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
 // Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
@@ -422,6 +423,7 @@ function countFrame(rawDt) {
 
 let firstFrame = false;
 let lastFrameAt = 0;
+const royale = initRoyale({ arena, hud, player });
 function frame(now = 0) {
   requestAnimationFrame(frame);
   // Frame cap: skip this tick if the previous frame was drawn too recently (small tolerance so 60 on a 60 Hz screen is not halved).
@@ -442,13 +444,14 @@ function frame(now = 0) {
     orbit += dt * 0.035;
     camera.position.set(Math.sin(orbit) * 46, 15 + Math.sin(orbit * 1.7) * 4, Math.cos(orbit) * 58);
     camera.lookAt(0, 2, 0);
-    const debugCam = window.__arena?.debugCam; // handy for screenshots: { pos: [x,y,z], look: [x,y,z] }
-    if (debugCam) { camera.position.set(...debugCam.pos); camera.lookAt(...debugCam.look); }
     if (camera.fov !== 55) { camera.fov = 55; camera.updateProjectionMatrix(); }
   }
+  const debugCam = window.__arena?.debugCam; // handy for screenshots, in the menu or in a match: { pos: [x,y,z], look: [x,y,z] }
+  if (debugCam) { camera.position.set(...debugCam.pos); camera.lookAt(...debugCam.look); }
   operators.update(dt, net.time(), camera, wallDt);
   effects.update(dt);
   arena.update(dt, camera);
+  royale.update(dt);
   camera.updateMatrixWorld();
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));

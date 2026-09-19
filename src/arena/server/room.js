@@ -18,7 +18,7 @@ export const now = () => performance.now() / 1000;
 const round2 = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
 
-function freshMatchStats() {
+export function freshMatchStats() {
   return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, coinKills: 0, weaponKills: {} };
 }
 
@@ -40,6 +40,8 @@ export class Room {
       this.nav = navFor(this.map);
     }
     this.players = new Map();
+    // How many seats a match has. Arenas are 4v4; the royale room raises it.
+    this.capacity = MAX_PLAYERS;
     this.nextPlayer = 1;
     this.nextEntity = 1;
     this.rules = { ...DEFAULT_RULES };
@@ -162,7 +164,7 @@ export class Room {
     }
     if (this.wager && this.humans().length >= this.wager.size * 2) return null;
     const seats = this.team('A').length + this.team('B').length;
-    if (this.mode === 'range' ? this.connectedHumans().length >= 4 : seats >= MAX_PLAYERS) {
+    if (this.mode === 'range' ? this.connectedHumans().length >= 4 : seats >= this.capacity) {
       // A full lobby can still make room by dropping one of its matchmaking bots.
       const bot = this.queue !== 'custom' && this.mode === 'match' ? [...this.players.values()].find((p) => p.bot && !p.dummy) : null;
       if (!bot) return null;
@@ -243,7 +245,7 @@ export class Room {
   }
 
   addBot(team, difficulty = this.rules.botDifficulty) {
-    if (this.team('A').length + this.team('B').length >= MAX_PLAYERS) return null;
+    if (this.team('A').length + this.team('B').length >= this.capacity) return null;
     const bot = createBot(this, team || this.pickTeam(), BOT_DIFFICULTY[difficulty] ? difficulty : 'veteran');
     this.players.set(bot.id, bot);
     return bot;
@@ -359,12 +361,13 @@ export class Room {
     return list[index % list.length];
   }
 
-  spawn(player, index = 0) {
-    const point = player.dummy ? player.home : this.spawnPoint(player, index);
+  // at: an exact spot, for modes that choose their own (the royale drop).
+  spawn(player, index = 0, at = null) {
+    const point = at || (player.dummy ? player.home : this.spawnPoint(player, index));
     Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0 });
     player.epoch += 1;
     player.history = [];
-    player.active = player.weapons.primary ? 'primary' : 'sidearm';
+    player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee';
     player.reloadEnd = 0; player.nextFire = 0; player.equipUntil = 0; player.stimUntil = 0; player.stimUsed = false; player.ghostUntil = 0; player.strikes = 0;
     player.damageFrom.clear();
     this.refillAmmo(player);

@@ -10,6 +10,8 @@ import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
 import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
+import { RoyaleRoom } from './server/royale.js';
+import { ROYALE } from './shared/royale.js';
 import { buyGear, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { WAGER } from './shared/economy.js';
 
@@ -445,6 +447,11 @@ function enter(socket, message) {
     if (!held) return send(socket, { type: 'rejoin-failed' });
   } else if (action === 'range') room = createRoom(`range-${roomCounter++}`, { queue: 'range' });
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
+  else if (action === 'royale') {
+    // One open royale lobby at a time; a new one once it has started or filled.
+    room = [...rooms.values()].find((r) => r.royale && r.phase === 'lobby' && r.connectedHumans().length < ROYALE.max);
+    if (!room) { const name = `royale-${roomCounter++}`; room = new RoyaleRoom({ name, profiles, onEmpty: (empty) => { empty.close(); rooms.delete(empty.name); } }); rooms.set(name, room); }
+  }
   else if (action === 'wager') {
     if (!socket.account) return send(socket, { type: 'error', message: WAGER_LOGIN });
     const size = WAGER.sizes.includes(message.size) ? message.size : 1;

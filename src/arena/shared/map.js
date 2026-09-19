@@ -3,6 +3,7 @@
 // Convention: +x east, +z south, +y up. Alpha spawns south (z > 0), Bravo north.
 // Kestrel Yard is mirrored across z = 0 so both sides play identically.
 
+import { buildIsland } from './maps/island.js';
 import { createBuilder, SYM, DECO } from './mapkit.js';
 import { buildAtrium } from './maps/atrium.js';
 import { buildCampanile } from './maps/campanile.js';
@@ -364,7 +365,9 @@ export const MAP_INFO = [
   { id: 'dustline', title: 'Dustline Pass', size: 'Large', players: '3v3 – 4v4', style: 'Desert canyon outpost', blurb: 'One bridge, a dry riverbed, a mesa to climb.' },
 ];
 export const MAP_IDS = MAP_INFO.map((info) => info.id);
-const BUILDERS = { yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline, foundry: buildFoundry, breakwater: buildBreakwater, saffron: buildSaffron, timberline: buildTimberline, line9: buildLine9, terrace: buildTerrace, ravelin: buildRavelin };
+// The royale island is built like any map but is never in MAP_INFO, so it never appears in the vote.
+export const ROYALE_MAP = 'island';
+const BUILDERS = { island: buildIsland, yard: buildYard, range: buildRange, atrium: buildAtrium, campanile: buildCampanile, frostbite: buildFrostbite, dustline: buildDustline, foundry: buildFoundry, breakwater: buildBreakwater, saffron: buildSaffron, timberline: buildTimberline, line9: buildLine9, terrace: buildTerrace, ravelin: buildRavelin };
 
 const cache = new Map();
 export function getMap(id = 'yard') {

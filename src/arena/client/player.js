@@ -7,6 +7,7 @@ import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
 import { actionsFor, bindsFor, held, mouseCode } from './input.js';
 import { net } from './net.js';
+import { DROP, PAD_LAUNCH } from '../shared/royale.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
 
 const SLOTS = ['primary', 'sidearm', 'melee'];
@@ -36,6 +37,8 @@ export class LocalPlayer {
     this.spectateId = null; this.pendingKillcam = null; this.drone = null;
     this.uiBlocked = () => false;
     this.gravityScale = 1;
+    this.drop = null;                 // royale: { chute } while coming down from the sky
+    this.boost = { speed: 1, speedUntil: 0, jump: 1, jumpUntil: 0 }; // timed pickups, performance.now() clock
     this.bind();
   }
 
@@ -119,6 +122,10 @@ export class LocalPlayer {
       this.everSpawned = true;
       Object.assign(this.body, { x: message.x, y: message.y, z: message.z, vy: 0, onGround: true, height: BODY.height });
       this.yaw = message.yaw; this.pitch = 0;
+      // High above the island: this is the royale drop. Look down and steer.
+      this.drop = message.y > 60 ? { chute: false } : null;
+      if (this.drop) { this.body.onGround = false; this.body.vy = -12; this.pitch = -0.9; }
+      this.boost.speedUntil = 0; this.boost.jumpUntil = 0;
       this.vel.x = 0; this.vel.z = 0;
     }
     this.viewY = this.body.y;
@@ -256,7 +263,7 @@ export class LocalPlayer {
 
   spectateTargets() {
     const team = game.roster.get(game.id)?.team;
-    return [...game.roster.values()].filter((p) => p.id !== game.id && p.alive && p.team === team && this.operators.poseOf(p.id)).map((p) => p.id);
+    return [...game.roster.values()].filter((p) => p.id !== game.id && p.alive && (p.team === team || game.room?.royale) && this.operators.poseOf(p.id)).map((p) => p.id);
   }
   cycleSpectate(step) {
     const list = this.spectateTargets();
@@ -444,15 +451,26 @@ export class LocalPlayer {
     let maxSpeed = BODY.runSpeed * (weapon.speed || 1);
     if (this.crouching) maxSpeed = BODY.crouchSpeed; else if (walkKey) maxSpeed = BODY.walkSpeed;
     if (this.scopeAmount > 0.3) maxSpeed *= 0.55;
+    const clock = performance.now();
+    if (clock < this.boost.speedUntil) maxSpeed *= this.boost.speed;
+    const jumpKey = !blocked && (held(keys, 'jump') || this.pad.jump);
+    if (this.drop) {
+      if (body.onGround) { this.drop = null; bus.emit('royale-landed'); }
+      else {
+        if (!this.drop.chute && (body.y < DROP.chuteAt || (jumpKey && body.y < DROP.height - 25))) { this.drop.chute = true; play('equip', { volume: 0.9 }); this.shake = Math.min(1, this.shake + 0.5); }
+        maxSpeed = this.drop.chute ? DROP.chuteGlide : DROP.glide;
+      }
+    }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const wishX = (mx * cos + mz * sin) * maxSpeed, wishZ = (-mx * sin + mz * cos) * maxSpeed;
-    const accel = body.onGround ? 14 : 2.5;
+    const accel = body.onGround ? 14 : this.drop ? 3.5 : 2.5;
     const k = Math.min(1, accel * dt);
     this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
     const jump = !blocked && (held(keys, 'jump') || this.pad.jump);
-    if (jump && body.onGround && !this.crouching) { body.vy = BODY.jumpVelocity; body.onGround = false; play('jump'); bus.emit('tutorial', 'jump'); }
-    const gravity = BODY.gravity * this.gravityScale;
+    if (jump && body.onGround && !this.crouching) { body.vy = BODY.jumpVelocity * (clock < this.boost.jumpUntil ? this.boost.jump : 1); body.onGround = false; play('jump'); bus.emit('tutorial', 'jump'); }
+    const gravity = this.drop ? 0 : BODY.gravity * this.gravityScale; // the drop sets its own fall speed
     body.vy = Math.max(-40, body.vy - gravity * dt);
+    if (this.drop) { const fall = this.drop.chute ? -DROP.chuteFall : -DROP.fall; body.vy += (fall - body.vy) * Math.min(1, dt * (this.drop.chute ? 2.6 : 1.4)); }
     const fallSpeed = body.vy;
     const beforeX = body.x, beforeZ = body.z, wasGrounded = body.onGround;
     this.arena.physics.moveBody(body, this.vel.x * dt, body.vy * dt, this.vel.z * dt);
@@ -461,6 +479,8 @@ export class LocalPlayer {
     const { bounds } = this.arena.map;
     body.x = clamp(body.x, bounds.minX + 0.4, bounds.maxX - 0.4); body.z = clamp(body.z, bounds.minZ + 0.4, bounds.maxZ - 0.4);
     if (body.y < bounds.minY - 3) { body.y = 0.5; body.vy = 0; }
+    // Jump pads (royale): step on one and it throws you at the nearest roof.
+    if (body.onGround && this.arena.map.pads) for (const [px, pz] of this.arena.map.pads) if (Math.abs(body.x - px) < 1 && Math.abs(body.z - pz) < 1 && body.y < 0.6) { body.vy = PAD_LAUNCH; body.onGround = false; play('jump'); play('ready', { volume: 0.6 }); bus.emit('royale-pad'); break; }
     const moved = Math.hypot(movedX, movedZ);
     this.speed = dt > 0 ? moved / dt : 0;
     if (body.onGround && !wasGrounded && fallSpeed < -4) { play('land', { volume: Math.min(1, -fallSpeed / 12) }); this.viewmodel.land(-fallSpeed / 10); this.shake = Math.min(1, this.shake + -fallSpeed / 30); }

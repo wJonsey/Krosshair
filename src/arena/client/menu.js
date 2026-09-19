@@ -13,6 +13,7 @@ import { buildOperator, styleOperator, animateOperator, lookOf } from './charact
 import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
 import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
+import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -141,6 +142,15 @@ function ensurePreview(placeholder) {
 export function renderPreview() {
   if (!preview || home.classList.contains('hidden') || !preview.canvas.isConnected) return;
   const now = performance.now();
+  const width = preview.canvas.clientWidth, height = preview.canvas.clientHeight;
+  if (width && height && (width !== preview.width || height !== preview.height)) {
+    preview.width = width; preview.height = height;
+    preview.renderer.setSize(width, height, false);
+    preview.camera.aspect = width / height;
+    // A narrow slot pulls the camera back so the shoulders and the rifle stay in frame.
+    preview.camera.position.z = 3.7 * Math.max(1, 0.62 / preview.camera.aspect);
+    preview.camera.updateProjectionMatrix();
+  }
   const dt = Math.min(0.05, (now - preview.last) / 1000);
   preview.last = now;
   preview.model.rotation.y = Math.PI + Math.sin(now / 2600) * 0.9;
@@ -201,18 +211,6 @@ function rankPanelHtml(profile) {
     : info.next ? `${info.toNext} SR to ${info.next}` : 'Top of the ladder.';
   const bar = info.placed ? info.progress : info.placement.played / info.placement.total;
   return `<div class="rank-panel" style="--rank:${info.color}">${rankBadge(info, 56)}<div><span class="field-label">Ranked</span><strong>${info.name}</strong><div class="meter rank-meter"><i style="width:${Math.round(bar * 100)}%"></i></div><small>${detail}</small></div></div>`;
-}
-
-// Compact pilot card for the Play page: who you are, how far to the next level, today's contracts.
-function pilotHtml() {
-  const profile = game.profile;
-  // The login panel right above already says what to do.
-  if (!profile) return net.connected ? '' : '<p class="muted">Connecting…</p>';
-  const level = profile.level, base = xpForLevel(level), next = xpForLevel(level + 1);
-  const progress = Math.round(((profile.xp - base) / (next - base)) * 100);
-  const contracts = profile.contracts.map((c) => `<div class="contract${c.done ? ' done' : ''}"><div><span>${escapeHtml(c.text)}</span><em>+${c.xp} XP</em></div><div class="meter"><i style="width:${Math.round((c.progress / c.n) * 100)}%"></i></div></div>`).join('');
-  return `<div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP · ${game.username ? rankInfo(profile.rating, profile.rankedMatches).name.toUpperCase() : 'GUEST'}</small></div></div>
-    <p class="eyebrow pilot-sub">Today’s contracts</p>${contracts}`;
 }
 
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
@@ -304,12 +302,19 @@ function rankedCardHtml() {
 
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
+  const profile = game.profile;
+  const level = profile?.level || 1, base = xpForLevel(level), next = xpForLevel(level + 1);
+  const progress = profile ? Math.round(((profile.xp - base) / (next - base)) * 100) : 0;
+  const contracts = profile ? profile.contracts.map((c) => `<div class="contract${c.done ? ' done' : ''}"><div><span>${escapeHtml(c.text)}</span><em>+${c.xp} XP</em></div><div class="meter"><i style="width:${Math.round((c.progress / c.n) * 100)}%"></i></div></div>`).join('') : '';
   return `
-    <section class="page-main">
+    <section class="page-main play-modes">
       ${groupTabsHtml('play')}
       <p class="eyebrow">Tactical sniper duels · one life</p>
       <h1 class="page-title">Pick your <em>fight.</em></h1>
-      <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
+      <div class="hero-row">
+        <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
+        <button type="button" class="play-card royale-card-play" data-play="royale"><small>06 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
+      </div>
       <div class="mode-grid">
         ${rankedCardHtml()}
         <button type="button" class="play-card" data-play="arcade"><small>03 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
@@ -317,12 +322,16 @@ function playPageHtml() {
         <button type="button" class="play-card" data-play="range"><small>05 // PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear. Moving targets.</span></button>
       </div>
     </section>
-    <aside class="page-side">
-      <div class="panel pilot"><p class="eyebrow">Pilot</p>${game.username ? '' : authHtml()}<div class="pilot-body">${pilotHtml()}</div>
+    <section class="panel play-stage">
+      <canvas id="operator-preview" width="420" height="640"></canvas>
+      <div class="play-stage-info">
+        ${game.username ? '' : authHtml()}
+        ${profile ? `<div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP · ${game.username ? rankInfo(profile.rating, profile.rankedMatches).name.toUpperCase() : 'GUEST'}</small></div></div>` : net.connected ? '' : '<p class="muted">Connecting…</p>'}
         <div class="link-row"><button type="button" class="ghost-button" data-page="locker">Locker</button><button type="button" class="ghost-button" data-page="career">Profile →</button></div>
       </div>
-    </aside>
-    <aside class="page-side page-third">
+    </section>
+    <aside class="page-side play-side">
+      ${profile ? `<div class="panel"><p class="eyebrow">Today’s contracts <small>reset 00:00 UTC</small></p>${contracts}</div>` : ''}
       ${boardTeaserHtml()}
       <button type="button" class="panel room-teaser" data-page="rooms"><p class="eyebrow">Rooms</p><strong>${game.publicRooms.length ? `${game.publicRooms.length} live room${game.publicRooms.length === 1 ? '' : 's'}` : 'Play with friends'}</strong><span>Private rooms. Your rules.</span></button>
     </aside>`;
@@ -480,7 +489,7 @@ home.addEventListener('click', (event) => {
     game.look[target.dataset.kind] = target.dataset.value;
     saveLook(); play('ui'); renderHome();
   } else if (target.dataset.page) { play('ui'); setHomePage(target.dataset.page); }
-  else if (target.dataset.play) play_(target.dataset.play === 'range' ? { action: 'range' } : { action: 'quick', queue: target.dataset.play });
+  else if (target.dataset.play) play_(target.dataset.play === 'range' ? { action: 'range' } : target.dataset.play === 'royale' ? { action: 'royale' } : { action: 'quick', queue: target.dataset.play });
   else if (target.dataset.bots) play_({ action: 'bots', difficulty: target.dataset.bots });
   else if (target.dataset.join) play_({ action: 'join', room: target.dataset.join });
   else if (target.id === 'join-room') {
@@ -545,6 +554,7 @@ export function renderLobby() {
   clearInterval(lobbyTimer);
   stopMapVote();
   if (room.phase === 'mapvote') { renderMapVote(lobby, room); return; }
+  if (room.royale) { renderRoyaleLobby(room); return; }
   if (lobbyRoom !== room.name) { lobbyRoom = room.name; lobbyLines = []; }
   const draft = $('#lobby-chat-input')?.value || '';
   const chatFocused = document.activeElement?.id === 'lobby-chat-input';
@@ -621,6 +631,40 @@ export function renderLobby() {
       status.classList.add('ok');
     } else { status.textContent = room.queue === 'ranked' ? 'Searching for an opponent…' : 'Waiting for pilots…'; status.classList.remove('ok'); }
   };
+  tick();
+  lobbyTimer = setInterval(tick, 250);
+}
+// Battle royale lobby: one list of pilots, a countdown, bots make up the numbers.
+function renderRoyaleLobby(room) {
+  const draft = $('#lobby-chat-input')?.value || '';
+  const chatFocused = document.activeElement?.id === 'lobby-chat-input';
+  const humans = room.players.filter((p) => !p.bot);
+  const pilots = humans.map((p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.title || '')} · LV ${p.level}</small></div></div>`).join('');
+  lobby.innerHTML = `
+    <div class="menu-shell lobby-shell">
+      <header class="menu-bar">
+        <div class="brand"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="Krosshair" width="40" height="40" /><b>Kross<em>hair</em></b></div>
+        <div class="lobby-crumb"><small>BATTLE ROYALE</small><b>Kestrel Island</b></div>
+        <div class="menu-tools"><span><i class="live-dot"></i>${humans.length} / ${ROYALE.max} PILOTS</span><button type="button" class="ghost-button" id="leave-lobby">← Leave</button></div>
+      </header>
+      <main class="menu-page lobby-grid">
+        <section class="page-main">
+          <p class="eyebrow">Battle royale</p>
+          <h1 class="page-title">Last pilot <em>standing.</em></h1>
+          <p id="lobby-status" class="lobby-status ok"></p>
+          <div class="royale-steps"><div><b>01</b><strong>Drop</strong><span>Pick a spot. Parachute in.</span></div><div><b>02</b><strong>Loot</strong><span>You land with a blade.</span></div><div><b>03</b><strong>Move</strong><span>The storm closes in.</span></div><div><b>04</b><strong>Win</strong><span>One life. No teams.</span></div></div>
+          <div class="panel"><p class="eyebrow">Pilots <small>bots fill up to ${ROYALE.fill}</small></p><div class="royale-pilots">${pilots}</div></div>
+        </section>
+        <aside class="page-side">
+          <div class="panel lobby-chat"><p class="eyebrow">Room comms</p><div id="lobby-chat-log">${lobbyLines.join('') || '<span class="muted">No messages.</span>'}</div><input id="lobby-chat-input" maxlength="140" placeholder="Message…" /></div>
+        </aside>
+      </main>
+    </div>`;
+  const chatInput = $('#lobby-chat-input');
+  chatInput.value = draft;
+  if (chatFocused) chatInput.focus();
+  const status = $('#lobby-status');
+  const tick = () => { if (!game.room || game.room.phase !== 'lobby') return; status.textContent = room.autoStartAt ? `Dropping in ${Math.max(0, Math.ceil(room.autoStartAt - net.time()))}s` : 'Waiting for pilots…'; };
   tick();
   lobbyTimer = setInterval(tick, 250);
 }
@@ -962,6 +1006,7 @@ function rankReportHtml(rank) {
 
 function renderEnd() {
   const { message, report } = endState;
+  if (message.royale) return renderRoyaleEnd(message, report);
   const myRow = message.table.find((row) => row.id === game.id);
   const team = myRow?.team || 'A';
   const result = !message.winner ? 'draw' : message.winner === team ? 'win' : 'loss';
@@ -991,6 +1036,32 @@ function renderEnd() {
       <div class="end-tables"><section class="friendly"><h3>YOUR TEAM</h3>${head}${rows(team)}</section><section class="rival"><h3>ENEMY TEAM</h3>${head}${rows(team === 'A' ? 'B' : 'A')}</section></div>
       <div class="button-row"><button type="button" id="rematch-button" ${voted ? 'disabled' : ''}>${voted ? `Waiting… ${votes}/${humans}` : `Rematch <span>${votes}/${humans}</span>`}</button><button type="button" id="share-button" class="secondary-button">Share card</button><button type="button" id="end-leave" class="ghost-button">Leave</button><span class="muted" id="end-timer"></span></div>
       <div id="share-wrap" class="share-wrap hidden"></div>
+    </div>`;
+}
+// Battle royale: one table, in finishing order.
+function renderRoyaleEnd(message, report) {
+  const mine = message.table.find((row) => row.id === game.id);
+  const place = mine?.placement || message.table.length, won = place === 1;
+  const winner = message.table[0];
+  const rows = message.table.slice(0, 12).map((row) => `<div class="score-row royale-row${row.id === game.id ? ' you' : ''}"><span>#${row.placement}</span><span class="pilot"><i style="background:${row.color}"></i>${escapeHtml(row.name)}${row.bot ? ' <em>BOT</em>' : ''}</span><span>${row.kills}</span><span>${row.damage}</span><span>${row.headshots}</span><span>${row.accuracy}%</span></div>`).join('');
+  const myRow = mine && place > 12 ? `<div class="score-row royale-row you"><span>#${place}</span><span class="pilot"><i style="background:${mine.color}"></i>${escapeHtml(mine.name)}</span><span>${mine.kills}</span><span>${mine.damage}</span><span>${mine.headshots}</span><span>${mine.accuracy}%</span></div>` : '';
+  const votes = game.room?.rematch?.length || 0;
+  const humans = game.room?.players.filter((p) => !p.bot && p.connected).length || 1;
+  const voted = game.room?.rematch?.includes(game.id);
+  let progress = '';
+  if (report) {
+    const level = report.levelAfter, profile = game.profile, base = xpForLevel(level), next = xpForLevel(level + 1);
+    const percent = profile ? Math.round(((profile.xp - base) / (next - base)) * 100) : 0;
+    progress = `<div class="panel xp"><div class="xp-head"><b>+${report.xp || 0} XP</b>${report.coins?.total ? `<b class="coin-gain">+${report.coins.total} ${COIN}</b>` : ''}<span>LEVEL ${level}${report.levelAfter > report.levelBefore ? ' · LEVEL UP' : ''}</span></div><div class="meter"><i style="width:${percent}%"></i></div>
+      ${report.coins?.lines?.length ? `<p class="coin-lines">${report.coins.lines.map((line) => `${line.label} +${line.amount}`).join(' · ')}</p>` : ''}
+      ${(report.completed || []).map((c) => `<p class="unlock">CONTRACT COMPLETE · ${escapeHtml(c.text)} <em>+${c.xp} XP</em></p>`).join('')}${(report.unlocks || []).map((u) => `<p class="unlock">UNLOCKED · ${escapeHtml(u.name)} ${u.kind}</p>`).join('')}</div>`;
+  }
+  endCard.innerHTML = `<div class="end-inner result-${won ? 'win' : 'loss'}">
+      <p class="eyebrow">Battle royale // Kestrel Island // ${(VARIANT_NAMES[message.variant] || '').toUpperCase()}</p>
+      <div class="end-head"><h2>${won ? 'Victory.' : `#${place}`}</h2><div class="end-score"><span>${won ? 'Last pilot standing' : `of ${message.table.length} · ${winner ? `${escapeHtml(winner.name)} won` : 'no winner'}`}</span></div></div>
+      ${progress}
+      <div class="end-tables royale-table"><section><div class="score-row royale-row head"><span>#</span><span>PILOT</span><span>K</span><span>DMG</span><span>HS</span><span>ACC</span></div>${rows}${myRow}</section></div>
+      <div class="button-row"><button type="button" id="rematch-button" ${voted ? 'disabled' : ''}>${voted ? `Waiting… ${votes}/${humans}` : `Drop again <span>${votes}/${humans}</span>`}</button><button type="button" id="end-leave" class="ghost-button">Leave</button><span class="muted" id="end-timer"></span></div>
     </div>`;
 }
 endCard.addEventListener('click', (event) => {

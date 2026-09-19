@@ -282,7 +282,7 @@ export class Arena {
     this.skylineMaterial = null;
     const { bounds } = this.map;
     const reach = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
-    const groundColor = { skyline: '#2a2f35', town: '#6d675c', mountains: '#dfe7ee', mesas: '#bfa06a' }[env.backdrop];
+    const groundColor = { skyline: '#2a2f35', town: '#6d675c', mountains: '#dfe7ee', mesas: '#bfa06a', sea: '#1d5b73' }[env.backdrop];
     if (groundColor) {
       // Four slabs around the playable box, so sunken routes inside it stay visible from above.
       const apron = new THREE.MeshStandardMaterial({ color: groundColor, roughness: 1, metalness: 0 });

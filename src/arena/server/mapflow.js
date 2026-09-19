@@ -78,6 +78,8 @@ function randomMap(room) {
 // Called wherever a match used to start directly.
 export function beginMatch(room) {
   if (room.mode !== 'match') return;
+  // The royale room has one map and no vote.
+  if (room.royale) { room.startMatch(); return; }
   const rule = room.rules.map;
   if (rule === 'vote' && room.connectedHumans().length) return startVote(room);
   setRoomMap(room, MAP_IDS.includes(rule) ? rule : randomMap(room));

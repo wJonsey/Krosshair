@@ -166,7 +166,8 @@ function perceive(room, bot, t) {
   const ai = bot.ai;
   const diff = profile(bot);
   const eye = room.eyeOf(bot);
-  const maxDist = VISIBILITY[room.variant] || 100;
+  // A mode can shorten how far a bot bothers to look (royale: nobody picks a fight at 100 m with a pistol).
+  const maxDist = room.botSightRange?.(bot) ?? (VISIBILITY[room.variant] || 100);
   const halfFov = ((diff.fov / 2) * Math.PI) / 180;
   let best = null;
   const candidates = room.enemiesOf(bot).map((p) => ({ id: p.id, x: p.x, y: p.y, z: p.z, crouch: Boolean(p.flags & FLAG.crouch), speed: p.speed, firedAt: p.lastFireAt }));
@@ -216,6 +217,9 @@ function perceive(room, bot, t) {
 
 function chooseGoal(room, bot, t) {
   const ai = bot.ai;
+  // A mode can steer bots itself (the royale room sends them to loot and into the safe zone).
+  const steered = room.botGoal?.(bot, t);
+  if (steered) return steered;
   if (ai.lastKnown && t - ai.lastKnown.t < 14) return { x: ai.lastKnown.x, y: ai.lastKnown.y, z: ai.lastKnown.z, hunt: true };
   const side = (room.swapped ? -1 : 1) * (bot.team === 'A' ? 1 : -1); // +1 → home is +z
   // Every round opens with a randomly chosen lane so bots do not all funnel through mid.
@@ -324,6 +328,8 @@ function pickGlance(room, bot, t, holding) {
 }
 
 export function updateBot(room, bot, dt, t) {
+  // Coming down under a parachute (royale): the room moves them until they land.
+  if (bot.dropping) return;
   if (bot.dummy) return updateDummy(room, bot, dt);
   think(room, bot, dt, t);
   // The speed other players see drives the running animation, so it eases between states too.
@@ -340,6 +346,9 @@ function think(room, bot, dt, t) {
   bot.speed = 0;
   if (room.phase !== 'live' && room.phase !== 'overtime') { ai.moveSpeed = 0; ai.strafeVel = 0; return; }
   const diff = profile(bot);
+  // A mode can make a bot keep running its route whatever else is going on (the royale storm closing in):
+  // it still shoots, but doesn't stop to strafe, pause or hunt.
+  const fleeing = Boolean(room.botMustMove?.(bot, t));
   if (t >= ai.nextLook) { ai.nextLook = t + rand(0.1, 0.18); perceive(room, bot, t); }
   if (room.phase === 'overtime' && !ai.visible && (!ai.lastKnown || t - ai.lastKnown.t > 2)) {
     const nearest = room.enemiesOf(bot).sort((m, n) => Math.hypot(m.x - bot.x, m.z - bot.z) - Math.hypot(n.x - bot.x, n.z - bot.z))[0];
@@ -399,7 +408,8 @@ function think(room, bot, dt, t) {
     // Footwork: dancers strafe, planters stop and shoot; snipers mostly plant, and everyone moves after being hit.
     const sniping = weapon.family === 'sniper' || weapon.family === 'marksman';
     const wantsToMove = t < ai.evadeUntil || dist < 14 || (!sniping && t >= ai.plantUntil);
-    if (wantsToMove) {
+    if (fleeing) ai.evadeUntil = 0;
+    else if (wantsToMove) {
       if (t > ai.strafeUntil) {
         ai.strafeUntil = t + rand(0.35, 1.5);
         if (Math.random() < 0.55) ai.strafe *= -1;
@@ -452,8 +462,8 @@ function think(room, bot, dt, t) {
   if (bot.active !== 'primary' && bot.weapons.primary && !bot.reloadEnd && bot.ammo.primary.mag + bot.ammo.primary.reserve > 0) room.switchWeapon(bot, 'primary');
 
   let holding = !ai.path;
-  if (t < ai.evadeUntil) { bot.speed = strafe(room, bot, dt, 5 * k.pace); holding = false; }
-  else if (!ai.path && t >= ai.repathAt && t >= ai.holdUntil) {
+  if (t < ai.evadeUntil && !fleeing) { bot.speed = strafe(room, bot, dt, 5 * k.pace); holding = false; }
+  else if (!ai.path && t >= ai.repathAt && (t >= ai.holdUntil || fleeing)) {
     ai.repathAt = t + 0.5;
     ai.goal = chooseGoal(room, bot, t);
     const accept = (node) => room.world.lineOfSight(bot.x, bot.y + 0.9, bot.z, node.x, node.y + 0.9, node.z) && Math.abs(node.y - bot.y) < 1.2;
@@ -469,7 +479,7 @@ function think(room, bot, dt, t) {
       ai.nextPauseCheck = t + rand(1.5, 3.5);
       if (Math.random() < 0.1 + (1 - k.aggression) * 0.22) { ai.pauseUntil = t + rand(0.5, 1.6); ai.glanceUntil = 0; }
     }
-    const paused = t < ai.pauseUntil;
+    const paused = t < ai.pauseUntil && !fleeing;
     const wanted = paused ? 0 : (hunting && nearGoal ? BODY.walkSpeed : 5.4 * k.pace * (hunting ? 1 : 0.92 + k.aggression * 0.08));
     // Speed builds up and bleeds off; nobody goes from a standstill to a sprint in one frame.
     ai.moveSpeed += clamp(wanted - ai.moveSpeed, -18 * dt, 12 * dt);
@@ -484,7 +494,7 @@ function think(room, bot, dt, t) {
       ai.glanceUntil = 0;
     }
     // Hunters abandon stale trails when a fresher sound comes in.
-    if (ai.lastKnown && ai.goal && !ai.goal.hunt && t - ai.lastKnown.t < 1) ai.path = null;
+    if (!fleeing && ai.lastKnown && ai.goal && !ai.goal.hunt && t - ai.lastKnown.t < 1) ai.path = null;
   }
   if (!ai.path) ai.moveSpeed += clamp(0 - ai.moveSpeed, -18 * dt, 18 * dt);
   // Holding an angle for a while, some settle into a crouch.

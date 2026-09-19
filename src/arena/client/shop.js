@@ -223,6 +223,20 @@ function makeThumbs() {
   for (const c of Object.values(CRATES)) { const model = buildCrate(c); poseCrate(model, null, 0); model.rotation.y = -0.2; shoot(`crate:${c.id}`, model); }
   camera.position.set(0.015, -0.03, 0.125); camera.lookAt(0, -0.032, 0);
   for (const item of COSMETICS.charm) { const model = buildCharm(item.id); if (model) { model.rotation.y = 0.5; shoot(`charm:${item.id}`, model); } }
+  // Headgear, faces and packs: one operator, redressed for each shot.
+  const pilot = buildOperator('#8794a1', '#6ce6d1');
+  styleOperator(pilot, { team: 'friend', headgear: 'bare', face: 'none', pack: 'none' });
+  animateOperator(pilot, { speed: 0, crouch: false, pitch: 0, weapon: 'm44', dt: 1 });
+  scene.add(pilot);
+  for (const kind of ['headgear', 'face', 'pack']) {
+    if (kind === 'pack') { camera.position.set(0.9, 1.75, 1.75); camera.lookAt(0, 1.4, 0.1); } else { camera.position.set(-0.55, 1.72, -1.2); camera.lookAt(0, 1.64, 0); }
+    for (const item of COSMETICS[kind]) {
+      styleOperator(pilot, { headgear: kind === 'headgear' ? item.id : kind === 'face' ? 'helmet' : 'bare', face: kind === 'face' ? item.id : 'none', pack: kind === 'pack' ? item.id : 'none' });
+      renderer.render(scene, camera);
+      thumbs.set(`gear:${kind}:${item.id}`, canvas.toDataURL('image/png'));
+    }
+  }
+  scene.remove(pilot);
   renderer.dispose(); renderer.forceContextLoss?.();
 }
 const thumb = (name) => { try { makeThumbs(); } catch { /* no WebGL to spare: the CSS icons stay */ } return thumbs.get(name) || ''; };
@@ -254,7 +268,7 @@ function showOnStage(subject) {
     model.position.y = -0.34;
     s.pivot.add(model);
     s.crate = model;
-    s.camera.position.set(0, 1.05, 4.6);
+    s.camera.position.set(0, 1.05, 4.6 * Math.max(1, 1.5 / s.camera.aspect));
     s.camera.lookAt(0, 0.12, 0);
     return;
   }
@@ -279,7 +293,9 @@ function showOnStage(subject) {
   model.position.sub(box.getCenter(new THREE.Vector3()));
   s.pivot.add(model);
   const length = Math.max(size.z, size.y * 2.4, 0.35);
-  s.camera.position.set(length * (subject.charm ? 1.2 : 1.45), length * 0.28, 0);
+  // A narrow stage pulls the camera back so the whole gun stays in frame.
+  const fit = Math.max(1, 1.9 / s.camera.aspect);
+  s.camera.position.set(length * (subject.charm ? 1.2 : 1.45) * fit, length * 0.28 * fit, 0);
   s.camera.lookAt(0, subject.charm ? -0.04 : 0, 0);
 }
 function spin() {
@@ -482,7 +498,8 @@ function gearVisual(kind, item) {
   if (kind === 'suit' || kind === 'visor' || kind === 'tracer') return `<i class="gear-swatch" style="background:${item.id}"></i>`;
   if (kind === 'pattern') return `<i class="gear-swatch" style="background-color:${game.look.color};${item.id === 'solid' ? '' : `background-image:url(${patternSwatch(item.id)})`}"></i>`;
   if (kind === 'title') return `<i class="gear-title">${escapeHtml(item.name)}</i>`;
-  return '';
+  const shot = thumb(`gear:${kind}:${item.id}`);
+  return shot ? `<img class="gear-thumb" src="${shot}" alt="" />` : '';
 }
 function gearHtml() {
   const look = tryLook();
@@ -688,9 +705,9 @@ export function shopPageHtml(page = 'shop', lead = '') {
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
   if (tab === 'crates' && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
   const body = tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
-  return `<section class="page-wide shop-page">${lead}<div class="shop-head"><div><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>
+  const tabsHtml = section.tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${section.tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : '';
+  return `<section class="page-wide shop-page shop-${page}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
       ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
-    ${section.tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${section.tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : ''}
     ${body}</section>`;
 }
 // What typed input looks like before a redraw, put back after it.
