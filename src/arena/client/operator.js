@@ -291,7 +291,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   for (const y of [-0.3, 0.05]) block(sword, 'swordStrap', [0.11, 0.03, 0.06], dark, [0, y, -0.025]);
   // Data wings (dev): additive feather panels on two hinged bones. Flap, fold and shimmer in animateCosmetics.
   const devwings = packGroup('devwings');
-  const wingMats = [0, 1, 2, 3, 4].map((k) => holo(new THREE.Color('#00ffc6').lerp(new THREE.Color('#2ad4ff'), k / 4), 0.45)), spar = holo('#c8fff4', 0.85);
+  const wingMats = [0, 1, 2, 3, 4].map((k) => holo(new THREE.Color('#00ffc6').lerp(new THREE.Color('#2ad4ff'), k / 4), 0.45)), spar = holo('#7df5e0', 0.55);
   gem(devwings, 'wingCore', 0.028, haloMat, [0, 0.43, 0.2]);
   const feather = (group, k, x, y, turn, length, layer, width = 1) => add(group, geo('feather', () => new THREE.CircleGeometry(1, 4).scale(0.04, 0.13, 1).translate(0, -0.13, 0)), wingMats[k % 5], [x, y, layer], [0, 0, turn], [width, length, 1]);
   const wings = [-1, 1].map((side) => {
