@@ -1,7 +1,7 @@
 // Server-side bots. They see with the same line-of-sight test the game uses,
 // walk the generated nav grid and shoot through the same authoritative fire path
 // as humans, so everything a bot does is a legal play.
-import { BODY, BOT_DIFFICULTY, BOT_NAMES, COSMETICS, FLAG, WEAPONS } from '../shared/constants.js';
+import { BODY, BOT_DIFFICULTY, BOT_NAMES, COSMETICS, FLAG, WEAPONS, BOT_TYPES, BOT_TYPE_IDS } from '../shared/constants.js';
 import { dirFromAngles } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 
@@ -15,6 +15,13 @@ const lerp = (a, b, k) => a + (b - a) * k;
 // Every bot is its own player. `skill` shifts it up or down within its level (−1 … +1, most near 0);
 // the rest are habits: how hard it pushes, how long it holds an angle, whether it dances or plants its
 // feet in a fight, how much a hit rattles it. Rolled once when the bot joins and kept for the match.
+// One of the personalities, by weight.
+function pickType() {
+  const total = BOT_TYPE_IDS.reduce((sum, id) => sum + BOT_TYPES[id].weight, 0);
+  let roll = Math.random() * total;
+  for (const id of BOT_TYPE_IDS) { roll -= BOT_TYPES[id].weight; if (roll <= 0) return id; }
+  return 'allround';
+}
 function rollTraits() {
   const skill = clamp(gauss() * 0.42, -1, 1);
   return {
@@ -71,7 +78,9 @@ export function createBot(room, team, difficulty) {
     // Free gear only (level-unlocked), so bots never show off something a pilot has to buy.
     ...Object.fromEntries(['headgear', 'face', 'pack'].map((kind) => { const free = COSMETICS[kind].filter((item) => !item.price && !item.dev); return [kind, free[Math.floor(Math.random() * free.length)].id]; })),
   });
-  bot.traits = rollTraits();
+  // Temperament: the type bends the rolled traits, so two Rushers still play a little differently.
+  bot.botType = pickType();
+  bot.traits = Object.assign(rollTraits(), BOT_TYPES[bot.botType].traits);
   // What people see in the lobby follows the bot's own skill, not just the level picked for the room.
   const tier = { recruit: 2, veteran: 9, elite: 18 }[difficulty] || 9;
   bot.level = Math.max(1, Math.round(tier + bot.traits.skill * tier * 0.6 + rand(-1, 1)));
@@ -109,7 +118,8 @@ export function botBuy(room, bot) {
   if (room.rules.modifier !== 'sidearms' && bot.weapons.primary === 'm44') {
     // Taste follows temperament: pushers reach for rifles and SMGs, patient pilots stay on long guns.
     const pusher = bot.traits && bot.traits.aggression > 0.62, camper = bot.traits && bot.traits.patience > 0.6 && !pusher;
-    const picks = pusher ? [['talon', 0.2], ['halcyon', 0.16], ['wasp', 0.12], ['hornet', 0.1], ['ronin', 0.1], ['breaker', 0.05], ['recon', 0.06]] : camper ? [['recon', 0.22], ['vesper', 0.2], ['harbinger', 0.1], ['anvil', 0.05]] : [['recon', 0.16], ['vesper', 0.12], ['talon', 0.14], ['halcyon', 0.1], ['ronin', 0.08], ['harbinger', 0.05], ['anvil', 0.04], ['wasp', 0.04], ['hornet', 0.03]];
+    const typeGuns = BOT_TYPES[bot.botType]?.guns;
+    const picks = typeGuns ? typeGuns.map(([id, weight]) => [id, weight * 0.8]) : pusher ? [['talon', 0.2], ['halcyon', 0.16], ['wasp', 0.12], ['hornet', 0.1], ['ronin', 0.1], ['breaker', 0.05], ['recon', 0.06]] : camper ? [['recon', 0.22], ['vesper', 0.2], ['harbinger', 0.1], ['anvil', 0.05]] : [['recon', 0.16], ['vesper', 0.12], ['talon', 0.14], ['halcyon', 0.1], ['ronin', 0.08], ['harbinger', 0.05], ['anvil', 0.04], ['wasp', 0.04], ['hornet', 0.03]];
     let chance = roll;
     for (const [id, weight] of picks) {
       chance -= weight;

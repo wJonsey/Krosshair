@@ -297,6 +297,32 @@ export const BOT_DIFFICULTY = {
   veteran: { name: 'Veteran', reaction: 0.75, aimTime: 0.85, error: 1.4, headBias: 0.12, fov: 105 },
   elite: { name: 'Elite', reaction: 0.48, aimTime: 0.55, error: 0.85, headBias: 0.25, fov: 118 },
 };
+// Bot personalities. Each one bends the bot's own traits and what it buys, so a Rusher really does
+// run at you with a short gun and a Sniper really does sit on a long angle. Skill still comes from the
+// difficulty; this is temperament.
+export const BOT_TYPES = {
+  allround: { id: 'allround', name: 'All-round', desc: 'Plays it straight.', weight: 26, traits: {} },
+  rusher: { id: 'rusher', name: 'Rusher', desc: 'Runs at you with a short gun.', weight: 18,
+    traits: { aggression: 0.92, patience: 0.12, pace: 1.12, croucher: 0.15, dancer: 0.8 }, guns: [['wasp', 0.3], ['hornet', 0.26], ['breaker', 0.2], ['talon', 0.24]] },
+  sniper: { id: 'sniper', name: 'Sniper', desc: 'Holds a long angle and waits.', weight: 16,
+    traits: { aggression: 0.1, patience: 0.92, pace: 0.94, croucher: 0.7, trigger: 1.35 }, guns: [['harbinger', 0.22], ['vesper', 0.34], ['recon', 0.28], ['m44', 0.16]] },
+  flanker: { id: 'flanker', name: 'Flanker', desc: 'Comes the long way round.', weight: 14,
+    traits: { aggression: 0.68, patience: 0.35, curiosity: 1.45, pace: 1.06, dancer: 0.6 }, guns: [['ronin', 0.3], ['talon', 0.28], ['wasp', 0.22], ['halcyon', 0.2]] },
+  anchor: { id: 'anchor', name: 'Anchor', desc: 'Sits on a spot and holds it.', weight: 14,
+    traits: { aggression: 0.22, patience: 0.8, croucher: 0.85, pace: 0.9 }, guns: [['anvil', 0.26], ['halcyon', 0.3], ['recon', 0.24], ['maul', 0.2]] },
+  duelist: { id: 'duelist', name: 'Duelist', desc: 'Takes the fight head on and strafes.', weight: 12,
+    traits: { aggression: 0.75, patience: 0.3, dancer: 0.95, croucher: 0.2, composure: 0.85 }, guns: [['talon', 0.3], ['halcyon', 0.26], ['ronin', 0.24], ['hornet', 0.2]] },
+};
+export const BOT_TYPE_IDS = Object.keys(BOT_TYPES);
+// Matchmaking with a fixed team size. Bots fill whatever a lobby is short of.
+export const TEAM_MODES = {
+  '1v1': { id: '1v1', size: 1, name: 'Duel', desc: 'One on one. No hiding behind a team.' },
+  '2v2': { id: '2v2', size: 2, name: 'Duos', desc: 'Two a side. One partner, one plan.' },
+  '3v3': { id: '3v3', size: 3, name: 'Trios', desc: 'Three a side. Room to take an angle.' },
+};
+export const TEAM_MODE_IDS = Object.keys(TEAM_MODES);
+export const teamSizeOf = (queue) => TEAM_MODES[queue]?.size || 0;
+
 export const BOT_NAMES = ['Halcyon', 'Mako', 'Juno', 'Rook', 'Sable', 'Vesper', 'Onyx', 'Tundra', 'Piper', 'Echo', 'Marrow', 'Quill', 'Basil', 'Nova', 'Flint', 'Wren'];
 
 export const QUICK_COMMANDS = [

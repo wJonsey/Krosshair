@@ -1405,3 +1405,9 @@ button.cash-out .coins { color: var(--void); }
 .gear-swatch.dev-prism, .tracer-demo.dev-prism { background: linear-gradient(90deg, #ff3a8a, #ffb547, #b0ff3a, #00ffc6, #40ffff, #7a5cff, #ff3a8a); background-size: 200% 100%; animation: dev-flow 1.6s linear infinite; }
 .tracer-demo.dev-prism { box-shadow: 0 0 14px #00ffc6; }
 .dev-note { color: #00ffc6; }
+
+/* ---- 1v1, 2v2 and 3v3 cards on the play page. */
+.team-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+.team-card small { color: var(--signal); }
+.team-card strong { font-size: 18px; }
+@media (max-width: 720px) { .team-modes { grid-template-columns: 1fr; } }

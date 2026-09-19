@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
-  HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE,
+  HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, teamSizeOf,
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
@@ -42,7 +42,9 @@ export class Room {
     }
     this.players = new Map();
     // How many seats a match has. Arenas are 4v4; the royale room raises it.
-    this.capacity = MAX_PLAYERS;
+    // 1v1, 2v2 and 3v3 lobbies are capped; everything else takes a full room.
+    this.teamSize = wager ? wager.size : teamSizeOf(queue);
+    this.capacity = this.teamSize ? this.teamSize * 2 : MAX_PLAYERS;
     this.nextPlayer = 1;
     this.nextEntity = 1;
     this.rules = { ...DEFAULT_RULES };
@@ -102,7 +104,7 @@ export class Room {
   get live() { return this.phase === 'live' || this.phase === 'overtime' || this.phase === 'range'; }
 
   info() {
-    return { name: this.name, queue: this.queue, wager: this.wager, phase: this.phase, players: this.connectedHumans().length, bots: [...this.players.values()].filter((p) => p.bot && !p.dummy).length, max: MAX_PLAYERS, scores: this.scores, variant: this.variant };
+    return { name: this.name, queue: this.queue, wager: this.wager, phase: this.phase, players: this.connectedHumans().length, bots: [...this.players.values()].filter((p) => p.bot && !p.dummy).length, max: this.capacity, scores: this.scores, variant: this.variant };
   }
 
   roomState() {
@@ -111,7 +113,7 @@ export class Room {
       round: this.round, scores: this.scores, rules: this.rules, variant: this.variant, swapped: this.swapped, map: this.map.id, ...mapState(this),
       autoStartAt: this.autoStartAt, rematch: [...this.rematch], wager: this.wager, pot: this.pot && !this.pot.settled ? this.pot.stake * this.pot.entries.length : 0,
       players: [...this.players.values()].filter((player) => !player.dummy).map((player) => ({
-        id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, connected: player.connected, ready: player.ready,
+        id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, botType: player.botType || null, connected: player.connected, ready: player.ready,
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
         title: player.title, headgear: player.headgear, face: player.face, pack: player.pack, pattern: player.pattern, charm: player.charm, skins: player.skins,
@@ -256,9 +258,10 @@ export class Room {
   fillBots() {
     const humans = this.connectedHumans().length;
     let perTeam = Math.ceil((this.team('A').length + this.team('B').length) / 2);
-    if (this.queue === 'bots') perTeam = Math.max(perTeam, 3);
+    if (this.teamSize) perTeam = this.teamSize;
+    else if (this.queue === 'bots') perTeam = Math.max(perTeam, 3);
     else if (humans < 2) perTeam = Math.max(perTeam, 2);
-    perTeam = Math.max(1, Math.min(4, perTeam));
+    perTeam = Math.max(1, Math.min(this.teamSize || 4, perTeam));
     // Spread humans evenly first.
     const roster = this.team('A').concat(this.team('B')).filter((p) => !p.bot);
     roster.forEach((player, index) => { player.team = index % 2 ? 'B' : 'A'; });
@@ -314,7 +317,7 @@ export class Room {
     // Matchmade rooms top teams back up with bots when pilots walk out.
     if (this.queue !== 'custom') {
       const size = (team) => this.team(team).filter((p) => p.bot || p.connected).length;
-      while (size('A') !== size('B') && this.team('A').length + this.team('B').length < MAX_PLAYERS) {
+      while (size('A') !== size('B') && this.team('A').length + this.team('B').length < this.capacity) {
         const bot = this.addBot(size('A') < size('B') ? 'A' : 'B');
         if (!bot) break;
         bot.credits = Math.round([...this.players.values()].reduce((sum, p) => sum + p.credits, 0) / Math.max(1, this.players.size));
@@ -737,7 +740,7 @@ export class Room {
   }
 
   onTeam(player, team) {
-    if (this.phase !== 'lobby' || this.queue !== 'custom' || (team !== 'A' && team !== 'B') || this.team(team).length >= (this.wager ? this.wager.size : MAX_PLAYERS / 2)) return;
+    if (this.phase !== 'lobby' || this.queue !== 'custom' || (team !== 'A' && team !== 'B') || this.team(team).length >= (this.teamSize || MAX_PLAYERS / 2)) return;
     player.team = team; player.ready = false;
     this.pushRoom();
   }

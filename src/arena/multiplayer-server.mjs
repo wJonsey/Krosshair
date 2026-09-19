@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, TEAM_MODE_IDS, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { isDev } from './server/devs.js';
@@ -338,7 +338,7 @@ function publicRooms() {
   return [...rooms.values()].filter((room) => room.isPublic && room.mode === 'match').map((room) => room.info()).filter((info) => info.players > 0);
 }
 function findQuickRoom(queue, rating = 1000) {
-  const open = [...rooms.values()].filter((room) => room.queue === queue && room.isPublic && !room.closed && room.connectedHumans().length < MAX_PLAYERS);
+  const open = [...rooms.values()].filter((room) => room.queue === queue && room.isPublic && !room.closed && room.connectedHumans().length < room.capacity);
   open.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.connectedHumans().length - a.connectedHumans().length);
   // Ranked prefers the lobby whose pilots are closest to your rating (never splits the queue, only orders it).
   const gap = (room) => { const humans = room.connectedHumans(); return humans.length ? Math.abs(humans.reduce((sum, p) => sum + p.rating, 0) / humans.length - rating) : 400; };
@@ -465,7 +465,7 @@ function enter(socket, message) {
     room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic), wager: { size, stake } });
   }
   else if (action === 'quick') {
-    const queue = ['casual', 'ranked', 'arcade'].includes(message.queue) ? message.queue : 'casual';
+    const queue = ['casual', 'ranked', 'arcade', ...TEAM_MODE_IDS].includes(message.queue) ? message.queue : 'casual';
     if (queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
     room = findQuickRoom(queue, profiles.get(socket.token).rating);
   } else {

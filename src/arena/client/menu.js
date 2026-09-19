@@ -1,7 +1,7 @@
 // Everything outside the match: home screen, career, lobby, settings,
 // end-of-match report, share card, tutorial checklist, toasts.
 import * as THREE from 'three';
-import { BOT_DIFFICULTY, COSMETICS, MASTERY_TIERS, MODIFIERS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
+import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, TEAM_MODES, TEAM_MODE_IDS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
@@ -319,6 +319,7 @@ function playPageHtml() {
         <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
         <button type="button" class="play-card royale-card-play" data-play="royale"><small>06 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
       </div>
+      <div class="team-modes">${TEAM_MODE_IDS.map((id, index) => { const mode = TEAM_MODES[id]; return `<button type="button" class="play-card team-card" data-play="${id}"><small>0${index + 7} // ${id.toUpperCase()}</small><strong>${mode.name}</strong><span>${mode.desc}</span></button>`; }).join('')}</div>
       <div class="mode-grid">
         ${rankedCardHtml()}
         <button type="button" class="play-card" data-play="arcade"><small>03 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
@@ -567,7 +568,7 @@ export function renderLobby() {
   const custom = room.queue === 'custom';
   const wager = room.wager;
   const seats = wager ? wager.size : 4;
-  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}` : `${titleHtml(p.title)} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
+  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}${p.botType && BOT_TYPES[p.botType] ? ` · ${BOT_TYPES[p.botType].name.toUpperCase()}` : ''}` : `${titleHtml(p.title)} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
   const teamColumn = (team, label) => {
     const players = room.players.filter((p) => p.team === team);
     const open = Math.max(0, seats - players.length);
