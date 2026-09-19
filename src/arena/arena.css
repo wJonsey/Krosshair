@@ -1411,3 +1411,35 @@ button.cash-out .coins { color: var(--void); }
 .team-card small { color: var(--signal); }
 .team-card strong { font-size: 18px; }
 @media (max-width: 720px) { .team-modes { grid-template-columns: 1fr; } }
+.skins-owned { margin: 2px 0 6px; font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+
+/* ---- The crate page fits the window: the lists scroll inside it, never the page. */
+@media (min-width: 1021px) {
+  .shop-crates { height: calc(100vh - var(--shop-head, 210px)); min-height: 420px; grid-template-rows: minmax(120px, 1fr) auto; }
+  .shop-crates .crate-pick, .shop-crates .crate-side, .shop-crates .crate-panel { align-self: stretch; }
+  .shop-crates .crate-pick { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+  .shop-crates .crate-panel { min-height: 0; overflow: hidden; }
+  .shop-crates .crate-side { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+  .shop-crates .skin-stage.crate-stage { min-height: 0; }
+  .shop-crates .reel { height: clamp(96px, 13vh, 136px); }
+  .shop-crates .reveal-flip, .shop-crates .reveal .skin-stage { height: clamp(200px, 34vh, 420px); }
+}
+/* Tablets and phones: the crates become a swipeable strip and the stage follows the screen height. */
+@media (max-width: 1020px) {
+  .shop-crates { grid-template-columns: minmax(0, 1fr); height: auto; }
+  .shop-crates > *, .crate-main > * { min-width: 0; }
+  .crate-pick { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(148px, 42%); grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
+  .crate-card { scroll-snap-align: start; }
+  .skin-stage.crate-stage { height: clamp(180px, 30vh, 280px); }
+  .reel { height: clamp(96px, 14vh, 136px); }
+  .reel-item { width: 96px; }
+  .reel-item img { height: 58px; }
+  .reveal-flip, .reveal .skin-stage { height: clamp(190px, 32vh, 320px); }
+  .crate-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; align-items: start; }
+  .drop-feed { max-height: 220px; overflow-y: auto; }
+}
+@media (max-width: 560px) {
+  .crate-pick { grid-auto-columns: minmax(136px, 62%); }
+  .crate-panel .button-row { flex-wrap: wrap; }
+  .crate-panel .button-row button { flex: 1 1 140px; }
+}

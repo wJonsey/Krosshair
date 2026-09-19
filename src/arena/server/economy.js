@@ -27,15 +27,16 @@ function weighted(items, weight) {
 }
 const wholeCoins = (value, min, max) => (Number.isInteger(value) && value >= min && value <= max ? value : null);
 
-export function buySkin(profiles, token, weapon, finish) {
+// A finish is bought once and then goes on every gun.
+export function buySkin(profiles, token, finish) {
   const info = finishInfo(finish);
-  if (!WEAPONS[weapon] || !info || info.rarity === 'dev') return { error: 'Not in the shop.' };
-  const owned = (profiles.wallet(token).skins[weapon] ||= []);
+  if (!info || info.rarity === 'dev') return { error: 'Not in the shop.' };
+  const owned = profiles.wallet(token).finishes;
   if (owned.includes(finish)) return { error: 'Already yours.' };
   if (!finishPrice(finish)) return { error: 'Mythics only come from crates.' };
-  if (!profiles.debit(token, finishPrice(finish), 'shop', `${info.name} · ${WEAPONS[weapon].name}`)) return { error: 'Not enough coins.' };
+  if (!profiles.debit(token, finishPrice(finish), 'shop', info.name)) return { error: 'Not enough coins.' };
   owned.push(finish);
-  return { bought: { weapon, finish } };
+  return { bought: { finish } };
 }
 
 export function buyGear(profiles, token, kind, id) {
@@ -49,12 +50,13 @@ export function buyGear(profiles, token, kind, id) {
 }
 
 // A skin lands in the inventory; one already owned pays part of its price back instead.
-function grant(profiles, token, weapon, finish, rarity) {
-  const owned = (profiles.wallet(token).skins[weapon] ||= []);
+function grant(profiles, token, finish, rarity, weapon) {
+  const owned = profiles.wallet(token).finishes;
   const duplicate = owned.includes(finish);
   let refund = 0;
   if (duplicate) { refund = Math.floor(finishValue(finish) * DUPLICATE_REFUND); profiles.credit(token, refund, 'crate', 'Duplicate refund'); } else owned.push(finish);
   profiles.scheduleSave();
+  // `weapon` is only what the drop is shown on: the finish itself fits every gun.
   return { weapon, finish, rarity, duplicate, refund };
 }
 // One drop. With a pity counter, the open that would make it `pity` in a row without an Epic or better
@@ -69,7 +71,7 @@ function rollCrate(profiles, token, crate) {
   if (crate.pity) profile.pity[crate.id] = EPIC_OR_BETTER.includes(rarity) ? 0 : (profile.pity[crate.id] || 0) + 1;
   const choices = crateFinishes(crate).filter((finish) => finish.rarity === rarity);
   const finish = choices[randomInt(choices.length)].id;
-  return { ...grant(profiles, token, SKINNABLE[randomInt(SKINNABLE.length)], finish, rarity), pity: forced };
+  return { ...grant(profiles, token, finish, rarity, SKINNABLE[randomInt(SKINNABLE.length)]), pity: forced };
 }
 export const dailyWait = (profile) => Math.max(0, (profile.dailyCrate || 0) + DAILY_CRATE.hours * 3600e3 - Date.now());
 // count: 1 or 5. free: the daily crate, one field crate every DAILY_CRATE.hours.
@@ -90,38 +92,35 @@ export function openCrate(profiles, token, crateId = 'field', count = 1, free = 
 }
 
 // Scrap a skin for part of its price. It comes off the gun if it was on it.
-export function scrapSkin(profiles, token, weapon, finish) {
+export function scrapSkin(profiles, token, finish) {
   const info = finishInfo(finish);
   const profile = profiles.wallet(token);
-  const owned = profile.skins[weapon] || [];
-  if (!WEAPONS[weapon] || !info || !owned.includes(finish)) return { error: 'You don’t own that.' };
-  profile.skins[weapon] = owned.filter((id) => id !== finish);
-  if (profile.look?.skins?.[weapon] === finish) delete profile.look.skins[weapon];
+  if (!info || !profile.finishes.includes(finish)) return { error: 'You don’t own that.' };
+  profile.finishes = profile.finishes.filter((id) => id !== finish);
+  // It comes off every gun that was wearing it.
+  for (const [weapon, worn] of Object.entries(profile.look?.skins || {})) if (worn === finish) delete profile.look.skins[weapon];
   const value = Math.floor(finishValue(finish) * SCRAP);
-  profiles.credit(token, value, 'scrap', `Scrapped ${info.name} · ${WEAPONS[weapon].name}`);
-  return { scrapped: { weapon, finish, coins: value } };
+  profiles.credit(token, value, 'scrap', `Scrapped ${info.name}`);
+  return { scrapped: { finish, coins: value } };
 }
 
 // Five skins of one rarity become one random skin of the next, on one of the five guns.
 export function tradeUp(profiles, token, items) {
   if (!Array.isArray(items) || items.length !== TRADE_UP) return { error: `Pick ${TRADE_UP} skins.` };
   const profile = profiles.wallet(token);
-  const picked = items.map((item) => ({ weapon: String(item?.weapon || ''), finish: String(item?.finish || '') }));
-  if (new Set(picked.map((item) => `${item.weapon}:${item.finish}`)).size !== TRADE_UP) return { error: 'Pick five different skins.' };
-  if (!picked.every((item) => profile.skins[item.weapon]?.includes(item.finish))) return { error: 'You don’t own all of those.' };
-  const rarity = finishInfo(picked[0].finish)?.rarity;
-  if (!picked.every((item) => finishInfo(item.finish)?.rarity === rarity)) return { error: 'All five must be the same rarity.' };
+  const picked = items.map((item) => String(typeof item === 'string' ? item : item?.finish || ''));
+  if (new Set(picked).size !== TRADE_UP) return { error: 'Pick five different skins.' };
+  if (!picked.every((finish) => profile.finishes.includes(finish))) return { error: 'You don’t own all of those.' };
+  const rarity = finishInfo(picked[0])?.rarity;
+  if (!picked.every((finish) => finishInfo(finish)?.rarity === rarity)) return { error: 'All five must be the same rarity.' };
   const next = NEXT_RARITY[rarity];
   if (!next) return { error: 'Mythic is as high as it goes.' };
-  for (const item of picked) {
-    profile.skins[item.weapon] = profile.skins[item.weapon].filter((id) => id !== item.finish);
-    if (profile.look?.skins?.[item.weapon] === item.finish) delete profile.look.skins[item.weapon];
-  }
+  profile.finishes = profile.finishes.filter((id) => !picked.includes(id));
+  for (const [weapon, worn] of Object.entries(profile.look?.skins || {})) if (picked.includes(worn)) delete profile.look.skins[weapon];
   const choices = FINISHES.filter((finish) => finish.rarity === next);
   const finish = choices[randomInt(choices.length)].id;
-  const weapon = picked[randomInt(TRADE_UP)].weapon;
-  profiles.logCoins(profile, 0, 'trade', `Trade-up: ${finishInfo(finish).name} · ${WEAPONS[weapon].name}`);
-  return { traded: grant(profiles, token, weapon, finish, next) };
+  profiles.logCoins(profile, 0, 'trade', `Trade-up: ${finishInfo(finish).name}`);
+  return { traded: grant(profiles, token, finish, next, SKINNABLE[randomInt(SKINNABLE.length)]) };
 }
 
 // One round of a minigame. The stake and the payout net out into a single wallet entry.

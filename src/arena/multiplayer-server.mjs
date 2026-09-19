@@ -150,9 +150,9 @@ function handleCoins(socket, message) {
   if (message.type === 'shop') {
     const action = message.action;
     result = action === 'crate' ? openCrate(profiles, socket.token, String(message.crate || ''), message.count, message.free === true)
-      : action === 'scrap' ? scrapSkin(profiles, socket.token, String(message.weapon || ''), String(message.finish || ''))
+      : action === 'scrap' ? scrapSkin(profiles, socket.token, String(message.finish || ''))
       : action === 'tradeup' ? tradeUp(profiles, socket.token, message.items)
-      : action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, message.weapon, message.finish);
+      : action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, String(message.finish || ''));
     if (result.unboxed) announceDrops(socket.name, result.unboxed.drops);
     if (result.traded) announceDrops(socket.name, [result.traded]);
   }

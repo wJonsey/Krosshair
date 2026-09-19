@@ -56,20 +56,21 @@ test('match coins: wins beat losses, bots are worth less than people, higher lev
 test('the shop sells each skin and piece of gear once, and only for coins you have', async () => {
   const { profiles } = await stores();
   const token = ProfileStore.newToken();
-  assert.match(buySkin(profiles, token, 'm44', 'obsidian').error, /Not enough/);
+  assert.match(buySkin(profiles, token, 'obsidian').error, /Not enough/);
   profiles.credit(token, finishPrice('obsidian') + 1000, 'test', 'top up');
-  assert.deepEqual(buySkin(profiles, token, 'm44', 'obsidian').bought, { weapon: 'm44', finish: 'obsidian' });
-  assert.match(buySkin(profiles, token, 'm44', 'obsidian').error, /Already/);
-  assert.match(buySkin(profiles, token, 'raygun', 'obsidian').error, /Not in the shop/);
+  assert.deepEqual(buySkin(profiles, token, 'obsidian').bought, { finish: 'obsidian' });
+  assert.match(buySkin(profiles, token, 'obsidian').error, /Already/);
+  assert.match(buySkin(profiles, token, 'notafinish').error, /Not in the shop/);
   profiles.credit(token, 10 ** 6, 'test', 'rich');
-  assert.match(buySkin(profiles, token, 'm44', 'inferno').error, /crates/, 'Mythics are crate-only');
+  assert.match(buySkin(profiles, token, 'inferno').error, /crates/, 'Mythics are crate-only');
   assert.ok(buyGear(profiles, token, 'headgear', 'beret').bought);
   assert.match(buyGear(profiles, token, 'headgear', 'helmet').error, /Not in the shop/, 'level items are not for sale');
   // Only what you own survives in your look.
-  const clean = profiles.sanitizeCosmetics(token, { ...look, headgear: 'beret', face: 'gasmask', skins: { m44: 'obsidian', talon: 'void', nope: 'obsidian' } });
+  const clean = profiles.sanitizeCosmetics(token, { ...look, headgear: 'beret', face: 'gasmask', skins: { m44: 'obsidian', talon: 'obsidian', wasp: 'void', nope: 'obsidian' } });
   assert.equal(clean.headgear, 'beret');
   assert.equal(clean.face, 'visor');
-  assert.deepEqual(clean.skins, { m44: 'obsidian' });
+  // One finish, every gun: both guns keep it, the one that isn't owned goes.
+  assert.deepEqual(clean.skins, { m44: 'obsidian', talon: 'obsidian' });
 });
 
 test('every crate charges its price, drops only from its own pool, and gives a skin or a refund', async () => {
@@ -92,8 +93,7 @@ test('every crate charges its price, drops only from its own pool, and gives a s
       }
     }
   }
-  const skins = Object.values(profiles.wallet(token).skins).reduce((sum, list) => sum + list.length, 0);
-  assert.equal(skins, owned);
+  assert.equal(profiles.wallet(token).finishes.length, owned);
   assert.match(openCrate(profiles, token, 'golden').error, /No such crate/);
 });
 
@@ -123,31 +123,40 @@ test('the daily crate is free once, then waits', async () => {
   assert.ok(openCrate(profiles, token, 'field', 1, true).unboxed);
 });
 
-test('scrapping pays part of the price and takes the skin off the gun; trade-ups need five of one rarity', async () => {
+test('scrapping pays part of the price and takes the skin off every gun; trade-ups need five of one rarity', async () => {
   const { profiles } = await stores();
   const token = ProfileStore.newToken();
   const profile = profiles.wallet(token);
-  profile.skins = { m44: ['olive', 'sand', 'slate'], talon: ['olive', 'woodland', 'tiger'], wasp: ['prism'] };
-  profile.look = { skins: { m44: 'olive' } };
+  profile.finishes = ['olive', 'sand', 'slate', 'woodland', 'tiger', 'prism'];
+  profile.look = { skins: { m44: 'olive', talon: 'olive', wasp: 'sand' } };
   const before = profiles.coins(token);
-  assert.equal(scrapSkin(profiles, token, 'm44', 'olive').scrapped.coins, Math.floor(finishValue('olive') * SCRAP));
+  assert.equal(scrapSkin(profiles, token, 'olive').scrapped.coins, Math.floor(finishValue('olive') * SCRAP));
   assert.equal(profiles.coins(token), before + Math.floor(finishValue('olive') * SCRAP));
-  assert.deepEqual(profile.skins.m44, ['sand', 'slate']);
+  assert.ok(!profile.finishes.includes('olive'));
+  // It comes off both guns that were wearing it, and leaves the others alone.
   assert.equal(profile.look.skins.m44, undefined);
-  assert.match(scrapSkin(profiles, token, 'm44', 'olive').error, /own/);
-  const commons = [{ weapon: 'm44', finish: 'sand' }, { weapon: 'm44', finish: 'slate' }, { weapon: 'talon', finish: 'olive' }, { weapon: 'talon', finish: 'woodland' }];
+  assert.equal(profile.look.skins.talon, undefined);
+  assert.equal(profile.look.skins.wasp, 'sand');
+  assert.match(scrapSkin(profiles, token, 'olive').error, /own/);
+  const commons = ['sand', 'slate', 'woodland'];
   assert.match(tradeUp(profiles, token, commons).error, /Pick 5/);
-  assert.match(tradeUp(profiles, token, [...commons, { weapon: 'talon', finish: 'tiger' }]).error, /same rarity/);
-  assert.match(tradeUp(profiles, token, [...commons, commons[0]]).error, /different/);
-  profile.skins.ronin = ['midnight'];
-  const { traded } = tradeUp(profiles, token, [...commons, { weapon: 'ronin', finish: 'midnight' }]);
+  assert.match(tradeUp(profiles, token, [...commons, 'tiger', 'prism']).error, /same rarity/);
+  assert.match(tradeUp(profiles, token, [...commons, 'sand', 'slate']).error, /different/);
+  profile.finishes.push('midnight', 'bone');
+  const five = ['sand', 'slate', 'woodland', 'midnight', 'bone'];
+  const { traded } = tradeUp(profiles, token, five);
   assert.equal(traded.rarity, 'rare');
-  assert.ok(['m44', 'talon', 'ronin'].includes(traded.weapon));
   assert.ok(FINISHES.find((f) => f.id === traded.finish).rarity === 'rare');
-  for (const item of commons) assert.ok(!profile.skins[item.weapon].includes(item.finish), `${item.finish} was used up`);
-  profile.skins.wasp = ['prism', 'aurora', 'inferno', 'hologram'];
-  profile.skins.m44.push('prism');
-  assert.match(tradeUp(profiles, token, [...profile.skins.wasp.map((finish) => ({ weapon: 'wasp', finish })), { weapon: 'm44', finish: 'prism' }]).error, /Mythic/);
+  for (const finish of five) assert.ok(!profile.finishes.includes(finish), `${finish} was not used up`);
+  profile.finishes.push('aurora', 'inferno', 'hologram', 'neon');
+  assert.match(tradeUp(profiles, token, ['prism', 'aurora', 'inferno', 'hologram', 'neon']).error, /Mythic/);
+  // Old per-gun inventories fold into one list on the next look at the wallet.
+  const legacy = ProfileStore.newToken();
+  const old = profiles.get(legacy);
+  old.skins = { m44: ['olive', 'sand'], talon: ['olive', 'tiger'] };
+  const moved = profiles.wallet(legacy);
+  assert.deepEqual([...moved.finishes].sort(), ['olive', 'sand', 'tiger']);
+  assert.equal(moved.skins, undefined);
 });
 
 test('minigames: stakes are checked, balances never go negative, and the house keeps a little', async () => {

@@ -151,7 +151,13 @@ export class ProfileStore {
       profile.coins = COINS.starter;
       this.scheduleSave();
     }
-    profile.owned ||= []; profile.skins ||= {};
+    profile.owned ||= [];
+    // Skins used to be owned per gun. Now one finish covers every gun, so old inventories fold into one list.
+    if (!Array.isArray(profile.finishes)) {
+      profile.finishes = [...new Set(Object.values(profile.skins || {}).flat().filter((id) => finishInfo(id)))];
+      delete profile.skins;
+      this.scheduleSave();
+    }
     return profile;
   }
   coins(token) { return this.unsaved(token) ? 0 : this.wallet(token).coins; }
@@ -210,7 +216,7 @@ export class ProfileStore {
     const profile = guest ? this.get(token) : this.wallet(token);
     const level = levelFromXp(profile.xp);
     return {
-      coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], skins: profile.skins || {}, pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
+      coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], finishes: profile.finishes || [], pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
@@ -251,8 +257,8 @@ export class ProfileStore {
     for (const [key, kind] of Object.entries(LOOK_KINDS)) clean[key] = cosmeticUnlocked(kind, look[key], level, owned, dev) ? look[key] : DEFAULT_LOOK[key];
     clean.skins = {};
     if (look.skins && typeof look.skins === 'object') {
-      // Dev finishes go on any gun a developer likes; everything else has to be in the inventory.
-      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && (devFinish(finish) ? dev : profile.skins?.[weapon]?.includes(finish))) clean.skins[weapon] = finish;
+      // A finish you own goes on any gun. Dev finishes need the account.
+      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && (devFinish(finish) ? dev : profile.finishes?.includes(finish))) clean.skins[weapon] = finish;
     }
     return clean;
   }

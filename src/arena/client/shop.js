@@ -49,7 +49,7 @@ let crate = null;            // the reel: { strip, at, offset }
 let reveal = null;           // what the reel (or a trade-up) gave: { drops, index, source, crateId, count }
 let drops = [];              // server-wide recent big drops
 let dropsAsked = false;
-let inventoryPick = null;    // { weapon, finish } shown on the inventory stage
+let inventoryPick = null;    // the finish shown on the inventory stage
 let trade = [];              // skins picked for a trade-up
 let tradeMode = false;
 let flip = null, dice = null, slots = null, plinko = null, hilo = null; // { result, at }
@@ -138,8 +138,8 @@ net.on('coins-result', (message) => {
     redraw();
   } else if (message.scrapped) {
     game.profile = message.profile;
-    if (game.look.skins?.[message.scrapped.weapon] === message.scrapped.finish) equip(message.scrapped.weapon, null);
-    if (inventoryPick?.weapon === message.scrapped.weapon && inventoryPick?.finish === message.scrapped.finish) inventoryPick = null;
+    if (equippedFinish() === message.scrapped.finish) equip(null);
+    if (inventoryPick === message.scrapped.finish) inventoryPick = null;
     ctx.toast(`Scrapped for ${message.scrapped.coins} coins.`, 'good');
     play('buy');
     ctx.refreshCoins();
@@ -164,7 +164,7 @@ net.on('coins-result', (message) => {
     redraw();
   } else {
     if (message.profile) game.profile = message.profile;
-    if (message.bought?.finish) { equip(message.bought.weapon, message.bought.finish); ctx.toast(`${finishInfo(message.bought.finish).name} equipped.`, 'good'); }
+    if (message.bought?.finish) { equip(message.bought.finish); ctx.toast(`${finishInfo(message.bought.finish).name} is on every gun.`, 'good'); }
     if (message.bought?.kind) ctx.onGearBought(message.bought);
     if (message.sent) { ctx.toast(`Sent ${message.sent.amount} coins to ${message.sent.to}.`, 'good'); wallet = { to: '', amount: '', pilot: null, looking: false }; for (const id of ['#send-to', '#send-amount']) { const box = document.querySelector(id); if (box) box.value = ''; } }
     play('buy');
@@ -204,12 +204,14 @@ net.on('drop', (message) => {
 // While a crate or game is still animating, a newer profile replaces the held one instead of jumping ahead.
 net.on('profile', (message) => { if (held) held = message.profile; else game.profile = message.profile; ctx?.refreshCoins(); redraw(); });
 
-function equip(weapon, finish) {
-  const skins = { ...(game.look.skins || {}) };
-  if (finish) skins[weapon] = finish; else delete skins[weapon];
+// A finish is never per gun: equipping one puts it on the whole locker.
+function equip(finish) {
+  const skins = {};
+  if (finish) for (const weapon of skinnable) skins[weapon.id] = finish;
   game.look.skins = skins;
   ctx.saveLook();
 }
+const equippedFinish = () => { const worn = Object.values(game.look.skins || {}); return worn.length ? worn[0] : null; };
 
 // ------------------------------------------------------------------ live preview
 // One renderer for the shop's turntable. The page redraws often, so the canvas lives outside it and is
@@ -334,7 +336,7 @@ function spin() {
 function stageSubject() {
   if (tab === 'crates' && reveal?.landed) { const drop = reveal.drops[reveal.index]; return { kind: 'gun', weapon: drop.weapon, finish: drop.finish }; }
   if (tab === 'crates') return { kind: 'crate', id: crate?.id || crateId };
-  if (tab === 'inventory' && inventoryPick) return { kind: 'gun', ...inventoryPick };
+  if (tab === 'inventory' && inventoryPick) return { kind: 'gun', weapon: weaponId, finish: inventoryPick };
   if (tab === 'gear') return { kind: 'operator', look: tryLook() };
   if (tab === 'charms') return { kind: 'gun', weapon: charmWeapon, finish: game.look.skins?.[charmWeapon] || null, charm: charmTry ?? game.look.charm };
   return { kind: 'gun', weapon: weaponId, finish: showingFinish() };
@@ -351,39 +353,44 @@ export function mountShop() {
   showOnStage(stageSubject());
   if (!s.running) { s.running = true; requestAnimationFrame(spin); }
 }
-function showingFinish() { const equipped = game.look.skins?.[weaponId] || null; return preview === undefined ? null : preview ?? equipped; }
+function showingFinish() { return preview === undefined ? null : preview ?? equippedFinish(); }
 
 // ------------------------------------------------------------------ skins
 const rarityOrder = () => (isDev() ? [...PUBLIC_RARITIES, 'dev'] : PUBLIC_RARITIES);
 function skinsHtml() {
   const profile = game.profile;
-  const owned = profile.skins?.[weaponId] || [];
-  const equipped = game.look.skins?.[weaponId] || null;
+  const owned = profile.finishes || [];
+  const equipped = equippedFinish();
   const showing = showingFinish();
   const weapons = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map(weaponButton).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
   const card = (finish) => {
     const info = finishInfo(finish.id), rarity = RARITY[info.rarity];
     const mine = owned.includes(finish.id) || (devFinish(finish.id) && isDev()), on = equipped === finish.id;
-    const key = `skin:${weaponId}:${finish.id}`;
-    const action = on ? '<em class="state on">Equipped</em>' : mine ? `<button type="button" class="mini" data-equip="${finish.id}">Equip</button>`
+    const key = `skin:${finish.id}`;
+    const action = on ? '<em class="state on">On every gun</em>' : mine ? `<button type="button" class="mini" data-equip="${finish.id}">Equip</button>`
       : !rarity.price ? '<em class="state crates-only">Crates only</em>'
       : `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-buy-skin="${finish.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(rarity.price)}</button>`;
     return `<div class="finish-card rarity-${info.rarity}${animatedFinish(finish.id) ? ' fx' : ''}${showing === finish.id ? ' showing' : ''}${on ? ' on' : ''}" style="--rarity:${rarity.color}"><button type="button" class="finish-look" data-preview="${finish.id}"><img src="${finishSwatch(finish.id)}" alt="" /><b>${info.name}</b><small>${devFinish(finish.id) ? devChip : rarity.name}</small></button>${action}</div>`;
   };
-  const stock = `<div class="finish-card${!showing ? ' showing' : ''}${!equipped ? ' on' : ''}"><button type="button" class="finish-look" data-preview=""><i class="finish-plain"></i><b>Factory</b><small>Default</small></button>${equipped ? '<button type="button" class="mini" data-equip="">Equip</button>' : '<em class="state on">Equipped</em>'}</div>`;
+  const stock = `<div class="finish-card${!showing ? ' showing' : ''}${!equipped ? ' on' : ''}"><button type="button" class="finish-look" data-preview=""><i class="finish-plain"></i><b>Factory</b><small>Default</small></button>${equipped ? '<button type="button" class="mini" data-equip="">Strip it off</button>' : '<em class="state on">On every gun</em>'}</div>`;
   const info = showing && finishInfo(showing);
   return `<div class="shop-skins">
     <nav class="shop-weapons" aria-label="Weapons">${weapons}</nav>
     <div class="shop-stage">
       <div class="panel skin-preview${info ? ` rarity-${info.rarity}` : ''}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[weaponId].tag}</small><h3>${WEAPONS[weaponId].name}</h3><span>${info ? `<b style="color:${RARITY[info.rarity].color}">${info.name}</b> · ${RARITY[info.rarity].name}${animatedFinish(info.id) ? ' · animated' : ''}` : 'Factory finish'}</span>${info ? `<p class="skin-price">${devFinish(info.id) ? DEV_CLASS.blurb : owned.includes(info.id) ? 'Owned' : RARITY[info.rarity].price ? coins(RARITY[info.rarity].price) : 'Crates only'}</p>` : ''}</div></div>
+      <p class="muted skins-owned">Skins fit every gun. You own ${ownedCount() || '0'}.</p>
       <div class="segmented rarity-filter">${['all', ...rarityOrder()].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? 'All' : RARITY[id].name}</button>`).join('')}</div>
       <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${(isDev() ? FINISHES : PUBLIC_FINISHES).filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
     </div></div>`;
 }
 function weaponButton(weapon) {
   const finish = game.look.skins?.[weapon.id];
-  const count = game.profile.skins?.[weapon.id]?.length || 0;
-  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}"><span>${weapon.name}</span>${finish ? `<img src="${finishSwatch(finish)}" alt="" />` : ''}<small>${count ? `${count}/${PUBLIC_FINISHES.length}` : ''}</small></button>`;
+  const count = (game.profile.finishes || []).length;
+  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}"><span>${weapon.name}</span>${finish ? `<img src="${finishSwatch(finish)}" alt="" />` : ''}<small>${finish ? finishInfo(finish)?.name || '' : ''}</small></button>`;
+}
+function ownedCount() {
+  const count = (game.profile.finishes || []).length;
+  return count ? `${count}/${PUBLIC_FINISHES.length}` : '';
 }
 
 // ------------------------------------------------------------------ crates
@@ -405,7 +412,7 @@ function cratesHtml() {
   let stageHtml;
   if (reveal?.landed) {
     const shown = reveal.drops[reveal.index], info = finishInfo(shown.finish), rarity = RARITY[shown.rarity];
-    const equipped = game.look.skins?.[shown.weapon] === shown.finish;
+    const equipped = equippedFinish() === shown.finish;
     const again = reveal.source === 'crate' && !reveal.free ? `<button type="button" data-open-crate="${reveal.crateId}" data-count="${reveal.count}" ${busy ? 'disabled' : ''}>Open again ${coins(CRATES[reveal.crateId].cost * reveal.count)}</button>` : '';
     // The page redraws whenever anything changes, so every animation here starts from `--since`: how long
     // ago the card landed. A redraw mid-reveal picks the sequence up where it was instead of replaying it.
@@ -416,13 +423,13 @@ function cratesHtml() {
     const sparks = Array.from({ length: [0, 8, 14, 22, 32][rank] || 0 }, (_, k) => { const a = (k / ([0, 8, 14, 22, 32][rank])) * Math.PI * 2 + (k % 3) * 0.2, reach = 120 + ((k * 53) % 140); return `<i style="--x:${Math.round(Math.cos(a) * reach)}px;--y:${Math.round(Math.sin(a) * reach)}px;--d:${(tease + ((k * 37) % 25) / 100).toFixed(2)}s"></i>`; }).join('');
     const status = shown.duplicate
       ? `<p class="dupe-line">Duplicate · ${coins(shown.refund)} back</p>`
-      : equipped ? '<p class="good">Equipped.</p>' : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`;
+      : equipped ? '<p class="good">On every gun.</p>' : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`;
     stageHtml = `<div class="reveal rarity-${shown.rarity}${shown.duplicate ? ' is-dupe' : ''}" style="--rarity:${rarity.color};--since:${since.toFixed(2)}s;--tease:${tease}s">
       <i class="reveal-dim"></i><i class="reveal-rays"></i><i class="reveal-burst"></i><i class="reveal-ring"></i><i class="reveal-ring second"></i>
       <div class="reveal-sparks">${sparks}</div>
       <div class="reveal-flip"><div class="reveal-back"><b>${rarity.name}</b><span>?</span></div>
         <div class="reveal-front"><div id="skin-stage" class="skin-stage"></div>${shown.duplicate ? '<em class="dupe-stamp">Duplicate</em>' : ''}</div></div>
-      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>${WEAPONS[shown.weapon].name}${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
+      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>Fits every gun${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
         ${status}</div>
       ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${WEAPONS[drop.weapon].short}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
       <div class="button-row">${again}<button type="button" class="ghost-button" data-close-reveal="1">Done</button></div></div>`;
@@ -450,36 +457,37 @@ function cratesHtml() {
 }
 
 // ------------------------------------------------------------------ inventory
+// Every finish this pilot owns. One finish covers every gun, so this is one flat list.
 function ownedSkins() {
-  const list = [];
-  for (const [weapon, finishes] of Object.entries(game.profile.skins || {})) for (const finish of finishes) if (WEAPONS[weapon] && finishInfo(finish)) list.push({ weapon, finish, rarity: finishInfo(finish).rarity });
-  // Developers carry the Dev class finishes for every gun; they show up for whichever gun is picked.
-  if (isDev()) { const weapon = WEAPONS[inventoryPick?.weapon] ? inventoryPick.weapon : 'm44'; for (const finish of FINISHES) if (devFinish(finish.id)) list.push({ weapon, finish: finish.id, rarity: 'dev' }); }
-  return list.sort((a, b) => RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity] || finishInfo(a.finish).name.localeCompare(finishInfo(b.finish).name));
+  const owned = new Set(game.profile.finishes || []);
+  if (isDev()) for (const finish of FINISHES) if (devFinish(finish.id)) owned.add(finish.id);
+  return [...owned].filter((id) => finishInfo(id)).map((id) => ({ finish: id, rarity: finishInfo(id).rarity }))
+    .sort((a, b) => RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity] || finishInfo(a.finish).name.localeCompare(finishInfo(b.finish).name));
 }
-const skinKey = (item) => `${item.weapon}:${item.finish}`;
+export const ownsFinish = (id) => Boolean(game.profile?.finishes?.includes(id) || (devFinish(id) && isDev()));
 function inventoryHtml() {
   const items = ownedSkins();
   if (!items.length) return '<div class="panel"><p class="muted">No skins yet.</p><div class="link-row"><button type="button" class="ghost-button" data-page="shop">Open a crate →</button></div></div>';
-  const pick = inventoryPick && items.find((item) => skinKey(item) === skinKey(inventoryPick)) || items[0];
-  inventoryPick = { weapon: pick.weapon, finish: pick.finish };
+  const pick = items.find((item) => item.finish === inventoryPick) || items[0];
+  inventoryPick = pick.finish;
   const info = finishInfo(pick.finish), rarity = RARITY[pick.rarity];
-  const equipped = game.look.skins?.[pick.weapon] === pick.finish;
+  const equipped = equippedFinish() === pick.finish;
   const scrapValue = Math.floor(finishValue(pick.finish) * SCRAP);
-  const scrapKey = `scrap:${skinKey(pick)}`;
-  const tradeRarity = trade.length ? finishInfo(trade[0].finish).rarity : null;
+  const scrapKey = `scrap:${pick.finish}`;
+  const tradeRarity = trade.length ? finishInfo(trade[0]).rarity : null;
   const shown = items.filter((item) => rarityFilter === 'all' || item.rarity === rarityFilter);
   const card = (item) => {
-    const key = skinKey(item), picked = trade.some((t) => skinKey(t) === key);
+    const picked = trade.includes(item.finish);
     const blocked = tradeMode && !picked && (item.rarity === 'mythic' || item.rarity === 'dev' || (tradeRarity && item.rarity !== tradeRarity) || trade.length >= TRADE_UP);
-    return `<button type="button" class="inv-card rarity-${item.rarity}${key === skinKey(pick) && !tradeMode ? ' active' : ''}${picked ? ' picked' : ''}${blocked ? ' blocked' : ''}${game.look.skins?.[item.weapon] === item.finish ? ' on' : ''}" style="--rarity:${RARITY[item.rarity].color}" data-inv="${key}"><img src="${skinArt(item.weapon, item.finish)}" alt="" /><b>${finishInfo(item.finish).name}</b><small>${WEAPONS[item.weapon].name}</small></button>`;
+    const worn = Object.values(game.look.skins || {}).includes(item.finish);
+    return `<button type="button" class="inv-card rarity-${item.rarity}${item.finish === pick.finish && !tradeMode ? ' active' : ''}${picked ? ' picked' : ''}${blocked ? ' blocked' : ''}${worn ? ' on' : ''}" style="--rarity:${RARITY[item.rarity].color}" data-inv="${item.finish}"><img src="${skinArt(weaponId, item.finish)}" alt="" /><b>${finishInfo(item.finish).name}</b><small>${devFinish(item.finish) ? 'Dev class' : RARITY[item.rarity].name}</small></button>`;
   };
-  const slots = Array.from({ length: TRADE_UP }, (_, i) => trade[i] ? `<img src="${finishSwatch(trade[i].finish)}" alt="" title="${dropName(trade[i])}" />` : '<i></i>').join('');
+  const slots = Array.from({ length: TRADE_UP }, (_, i) => trade[i] ? `<img src="${finishSwatch(trade[i])}" alt="" title="${finishInfo(trade[i]).name}" />` : '<i></i>').join('');
   const counts = Object.keys(RARITY).map((id) => [id, items.filter((item) => item.rarity === id).length]).filter(([, n]) => n);
   return `<div class="shop-inventory">
     <div class="inv-top">
-      <div class="panel skin-preview rarity-${pick.rarity}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[pick.weapon].tag}</small><h3>${info.name}</h3><span>${WEAPONS[pick.weapon].name} · <b style="color:${rarity.color}">${rarity.name}</b></span>
-        <div class="button-row">${equipped ? '<em class="state on">Equipped</em>' : `<button type="button" class="mini" data-inv-equip="1">Equip</button>`}${pick.rarity === 'dev' ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : `<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button>`}</div></div></div>
+      <div class="panel skin-preview rarity-${pick.rarity}"><div id="skin-stage" class="skin-stage"></div><div><small>${devFinish(pick.finish) ? devChip : 'Every gun'}</small><h3>${info.name}</h3><span><b style="color:${rarity.color}">${rarity.name}</b>${animatedFinish(pick.finish) ? ' · animated' : ''}</span>
+        <div class="button-row">${equipped ? '<em class="state on">On every gun</em>' : '<button type="button" class="mini" data-inv-equip="1">Equip</button>'}${pick.rarity === 'dev' ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : `<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button>`}</div></div></div>
       <div class="panel trade-panel"><p class="eyebrow">Trade-up</p><p class="muted">${TRADE_UP} skins of one rarity for 1 random skin of the next.</p><div class="trade-slots">${slots}</div>
         <div class="button-row">${tradeMode ? `<button type="button" data-trade-go="1" ${trade.length === TRADE_UP && !busy ? '' : 'disabled'}>Trade up${tradeRarity ? ` to ${RARITY[NEXT_RARITY[tradeRarity]].name}` : ''}</button><button type="button" class="ghost-button" data-trade-cancel="1">Cancel</button>` : '<button type="button" class="secondary-button" data-trade-start="1">Pick skins</button>'}</div></div>
     </div>
@@ -778,13 +786,13 @@ export function onShopClick(button) {
   if (d.friendSend) { const box = document.querySelector('#send-to'); if (box) box.value = d.friendSend; wallet = { to: d.friendSend, amount: wallet.amount, pilot: undefined, looking: true }; net.send({ type: 'lookup', name: d.friendSend }); play('ui'); setTimeout(() => document.querySelector('#send-amount')?.focus(), 50); return true; }
   if (d.weapon) { weaponId = d.weapon; preview = null; armed = null; play('ui'); return true; }
   if (d.preview !== undefined) { preview = d.preview || undefined; play('ui'); return true; }
-  if (d.equip !== undefined) { equip(weaponId, d.equip || null); preview = null; play('ready'); return true; }
+  if (d.equip !== undefined) { equip(d.equip || null); preview = null; play('ready'); return true; }
   if (d.buySkin) {
-    const key = `skin:${weaponId}:${d.buySkin}`;
+    const key = `skin:${d.buySkin}`;
     preview = d.buySkin;
     if (game.profile.coins < finishPrice(d.buySkin)) { ctx.toast('Not enough coins.', 'warn'); play('deny'); return true; }
     if (armed !== key) { armed = key; play('ui'); return true; }
-    request({ type: 'shop', action: 'skin', weapon: weaponId, finish: d.buySkin });
+    request({ type: 'shop', action: 'skin', finish: d.buySkin });
     return true;
   }
   if (d.crate) { crateId = d.crate; reveal = null; crate = null; play('ui'); return true; }
@@ -800,26 +808,26 @@ export function onShopClick(button) {
   if (d.daily) { crateId = DAILY_CRATE.crate; crate = null; reveal = null; request({ type: 'shop', action: 'crate', crate: DAILY_CRATE.crate, count: 1, free: true }); play('ready'); return true; }
   if (d.skip) { land(); return true; }
   if (d.reveal !== undefined && reveal) { reveal.index = Number(d.reveal); reveal.peek = true; play('ui'); return true; }
-  if (d.equipDrop !== undefined && reveal) { const drop = reveal.drops[Number(d.equipDrop)]; equip(drop.weapon, drop.finish); play('ready'); return true; }
+  if (d.equipDrop !== undefined && reveal) { equip(reveal.drops[Number(d.equipDrop)].finish); play('ready'); return true; }
   if (d.closeReveal) { reveal = null; crate = null; play('uiBack'); return true; }
   if (d.inv) {
-    const [weapon, finish] = d.inv.split(':');
-    if (!tradeMode) { inventoryPick = { weapon, finish }; armed = null; play('ui'); return true; }
-    const index = trade.findIndex((item) => item.weapon === weapon && item.finish === finish);
+    const finish = d.inv;
+    if (!tradeMode) { inventoryPick = finish; armed = null; play('ui'); return true; }
+    const index = trade.indexOf(finish);
     const rarity = finishInfo(finish).rarity;
     if (index >= 0) trade.splice(index, 1);
     else if (rarity === 'mythic') { ctx.toast('Mythic is as high as it goes.', 'warn'); play('deny'); return true; }
     else if (rarity === 'dev') { ctx.toast('Dev items can\'t be traded.', 'warn'); play('deny'); return true; }
     else if (trade.length && finishInfo(trade[0].finish).rarity !== rarity) { ctx.toast('All five must be the same rarity.', 'warn'); play('deny'); return true; }
-    else if (trade.length < TRADE_UP) trade.push({ weapon, finish });
+    else if (trade.length < TRADE_UP) trade.push(finish);
     play('ui');
     return true;
   }
-  if (d.invEquip && inventoryPick) { equip(inventoryPick.weapon, inventoryPick.finish); play('ready'); return true; }
-  if (d.scrap && inventoryPick && !devFinish(inventoryPick.finish)) {
-    const key = `scrap:${skinKey(inventoryPick)}`;
+  if (d.invEquip && inventoryPick) { equip(inventoryPick); play('ready'); return true; }
+  if (d.scrap && inventoryPick && !devFinish(inventoryPick)) {
+    const key = `scrap:${inventoryPick}`;
     if (armed !== key) { armed = key; play('ui'); return true; }
-    request({ type: 'shop', action: 'scrap', ...inventoryPick });
+    request({ type: 'shop', action: 'scrap', finish: inventoryPick });
     return true;
   }
   if (d.tradeStart) { tradeMode = true; trade = []; play('ui'); return true; }
