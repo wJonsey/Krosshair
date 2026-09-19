@@ -108,6 +108,46 @@ function filigree(c, line, seed) {
   }
   grain(c, 0.07, seed);
 }
+// Circuit traces drawn at every wrap offset, so they carry on across the tile's edges.
+function wrappedCircuit(c, color, width, seed) { wrapped((dx, dy) => { c.save(); c.translate(dx, dy); circuit(c, color, width, seed); c.restore(); }); }
+// Tiling cells on a jittered n x n grid. `shade(cell, edge, x, y)` returns [r, g, b]; `edge` is how far the pixel sits from the nearest border.
+function voronoi(c, n, seed, shade) {
+  const r = rng(seed), pts = [], img = c.createImageData(SIZE, SIZE);
+  for (let gy = 0; gy < n; gy += 1) for (let gx = 0; gx < n; gx += 1) pts.push([((gx + 0.15 + r() * 0.7) * SIZE) / n, ((gy + 0.15 + r() * 0.7) * SIZE) / n]);
+  for (let y = 0; y < SIZE; y += 1) for (let x = 0; x < SIZE; x += 1) {
+    let d1 = 1e9, d2 = 1e9, best = 0;
+    for (let i = 0; i < pts.length; i += 1) { let dx = Math.abs(x - pts[i][0]), dy = Math.abs(y - pts[i][1]); dx = Math.min(dx, SIZE - dx); dy = Math.min(dy, SIZE - dy); const d = dx * dx + dy * dy; if (d < d1) { d2 = d1; d1 = d; best = i; } else if (d < d2) d2 = d; }
+    const [cr, cg, cb] = shade(best, Math.sqrt(d2) - Math.sqrt(d1), x, y), i = (y * SIZE + x) * 4;
+    img.data[i] = cr; img.data[i + 1] = cg; img.data[i + 2] = cb; img.data[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+}
+// Contour lines over a height field that repeats every tile, every fifth line heavier. `paper(band)` and `ink` are [r, g, b].
+function contours(c, paper, ink, seed) {
+  const r = rng(seed), ph = [r() * 6.28, r() * 6.28, r() * 6.28, r() * 6.28], T = (Math.PI * 2) / SIZE, img = c.createImageData(SIZE, SIZE);
+  const h = (x, y) => { const u = x * T, v = y * T; return (0.55 * Math.sin(u + 0.9 * Math.sin(v + ph[0])) + 0.45 * Math.cos(2 * v + 0.7 * Math.sin(u + ph[1])) + 0.25 * Math.sin(2 * u - v + ph[2]) + 0.16 * Math.cos(3 * u + 2 * v + ph[3])) * 5 + 10; };
+  for (let y = 0; y < SIZE; y += 1) for (let x = 0; x < SIZE; x += 1) {
+    const l = h(x, y), g = Math.hypot(h(x + 1, y) - l, h(x, y + 1) - l) + 1e-4, band = Math.floor(l), d = Math.min(l - band, band + 1 - l) / g;
+    const t = Math.max(0, Math.min(1, (Math.round(l) % 5 === 0 ? 2 : 1.2) - d)), base = paper(band), i = (y * SIZE + x) * 4;
+    for (let k = 0; k < 3; k += 1) img.data[i + k] = base[k] + (ink[k] - base[k]) * t;
+    img.data[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+}
+// Jellyfish outlines: a scalloped bell and wavy trailing tentacles.
+function jellies(c, color, seed) {
+  const r = rng(seed);
+  c.strokeStyle = color; c.lineCap = 'round';
+  for (let i = 0; i < 7; i += 1) {
+    const x = r() * SIZE, y = r() * SIZE, s = 9 + r() * 9, tilt = (r() - 0.5) * 0.6, legs = Array.from({ length: 5 }, () => [r() * 6.28, 1.6 + r() * 1.4]);
+    wrapped((dx, dy) => {
+      c.save(); c.translate(x + dx, y + dy); c.rotate(tilt);
+      c.lineWidth = 1.4; c.beginPath(); c.ellipse(0, 0, s, s * 0.75, 0, Math.PI, 0); c.quadraticCurveTo(0, s * 0.35, -s, 0); c.stroke();
+      c.lineWidth = 0.9; legs.forEach(([ph, len], k) => { const lx = -s * 0.7 + (k / 4) * s * 1.4; c.beginPath(); c.moveTo(lx, s * 0.12); for (let t = 1; t <= 10; t += 1) c.lineTo(lx + Math.sin(ph + t * 0.9) * 2.5, s * 0.12 + t * s * 0.11 * len); c.stroke(); });
+      c.restore();
+    });
+  }
+}
 function solid(color, seed) { return (c) => { c.fillStyle = color; c.fillRect(0, 0, SIZE, SIZE); grain(c, 0.08, seed); }; }
 
 // Each painter fills the colour tile; `glow` painters also fill an emissive tile.
@@ -170,6 +210,235 @@ const FINISH_ART = {
     paint: (c) => { c.fillStyle = '#08070e'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(88,40,160,.35)', 'rgba(30,20,80,.45)'], 16, 20, 50, 71); },
     emit: (c) => { c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(140,70,255,.25)'], 10, 16, 40, 72); const r = rng(73); for (let i = 0; i < 90; i += 1) { c.fillStyle = `rgba(230,220,255,${0.4 + r() * 0.6})`; c.fillRect(r() * SIZE, r() * SIZE, 1.5, 1.5); } },
   },
+  // Common additions: plain, grounded paint.
+  gunmetal: { rough: 0.4, metal: 0.55, paint: (c) => { c.fillStyle = '#3a414b'; c.fillRect(0, 0, SIZE, SIZE); const r = rng(150); for (let y = 0; y < SIZE; y += 1) { c.fillStyle = `rgba(${r() < 0.5 ? '18,22,30' : '160,175,195'},${r() * 0.12})`; c.fillRect(0, y, SIZE, 1); } grain(c, 0.04, 151); } },
+  coyote: { paint: solid('#8a6a45', 152), rough: 0.85, metal: 0.05 },
+  navy: { paint: solid('#1b2a4a', 153), rough: 0.6, metal: 0.2 },
+  brick: { rough: 0.9, metal: 0.05, paint: (c) => { c.fillStyle = '#8e3a2c'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(60,18,12,.16)', 'rgba(176,92,70,.14)'], 30, 8, 22, 154); grain(c, 0.13, 155); } },
+  multicam: { rough: 0.8, metal: 0.05, paint: (c) => { c.fillStyle = '#b09d74'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['#c7b88f', '#9a8a60'], 26, 16, 36, 156); blobs(c, ['#6f7a4a', '#7e6546', '#5d6a3e'], 30, 8, 22, 157); lines(c, '#3a3122', 2.2, 26, 158, [8, 22]); blobs(c, ['#3a3122'], 18, 2, 4, 159); grain(c, 0.06, 160); } },
+  snowcamo: { rough: 0.75, metal: 0.05, paint: (c) => { c.fillStyle = '#eef1f3'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['#c9cfd4', '#dde2e6', '#b7bec5'], 28, 12, 30, 161); blobs(c, ['#5a524a', '#6b645c'], 10, 5, 12, 162); grain(c, 0.05, 163); } },
+  nightcamo: { rough: 0.7, metal: 0.15, paint: (c) => { c.fillStyle = '#12151f'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['#252c3d', '#1a2030', '#303a4f'], 32, 12, 32, 164); grain(c, 0.05, 165); } },
+  walnut: { rough: 0.6, metal: 0.05, paint: (c) => { c.fillStyle = '#6a4125'; c.fillRect(0, 0, SIZE, SIZE); const r = rng(166); for (let i = 0; i < 70; i += 1) { const y0 = r() * SIZE, a = 2 + r() * 5, n = 1 + Math.floor(r() * 3), ph = r() * 6.28; c.strokeStyle = r() < 0.6 ? `rgba(38,20,8,${0.25 + r() * 0.4})` : `rgba(160,104,60,${0.2 + r() * 0.3})`; c.lineWidth = 0.6 + r() * 1.8; for (const dy of [-SIZE, 0, SIZE]) { c.beginPath(); for (let x = 0; x <= SIZE; x += 8) c.lineTo(x, y0 + dy + Math.sin((x / SIZE) * Math.PI * 2 * n + ph) * a + Math.sin((x / SIZE) * Math.PI * 6 + i) * 1.5); c.stroke(); } } for (const [kx, ky] of [[70, 60], [190, 170], [30, 214]]) wrapped((dx, dy) => { for (let k = 5; k >= 1; k -= 1) { c.fillStyle = k % 2 ? 'rgba(45,24,10,.55)' : 'rgba(110,68,36,.6)'; c.beginPath(); c.ellipse(kx + dx, ky + dy, k * 3.2, k * 1.6, 0, 0, Math.PI * 2); c.fill(); } }); grain(c, 0.06, 167); } },
+  // Rare additions.
+  topo: { rough: 0.75, metal: 0.05, paint: (c) => { contours(c, (band) => (band % 2 ? [150, 146, 102] : [136, 134, 90]), [52, 50, 30], 168); grain(c, 0.05, 169); } },
+  python: { rough: 0.55, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#cdb68c'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(170);
+    for (let i = 0; i < 13; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, parts = Array.from({ length: 5 }, () => [(r() - 0.5) * 30, (r() - 0.5) * 18, 7 + r() * 8, r() * 3]);
+      for (const [color, grow] of [['#23170c', 3], ['#5b3c20', 0], ['#86653e', -5]]) { c.fillStyle = color; wrapped((dx, dy) => { for (const [ox, oy, s, a] of parts) if (s + grow > 1) { c.beginPath(); c.ellipse(x + dx + ox, y + dy + oy, s + grow, (s + grow) * 0.7, a, 0, Math.PI * 2); c.fill(); } }); }
+    }
+    c.strokeStyle = 'rgba(40,28,14,.28)'; c.lineWidth = 0.8; c.beginPath(); for (let k = -SIZE; k <= SIZE * 2; k += 8) { c.moveTo(k, 0); c.lineTo(k + SIZE, SIZE); c.moveTo(k, 0); c.lineTo(k - SIZE, SIZE); } c.stroke();
+    grain(c, 0.07, 171);
+  } },
+  kevlar: { rough: 0.5, metal: 0.2, paint: (c) => { for (let x = 0; x < SIZE; x += 16) for (let y = 0; y < SIZE; y += 16) { const across = ((x + y) / 16) % 2 === 0; const g = across ? c.createLinearGradient(x, y, x + 16, y) : c.createLinearGradient(x, y, x, y + 16); g.addColorStop(0, '#7d5c0e'); g.addColorStop(0.5, '#e6bd45'); g.addColorStop(1, '#7d5c0e'); c.fillStyle = g; c.fillRect(x, y, 16, 16); c.fillStyle = 'rgba(90,60,5,.35)'; for (let k = 3; k < 16; k += 4) { if (across) c.fillRect(x + k, y, 1, 16); else c.fillRect(x, y + k, 16, 1); } } grain(c, 0.05, 172); } },
+  racing: { rough: 0.15, metal: 0.25, paint: (c) => { const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#1a42a8'); g.addColorStop(0.5, '#0f2a78'); g.addColorStop(1, '#1a42a8'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = 'rgba(255,255,255,.07)'; c.fillRect(0, 70, SIZE, 26); c.fillStyle = '#f4f5f7'; for (const y of [5, SIZE - 25]) c.fillRect(0, y, SIZE, 20); grain(c, 0.03, 173); } },
+  giraffe: { rough: 0.7, metal: 0.05, paint: (c) => { const browns = [[150, 86, 40], [128, 70, 32], [166, 102, 52], [112, 60, 28]]; voronoi(c, 5, 174, (i, e) => { const t = Math.max(0, Math.min(1, (e - 5) / 2.5)), deep = 1 - Math.min(e, 40) / 200, b = browns[i % 4]; return [236 + (b[0] * deep - 236) * t, 222 + (b[1] * deep - 222) * t, 190 + (b[2] * deep - 190) * t]; }); grain(c, 0.07, 175); } },
+  denim: { rough: 0.85, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#2f4d7c'; c.fillRect(0, 0, SIZE, SIZE);
+    c.strokeStyle = 'rgba(190,210,235,.22)'; c.lineWidth = 1.4; c.beginPath(); for (let k = -SIZE; k < SIZE * 2; k += 4) { c.moveTo(k, 0); c.lineTo(k + SIZE / 2, SIZE); } c.stroke();
+    c.strokeStyle = 'rgba(8,18,40,.3)'; c.lineWidth = 1; c.beginPath(); for (let k = -SIZE + 2; k < SIZE * 2; k += 4) { c.moveTo(k, 0); c.lineTo(k + SIZE / 2, SIZE); } c.stroke();
+    const r = rng(176);
+    for (let i = 0; i < 7; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 14 + r() * 22; wrapped((dx, dy) => { const g = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, s); g.addColorStop(0, 'rgba(175,198,228,.45)'); g.addColorStop(1, 'rgba(175,198,228,0)'); c.fillStyle = g; c.fillRect(x + dx - s, y + dy - s, s * 2, s * 2); }); }
+    c.fillStyle = 'rgba(10,22,48,.35)'; c.fillRect(0, 18, SIZE, 12); c.fillRect(226, 0, 12, SIZE);
+    c.strokeStyle = '#e08a2e'; c.lineWidth = 1.6; c.setLineDash([5, 3]); c.beginPath(); for (const y of [16, 32]) { c.moveTo(0, y); c.lineTo(SIZE, y); } for (const x of [224, 240]) { c.moveTo(x, 0); c.lineTo(x, SIZE); } c.stroke(); c.setLineDash([]);
+    grain(c, 0.08, 177);
+  } },
+  honeycomb: { rough: 0.3, metal: 0.3, paint: (c) => { c.fillStyle = '#b87a14'; c.fillRect(0, 0, SIZE, SIZE); hexes(c, '#5a3505', 6, '#d99a26'); blobs(c, ['rgba(255,214,110,.3)', 'rgba(140,70,5,.3)'], 40, 3, 8, 178); hexes(c, '#5a3505', 5); hexes(c, 'rgba(255,226,150,.55)', 1.2); } },
+  ducttape: { rough: 0.65, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#3a3d41'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(179);
+    for (let i = 0; i < 14; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, a = (r() - 0.5) * 1.4 + (i % 2 ? Math.PI / 2 : 0), l = 110 + r() * 110, w = 28 + r() * 10, black = i === 4 || i === 10, fill = black ? '#1c1d20' : ['#a7abaf', '#989ca1', '#b5b8bb'][i % 3], tear = Array.from({ length: 8 }, () => (r() - 0.5) * 7);
+      wrapped((dx, dy) => {
+        c.save(); c.translate(x + dx, y + dy); c.rotate(a);
+        c.beginPath(); c.moveTo(-l / 2, -w / 2); c.lineTo(l / 2, -w / 2); tear.slice(0, 4).forEach((t, k) => c.lineTo(l / 2 + t, -w / 2 + ((k + 1) / 4) * w)); c.lineTo(-l / 2, w / 2); tear.slice(4).forEach((t, k) => c.lineTo(-l / 2 + t, w / 2 - ((k + 1) / 4) * w)); c.closePath();
+        c.strokeStyle = 'rgba(0,0,0,.3)'; c.lineWidth = 3; c.stroke(); c.fillStyle = fill; c.fill(); c.clip();
+        c.strokeStyle = black ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.09)'; c.lineWidth = 1; c.beginPath(); for (let k = -w / 2; k < w / 2; k += 2.5) { c.moveTo(-l / 2 - 8, k); c.lineTo(l / 2 + 8, k); } for (let k = -l / 2; k < l / 2; k += 3) { c.moveTo(k, -w / 2); c.lineTo(k, w / 2); } c.stroke();
+        const g = c.createLinearGradient(0, -w / 2, 0, w / 2); g.addColorStop(0, 'rgba(255,255,255,.18)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.15)'); c.fillStyle = g; c.fillRect(-l / 2 - 8, -w / 2, l + 16, w);
+        c.restore();
+      });
+    }
+  } },
+  // Epic additions. The horizon of the vaporwave scene sits on the tile edge, where the gun's flanks sample.
+  vaporwave: { rough: 0.35, metal: 0.1, paint: (c) => {
+    const sky = c.createLinearGradient(0, 128, 0, SIZE); sky.addColorStop(0, '#2a1060'); sky.addColorStop(0.45, '#01cdfe'); sky.addColorStop(1, '#ff71ce');
+    c.fillStyle = sky; c.fillRect(0, 128, SIZE, 128);
+    const ground = c.createLinearGradient(0, 0, 0, 128); ground.addColorStop(0, '#b967ff'); ground.addColorStop(1, '#2a1060');
+    c.fillStyle = ground; c.fillRect(0, 0, SIZE, 128);
+    const r = rng(180); c.fillStyle = 'rgba(255,255,255,.7)'; for (let i = 0; i < 24; i += 1) c.fillRect(r() * SIZE, 130 + r() * 40, 1.5, 1.5);
+    const sun = c.createLinearGradient(0, 190, 0, SIZE); sun.addColorStop(0, '#fff36b'); sun.addColorStop(1, '#ff4fa3');
+    c.fillStyle = sun; c.beginPath(); c.arc(128, SIZE, 62, Math.PI, 0); c.fill();
+    c.fillStyle = sky; for (let k = 0; k < 6; k += 1) c.fillRect(0, 216 + k * 7, SIZE, 1.5 + k * 0.8);
+    c.strokeStyle = '#01cdfe'; c.lineWidth = 1.5; for (let k = -8; k <= 8; k += 1) { c.beginPath(); c.moveTo(128 + k * 3, 0); c.lineTo(128 + k * 16, 128); c.stroke(); }
+    c.strokeStyle = '#ff71ce'; for (let k = 1; k <= 7; k += 1) { const y = 128 * (k / 8) ** 2; c.lineWidth = 0.6 + k * 0.2; c.beginPath(); c.moveTo(0, y); c.lineTo(SIZE, y); c.stroke(); }
+    c.fillStyle = '#ffd6f2'; c.fillRect(0, 0, SIZE, 1.5); c.fillRect(0, SIZE - 1.5, SIZE, 1.5);
+  } },
+  stained: { rough: 0.2, metal: 0.1, paint: (c) => { const jewels = [[200, 20, 50], [20, 90, 200], [20, 160, 90], [230, 170, 20], [120, 40, 170], [230, 90, 20], [20, 170, 190]]; voronoi(c, 6, 181, (i, e, x, y) => { if (e < 4) return [18, 16, 20]; const j = jewels[(i * 5 + 3) % jewels.length], f = (0.72 + 0.28 * Math.min(1, e / 18)) * (0.85 + 0.15 * Math.sin((x / SIZE) * Math.PI * 6 + i) * Math.cos((y / SIZE) * Math.PI * 4 + i * 2)), t = Math.min(1, (e - 4) / 1.5); return [18 + (j[0] * f - 18) * t, 16 + (j[1] * f - 16) * t, 20 + (j[2] * f - 20) * t]; }); } },
+  comic: { rough: 0.55, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#ffe14d'; c.fillRect(0, 0, SIZE, SIZE);
+    c.fillStyle = '#ff4a3d'; for (let x = 0; x < SIZE; x += 8) for (let y = 0; y < SIZE; y += 8) { const s = 0.5 + 0.5 * Math.sin(((x + y) / SIZE) * Math.PI * 4); c.beginPath(); c.arc(x + 4, y + 4, 0.6 + s * 2.6, 0, Math.PI * 2); c.fill(); }
+    const r = rng(182);
+    for (let i = 0; i < 5; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, rx = 22 + r() * 18, ry = rx * (0.6 + r() * 0.4), a = r() * 3;
+      wrapped((dx, dy) => {
+        if (x + dx < -60 || x + dx > SIZE + 60 || y + dy < -60 || y + dy > SIZE + 60) return;
+        c.save(); c.beginPath(); c.ellipse(x + dx, y + dy, rx, ry, a, 0, Math.PI * 2); c.fillStyle = '#1f5fd6'; c.fill(); c.clip();
+        c.fillStyle = 'rgba(255,255,255,.55)'; for (let px = -42; px <= 42; px += 7) for (let py = -42; py <= 42; py += 7) { c.beginPath(); c.arc(x + dx + px, y + dy + py, 1.6, 0, Math.PI * 2); c.fill(); }
+        c.restore(); c.strokeStyle = '#111'; c.lineWidth = 4; c.beginPath(); c.ellipse(x + dx, y + dy, rx, ry, a, 0, Math.PI * 2); c.stroke();
+      });
+    }
+    for (const [x, y, R, fill] of [[60, 20, 34, '#ff2d2d'], [190, 150, 28, '#ffffff'], [128, 236, 24, '#1f5fd6']]) wrapped((dx, dy) => {
+      for (const [scale, color] of [[1, fill], [0.5, fill === '#ff2d2d' ? '#ffe14d' : '#ff2d2d']]) { c.beginPath(); for (let k = 0; k < 24; k += 1) { const a = (k / 24) * Math.PI * 2, rr = (k % 2 ? R * 0.55 : R * (0.9 + ((k * 7) % 5) * 0.05)) * scale; c.lineTo(x + dx + Math.cos(a) * rr, y + dy + Math.sin(a) * rr); } c.closePath(); c.fillStyle = color; c.fill(); c.strokeStyle = '#111'; c.lineWidth = scale > 0.6 ? 3.5 : 2; c.stroke(); }
+    });
+    lines(c, '#111', 2.5, 10, 183, [10, 26]);
+  } },
+  pixel: { rough: 0.6, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#5c94fc'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(184); c.fillStyle = 'rgba(255,255,255,.55)'; for (let i = 0; i < 16; i += 1) c.fillRect(Math.floor(r() * 32) * 8 + 2, Math.floor(r() * 32) * 8 + 2, 4, 4);
+    const ink = { k: '#101018', r: '#e8323c', w: '#ffffff', y: '#ffd23f', o: '#d68a1c', c: '#fcfcfc', g: '#bcd4fc' };
+    const art = { heart: ['.kk.kk.', 'kwrkrrk', 'krrrrrk', '.krrrk.', '..krk..', '...k...'], coin: ['.kkk.', 'kywok', 'kywok', 'kywok', 'kywok', 'kyyok', '.kkk.'], cloud: ['...cc.ccc..', '.ccccccccc.', 'ccccccccccc', '.ggggggggg.'] };
+    const stamp = (name, gx, gy) => art[name].forEach((row, y) => [...row].forEach((ch, x) => { if (ch === '.') return; c.fillStyle = ink[ch]; c.fillRect(((gx + x) % 32) * 8, ((gy + y) % 32) * 8, 8, 8); }));
+    for (const [name, gx, gy] of [['cloud', 2, 1], ['cloud', 17, 17], ['cloud', 24, 5], ['heart', 15, 7], ['heart', 4, 22], ['heart', 26, 26], ['coin', 8, 10], ['coin', 21, 24], ['coin', 13, 27], ['coin', 28, 12]]) stamp(name, gx, gy);
+  } },
+  patina: { rough: 0.6, metal: 0.45, paint: (c) => {
+    c.fillStyle = '#a45a32'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(206,124,72,.45)', 'rgba(110,52,26,.45)'], 30, 10, 30, 185);
+    const r = rng(186);
+    for (let b = 0; b < 7; b += 1) {
+      const bx = r() * SIZE, by = r() * SIZE;
+      for (let i = 0; i < 40; i += 1) { const x = bx + (r() + r() - 1) * 34, y = by + (r() + r() - 1) * 34, s = 2 + r() * 9, color = ['rgba(90,185,165,.8)', 'rgba(60,150,140,.75)', 'rgba(140,210,190,.7)', 'rgba(40,110,105,.6)'][i % 4]; wrapped((dx, dy) => { c.fillStyle = color; c.beginPath(); c.ellipse(x + dx, y + dy, s, s * 0.8, i, 0, Math.PI * 2); c.fill(); }); }
+    }
+    grain(c, 0.12, 187);
+  } },
+  terrazzo: { rough: 0.3, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#ece6da'; c.fillRect(0, 0, SIZE, SIZE); grain(c, 0.05, 188);
+    const r = rng(189), chips = ['#c9553f', '#2f6f8f', '#e0a83a', '#4d8a5a', '#8a8f96', '#d89aa8', '#1f2a33', '#f7f4ee', '#b5793d'];
+    for (let i = 0; i < 230; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 2 + r() * (i < 30 ? 10 : 5), a = r() * 6.28, sides = 3 + Math.floor(r() * 4), jag = Array.from({ length: sides }, () => 0.6 + r() * 0.6); c.fillStyle = chips[Math.floor(r() * chips.length)]; wrapped((dx, dy) => { c.beginPath(); jag.forEach((j, k) => { const t = a + (k / sides) * Math.PI * 2; c.lineTo(x + dx + Math.cos(t) * s * j, y + dy + Math.sin(t) * s * j); }); c.fill(); }); }
+  } },
+  glacier: { rough: 0.2, metal: 0.2, paint: (c) => {
+    const r = rng(190), blues = ['#e6f4fb', '#c8e6f5', '#a9d5ee', '#86bfe3', '#5f9fd0', '#3f7fb9', '#2a5f9a', '#d6edf8'], band = Array.from({ length: 16 }, () => blues[Math.floor(r() * blues.length)]);
+    const edge = (x, k) => k * 16 + Math.sin((x / SIZE) * Math.PI * 4 + (k * Math.PI * 3) / 8) * 6;
+    for (let k = -1; k <= 16; k += 1) { c.fillStyle = band[(k + 16) % 16]; c.beginPath(); for (let x = 0; x <= SIZE; x += 8) c.lineTo(x, edge(x, k)); for (let x = SIZE; x >= 0; x -= 8) c.lineTo(x, edge(x, k + 1)); c.fill(); }
+    blobs(c, ['rgba(255,255,255,.25)', 'rgba(20,70,130,.18)'], 26, 14, 40, 191);
+    veins(c, 'rgba(240,250,255,.85)', 1.6, 6, 192); lines(c, 'rgba(18,60,110,.5)', 1, 22, 193, [8, 40]); lines(c, 'rgba(255,255,255,.6)', 0.8, 18, 194, [6, 30]);
+  } },
+  // Legendary additions.
+  meteorite: { rough: 0.3, metal: 0.5, paint: (c) => {
+    c.fillStyle = '#5a5f65'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(40,44,50,.5)', 'rgba(120,126,132,.35)'], 60, 3, 9, 195);
+    const r = rng(196), greys = ['#9aa1a8', '#b3b9bf', '#848b92', '#a8aeb4', '#8f969d', '#c0c5ca'];
+    for (let i = 0; i < 80; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, a = (i % 3) * (Math.PI / 3) + 0.35 + (r() - 0.5) * 0.06, l = 50 + r() * 150, w = 4 + r() * 10, fill = greys[Math.floor(r() * greys.length)];
+      wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(a); c.fillStyle = 'rgba(28,30,34,.7)'; c.fillRect(-l / 2 - 1.5, -w / 2 - 1.5, l + 3, w + 3); c.fillStyle = fill; c.fillRect(-l / 2, -w / 2, l, w); c.fillStyle = 'rgba(235,238,240,.8)'; c.fillRect(-l / 2, -w / 2, l, 1); c.fillRect(-l / 2, w / 2 - 1, l, 1); c.restore(); });
+    }
+    grain(c, 0.1, 197);
+  } },
+  pearl: { rough: 0.15, metal: 0.25, paint: (c) => {
+    const img = c.createImageData(SIZE, SIZE), T = (Math.PI * 2) / SIZE;
+    for (let y = 0; y < SIZE; y += 1) for (let x = 0; x < SIZE; x += 1) {
+      const u = x * T, v = y * T, s = Math.sin(2 * u + 1.6 * Math.sin(v + 1.3 * Math.cos(u))) + Math.cos(3 * v - u + 1.2 * Math.sin(2 * u)) * 0.7, t = s * 0.9 + Math.sin(u + 2 * v) * 0.4, ring = 0.5 + 0.5 * Math.sin(t * 14), i = (y * SIZE + x) * 4;
+      img.data[i] = 226 + 22 * Math.cos(t * 2.1) - ring * 8; img.data[i + 1] = 228 + 22 * Math.cos(t * 2.1 + 2.1) - ring * 8; img.data[i + 2] = 232 + 20 * Math.cos(t * 2.1 + 4.2) - ring * 6; img.data[i + 3] = 255;
+    }
+    c.putImageData(img, 0, 0);
+    blobs(c, ['rgba(255,255,255,.18)'], 24, 10, 30, 198);
+  } },
+  lacquer: { rough: 0.08, metal: 0.2, paint: (c) => {
+    c.fillStyle = '#86101a'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(40,0,6,.22)', 'rgba(170,30,40,.18)'], 22, 20, 50, 199);
+    c.strokeStyle = '#d9b04f'; c.lineWidth = 1.1;
+    for (const y0 of [22, 150]) for (const off of [0, 5]) { c.beginPath(); for (let x = 0; x <= SIZE; x += 4) c.lineTo(x, y0 + off + Math.sin((x / SIZE) * Math.PI * 4) * 10 + Math.sin((x / SIZE) * Math.PI * 10) * 2); c.stroke(); }
+    for (const [x, y] of [[64, 86], [192, 214], [0, 214], [128, 86]]) wrapped((dx, dy) => { for (const s of [9, 5]) { c.beginPath(); c.arc(x + dx, y + dy, s, 0, Math.PI * 2); c.stroke(); } for (let k = 0; k < 5; k += 1) { const a = (k / 5) * Math.PI * 2; c.beginPath(); c.arc(x + dx + Math.cos(a) * 13, y + dy + Math.sin(a) * 13, 1.6, 0, Math.PI * 2); c.stroke(); } });
+    const r = rng(200);
+    for (let i = 0; i < 180; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 0.6 + r() * 2.2, a = r() * 6.28, color = `rgba(${r() < 0.5 ? '240,205,110' : '214,168,72'},${0.35 + r() * 0.65})`; wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(a); c.fillStyle = color; c.fillRect(-s, -s * 0.6, s * 2, s * 1.2); c.restore(); }); }
+  } },
+  // Scrimshaw: the sea surface sits just above the tile edge so the whale and the ship land on the gun's flanks.
+  scrimshaw: { rough: 0.5, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#e8dcc0'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(196,164,110,.16)', 'rgba(255,250,235,.25)'], 26, 16, 44, 201);
+    c.fillStyle = 'rgba(150,120,80,.12)'; for (let y = 3; y < SIZE; y += 7) c.fillRect(0, y, SIZE, 1);
+    lines(c, 'rgba(90,70,45,.25)', 0.6, 14, 202, [10, 40]);
+    const ink = '#2b2118'; c.strokeStyle = ink; c.lineCap = 'round';
+    for (const y0 of [-22, 100, 170]) for (const dy of [0, SIZE]) {
+      for (let row = 0; row < 3; row += 1) { c.lineWidth = 1.2 - row * 0.3; c.beginPath(); for (let x = 0; x <= SIZE; x += 2) c.lineTo(x, y0 + dy + row * 5 + Math.sin((x / SIZE) * Math.PI * 16) * 2.5); c.stroke(); }
+      c.lineWidth = 1; for (let k = 0; k < 8; k += 1) { c.beginPath(); c.arc(k * 32 + 12, y0 + dy - 4, 4, Math.PI, Math.PI * 2.4); c.stroke(); }
+    }
+    const whale = () => { c.beginPath(); c.moveTo(-55, 0); c.bezierCurveTo(-30, -14, 10, -20, 40, -16); c.bezierCurveTo(56, -14, 60, 4, 50, 10); c.bezierCurveTo(20, 16, -30, 12, -55, 0); c.lineTo(-70, -10); c.quadraticCurveTo(-65, 0, -72, 10); c.closePath(); };
+    wrapped((dx, dy) => {
+      c.save(); c.translate(150 + dx, 12 + dy);
+      whale(); c.fillStyle = 'rgba(60,45,30,.18)'; c.fill();
+      c.save(); c.clip(); c.lineWidth = 0.7; c.beginPath(); for (let k = -90; k <= 90; k += 4) { c.moveTo(k - 25, -25); c.lineTo(k + 25, 25); } for (let k = -90; k <= 90; k += 4) { c.moveTo(k, 2); c.lineTo(k - 20, 22); } c.stroke(); c.restore();
+      c.lineWidth = 1.6; whale(); c.stroke();
+      c.lineWidth = 1; c.beginPath(); c.arc(36, -2, 1.6, 0, Math.PI * 2); c.moveTo(52, 8); c.lineTo(22, 10); c.moveTo(10, 8); c.quadraticCurveTo(4, 16, -4, 14); c.stroke();
+      c.restore();
+      c.save(); c.translate(48 + dx, SIZE - 26 + dy);
+      c.beginPath(); c.moveTo(-24, -4); c.lineTo(24, -6); c.quadraticCurveTo(20, 6, 0, 6); c.quadraticCurveTo(-18, 6, -24, -4); c.closePath(); c.fillStyle = 'rgba(43,33,24,.85)'; c.fill();
+      c.lineWidth = 1.2; c.beginPath(); c.moveTo(24, -6); c.lineTo(36, -16);
+      for (const [m, top] of [[-9, -44], [8, -50]]) { c.moveTo(m, -4); c.lineTo(m, top); c.moveTo(m, top); c.lineTo(m + 7, top + 3); c.lineTo(m, top + 5); }
+      c.stroke();
+      c.lineWidth = 0.9;
+      for (const [m, top] of [[-9, -44], [8, -50]]) for (const k of [0, 1]) { const t = top + 7 + k * 16; c.beginPath(); c.moveTo(m - 9, t); c.quadraticCurveTo(m, t + 3, m + 9, t); c.lineTo(m + 8, t + 12); c.quadraticCurveTo(m, t + 15, m - 8, t + 12); c.closePath(); c.stroke(); c.beginPath(); for (let h = -6; h <= 6; h += 3) { c.moveTo(m + h, t + 2); c.lineTo(m + h, t + 12); } c.stroke(); }
+      c.restore();
+    });
+    c.save(); c.translate(200, 102); c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(-4, -10, -16, -14); c.quadraticCurveTo(-6, -6, 0, -8); c.quadraticCurveTo(6, -6, 16, -14); c.quadraticCurveTo(4, -10, 0, 0); c.fillStyle = 'rgba(43,33,24,.8)'; c.fill(); c.restore();
+  } },
+  abyss: {
+    rough: 0.3, metal: 0.2, glow: 1.1,
+    paint: (c) => { const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#020611'); g.addColorStop(0.5, '#04142a'); g.addColorStop(1, '#020611'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(10,40,80,.35)', 'rgba(0,0,0,.4)'], 20, 20, 50, 203); jellies(c, 'rgba(90,200,255,.22)', 204); },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(205);
+      for (let i = 0; i < 120; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 0.6 + r() * 1.6, col = r() < 0.75 ? '80,230,255' : '170,120,255', a = 0.45 + r() * 0.55; wrapped((dx, dy) => { const g = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, s * 3); g.addColorStop(0, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.fillRect(x + dx - s * 3, y + dy - s * 3, s * 6, s * 6); }); }
+      jellies(c, 'rgba(111,227,255,.65)', 204);
+    },
+  },
+  // Mythic additions: each one has its own shader below.
+  plasma: { rough: 0.35, metal: 0.3, shader: 'plasma', paint: (c) => { c.fillStyle = '#0b0a1a'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(70,50,200,.25)', 'rgba(150,60,220,.2)'], 18, 16, 40, 206); veins(c, 'rgba(140,150,255,.8)', 1.6, 6, 207); veins(c, 'rgba(255,255,255,.7)', 0.6, 6, 207); } },
+  glitch: { rough: 0.4, metal: 0.25, shader: 'glitch', paint: (c) => {
+    c.fillStyle = '#17191f'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(208);
+    for (let i = 0; i < 18; i += 1) { const y = Math.floor(r() * 32) * 8, h = 2 + Math.floor(r() * 3) * 3, x = r() * SIZE, len = 40 + r() * 180; c.fillStyle = ['#ff2e88', '#22e6ff', '#f2f2f2', '#2a2e38', '#b6ff3b'][i % 5]; c.fillRect(x, y, len, h); c.fillRect(x - SIZE, y, len, h); }
+    for (let i = 0; i < 60; i += 1) { c.fillStyle = r() < 0.5 ? 'rgba(255,255,255,.7)' : 'rgba(34,230,255,.6)'; c.fillRect(Math.floor(r() * 32) * 8, Math.floor(r() * 32) * 8, 8, 4); }
+    grain(c, 0.06, 209);
+  } },
+  quicksilver: { rough: 0.1, metal: 0.5, shader: 'quicksilver', paint: (c) => { const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#9aa3ad'); g.addColorStop(0.5, '#e4e8ec'); g.addColorStop(1, '#9aa3ad'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(255,255,255,.35)', 'rgba(60,68,80,.3)'], 26, 10, 30, 210); } },
+  nebula: { rough: 0.3, metal: 0.2, shader: 'nebula', paint: (c) => { c.fillStyle = '#07060f'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(255,70,170,.3)', 'rgba(40,220,210,.25)', 'rgba(140,60,255,.3)'], 24, 18, 46, 211); const r = rng(212); for (let i = 0; i < 80; i += 1) { c.fillStyle = `rgba(255,250,240,${0.4 + r() * 0.6})`; c.fillRect(r() * SIZE, r() * SIZE, 1.5, 1.5); } } },
+  spectre: { rough: 0.5, metal: 0.15, shader: 'spectre', paint: (c) => { c.fillStyle = '#0a0d15'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(60,100,180,.18)', 'rgba(0,0,0,.4)'], 20, 14, 40, 213); veins(c, 'rgba(150,200,255,.35)', 2.4, 5, 214); } },
+  synthwave: { rough: 0.35, metal: 0.25, shader: 'synthwave', paint: (c) => {
+    c.fillStyle = '#140822'; c.fillRect(0, 0, SIZE, SIZE);
+    c.strokeStyle = 'rgba(255,40,190,.6)'; c.lineWidth = 2; for (let k = 0; k < SIZE; k += 32) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k, SIZE); c.stroke(); }
+    c.strokeStyle = 'rgba(40,220,255,.6)'; c.lineWidth = 1.5; for (const y of [5, 13, 25, 41, 63, 91, 124]) for (const at of [y, SIZE - y]) { c.beginPath(); c.moveTo(0, at); c.lineTo(SIZE, at); c.stroke(); }
+    c.fillStyle = '#ffb347'; c.fillRect(0, 0, SIZE, 2); c.fillRect(0, SIZE - 2, SIZE, 2);
+  } },
+  // Dev class: the developers' own finishes, animated and a clear step above the Mythics.
+  devsource: {
+    rough: 0.12, metal: 0.3, shader: 'devsource',
+    paint: (c) => { c.fillStyle = '#030a0a'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(0,70,60,.25)', 'rgba(0,0,0,.5)'], 16, 20, 50, 215); c.fillStyle = 'rgba(0,255,198,.05)'; for (let y = 0; y < SIZE; y += 16) c.fillRect(0, y, SIZE, 1); },
+    // Code on a 32 x 16 glyph grid: the shader scrolls each 16px row (and each 8px column) on its own.
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(216), words = ['const', 'let', 'fn', '=>', '{', '}', '()', '[]', 'if', 'else', 'return', '0x3f', '&&', '||', '!=', '===', '++', '//', '<>', 'aim', 'fire()', 'hit', 'k', 'dt', '42', '0', '1', ';', ':', '.x', '.y', 'null', 'true', '#', '$', '%', 'ping', 'sync()', '[i]', '->'];
+      c.font = 'bold 11px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      for (let row = 0; row < 16; row += 1) {
+        if (r() < 0.12) continue;
+        let line = ' '.repeat(Math.floor(r() * 3) * 2);
+        while (line.length < 32) line += words[Math.floor(r() * words.length)] + (r() < 0.6 ? ' ' : '');
+        for (let k = 0; k < 32; k += 1) { const ch = line[k]; if (ch === ' ') continue; c.fillStyle = /[0-9{}()[\]#$%<>=!&|]/.test(ch) ? `rgba(255,181,71,${0.55 + r() * 0.45})` : `rgba(0,255,198,${0.4 + r() * 0.6})`; c.fillText(ch, k * 8 + 4, row * 16 + 8); }
+        if (r() < 0.25) { c.fillStyle = '#00ffc6'; c.fillRect(Math.min(line.trimEnd().length, 31) * 8 + 1, row * 16 + 3, 6, 10); }
+      }
+    },
+  },
+  singularity: { rough: 0.2, metal: 0.3, shader: 'singularity', paint: (c) => {
+    c.fillStyle = '#010103'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(217); for (let i = 0; i < 70; i += 1) { c.fillStyle = `rgba(220,225,255,${0.3 + r() * 0.7})`; c.fillRect(r() * SIZE, r() * SIZE, 1.2, 1.2); }
+    for (let k = 0; k < 90; k += 1) { const a = k * 0.21, rr = 20 + k * 0.9; c.strokeStyle = `hsla(${20 + k * 2.8},100%,${70 - k * 0.35}%,${0.55 - k * 0.004})`; c.lineWidth = 2.2 - k * 0.015; c.beginPath(); c.arc(128, 128, rr, a, a + 1.4); c.stroke(); }
+    c.fillStyle = '#000'; c.beginPath(); c.arc(128, 128, 18, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#fff1d6'; c.lineWidth = 2; c.stroke();
+  } },
+  overclock: {
+    rough: 0.35, metal: 0.45, shader: 'overclock',
+    paint: (c) => { c.fillStyle = '#101218'; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = 'rgba(255,255,255,.04)'; for (let y = 0; y < SIZE; y += 8) c.fillRect(0, y, SIZE, 3); wrappedCircuit(c, '#262d3a', 3, 218); },
+    emit: (c) => { c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE); const g = c.createLinearGradient(0, 0, SIZE, 0); ['#2040ff', '#c020ff', '#ff4010', '#ffd040', '#ffffff', '#ffd040', '#ff4010', '#c020ff', '#2040ff'].forEach((color, i) => g.addColorStop(i / 8, color)); wrappedCircuit(c, g, 1.6, 218); },
+  },
 };
 // Suit patterns are grey: they multiply the pilot's suit colour instead of replacing it.
 const PATTERN_ART = {
@@ -181,6 +450,19 @@ const PATTERN_ART = {
   woodland: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['#8a8a8a', '#b4b4b4', '#5e5e5e'], 34, 14, 34, 81); },
   digital: (c) => { const r = rng(82), greys = ['#ffffff', '#c8c8c8', '#8e8e8e', '#dcdcdc']; for (let x = 0; x < SIZE; x += 8) for (let y = 0; y < SIZE; y += 8) { c.fillStyle = greys[Math.floor(r() * 4)]; c.fillRect(x, y, 8, 8); } },
   tiger: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = '#5a5a5a'; for (let i = 0; i < 14; i += 1) { const x0 = (i / 14) * SIZE; c.beginPath(); for (let y = 0; y <= SIZE; y += 8) c.lineTo(x0 + Math.sin((y / SIZE) * Math.PI * 4 + i) * 8 - 3, y); for (let y = SIZE; y >= 0; y -= 8) c.lineTo(x0 + Math.sin((y / SIZE) * Math.PI * 4 + i) * 8 + 4, y); c.fill(); } },
+  multicam: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['#d2d2d2', '#b0b0b0', '#949494'], 30, 10, 26, 220); lines(c, '#5a5a5a', 2.4, 22, 221, [8, 20]); blobs(c, ['#5a5a5a'], 14, 2, 4, 222); },
+  chevron: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); c.lineWidth = 9; c.lineJoin = 'miter'; for (let row = -1; row <= 8; row += 1) { c.strokeStyle = row % 2 ? '#8a8a8a' : '#5e5e5e'; c.beginPath(); for (let x = -32; x <= SIZE + 32; x += 32) c.lineTo(x, row * 32 + (x % 64 ? 14 : -2)); c.stroke(); } },
+  topo: (c) => contours(c, (band) => (band % 2 ? [236, 236, 236] : [255, 255, 255]), [96, 96, 96], 223),
+  honeycomb: (c) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(224), cw = SIZE / 8, rh = SIZE / 10;
+    for (let row = 0; row < 10; row += 1) for (let col = 0; col < 8; col += 1) if (r() < 0.22) { const x = col * cw + (row % 2 ? cw / 2 : 0), y = row * rh; wrapped((dx, dy) => { c.fillStyle = '#c2c2c2'; c.beginPath(); for (let k = 0; k < 6; k += 1) { const a = Math.PI / 6 + (k * Math.PI) / 3; c.lineTo(x + dx + Math.cos(a) * 15, y + dy + Math.sin(a) * 15 * 0.92); } c.fill(); }); }
+    hexes(c, '#7a7a7a', 6); hexes(c, '#bdbdbd', 1.5);
+  },
+  // Dazzle: big cells, each with its own stripe angle, so the stripes break at every border.
+  dazzle: (c) => { const dirs = [[5, 5], [-4, 6], [7, -2], [2, 7], [-6, -3], [6, 1], [1, -6], [-5, 2], [3, 4]]; voronoi(c, 3, 225, (i, e, x, y) => { if (i % 4 === 3) return i % 8 === 3 ? [62, 62, 62] : [255, 255, 255]; const [m, n] = dirs[i % dirs.length], s = Math.sin(((m * x + n * y) / SIZE) * Math.PI * 2 + i * 1.7); if (s > 0.1) return [58, 58, 58]; return s > -0.35 && i % 3 === 0 ? [150, 150, 150] : [255, 255, 255]; }); },
+  scales: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); for (let row = -2; row <= 17; row += 1) for (let col = -1; col <= 8; col += 1) { const x = col * 32 + (row % 2 ? 16 : 0), y = row * 16; const g = c.createRadialGradient(x, y - 8, 2, x, y, 17); g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#d4d4d4'); g.addColorStop(1, '#8e8e8e'); c.fillStyle = g; c.beginPath(); c.arc(x, y, 16, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#626262'; c.lineWidth = 1.6; c.stroke(); } },
+  devcircuit: (c) => { c.fillStyle = '#8a8a8a'; c.fillRect(0, 0, SIZE, SIZE); wrappedCircuit(c, '#f2f2f2', 3, 226); for (const [x, y, w, h] of [[40, 40, 40, 28], [168, 104, 32, 40], [72, 192, 48, 32], [216, 224, 32, 24]]) wrapped((dx, dy) => { c.fillStyle = '#e6e6e6'; for (let k = 4; k < w; k += 8) c.fillRect(x + dx + k, y + dy - 5, 3, h + 10); for (let k = 4; k < h; k += 8) c.fillRect(x + dx - 5, y + dy + k, w + 10, 3); c.fillStyle = '#3a3a3a'; c.fillRect(x + dx, y + dy, w, h); c.fillStyle = '#5a5a5a'; c.fillRect(x + dx + 4, y + dy + 4, w - 8, h - 8); }); },
 };
 
 const textures = new Map();
@@ -202,7 +484,8 @@ const SKIN_TIME = { value: 0 };
 
 // The expensive finishes are shaders, not just paint. Each snippet runs after the emissive map with:
 // sp (part-space position, scaled), V (view direction), N (view normal), fres (rim, 0 facing to 1 edge-on),
-// uTime, and the noise helpers below. It may change diffuseColor.rgb and add to totalEmissiveRadiance.
+// uTime, and the noise helpers below. skinSample(tex) reads a texture triplanar; skinSampleAt(tex, shift) reads it
+// with the part-space position moved by `shift`. It may change diffuseColor.rgb and add to totalEmissiveRadiance.
 const EFFECTS = {
   // Neon Grid: the lines stay lit and a brighter pulse runs down them toward the muzzle; hue drifts cyan to magenta.
   gridpulse: `
@@ -304,6 +587,166 @@ const EFFECTS = {
     diffuseColor.rgb = film * 0.75;
     float sparkle = pow(skinNoise(vSkinPos * 140.0 + V * 5.0), 26.0) * 4.0;
     totalEmissiveRadiance += film * (0.28 + fres * 1.3) + vec3(sparkle);`,
+  // Plasma: forked blue-violet arcs crawl along the gun and flicker, white-hot along their spines.
+  plasma: `
+    float beat = floor(uTime * 14.0);
+    vec3 q = vec3(sp.x * 2.6, sp.y * 2.6, sp.z * 1.5 + uTime * 1.1) + vec3(skinHash(vec3(beat, 1.0, 2.0)) * 0.12);
+    float a = abs(skinFbm(q + vec3(0.0, uTime * 0.5, 0.0)) - 0.5);
+    float b = abs(skinFbm(q * 1.7 + vec3(4.0, -uTime * 0.8, 1.0)) - 0.5);
+    float arc = 1.0 - smoothstep(0.0, 0.025, a);
+    float fork = (1.0 - smoothstep(0.0, 0.018, b)) * (1.0 - smoothstep(0.03, 0.16, a));
+    float halo = 1.0 - smoothstep(0.0, 0.09, min(a, b + 0.03));
+    float flick = 0.55 + 0.45 * step(0.3, skinHash(vec3(beat, 7.0, 3.0)));
+    vec3 volt = mix(vec3(0.35, 0.3, 1.0), vec3(0.75, 0.3, 1.0), skinNoise(sp * 0.7 + vec3(uTime * 0.2)));
+    diffuseColor.rgb *= 0.25;
+    totalEmissiveRadiance += (volt * (arc * 2.8 + fork * 2.0 + halo * 0.25) + vec3(1.0) * arc * arc * arc * 1.8) * flick + volt * fres * 0.5;`,
+  // Glitch: clean paint most of the time. In bursts, blocks jump sideways with their colour channels split,
+  // rows tear, and static fizzes through the gaps.
+  glitch: `
+    float beat = floor(uTime * 7.0);
+    float burst = step(0.5, skinHash(vec3(floor(uTime * 1.7), 3.0, 9.0)));
+    vec3 cell = floor(vec3(vSkinPos.x * 25.0, vSkinPos.y * 45.0, vSkinPos.z * 9.0));
+    float block = step(0.8, skinHash(cell + vec3(beat, 0.0, 0.0))) * burst;
+    float tear = step(0.9, skinHash(vec3(floor(vSkinPos.y * 140.0), beat, 5.0))) * burst;
+    float hit = clamp(block + tear, 0.0, 1.0);
+    vec3 jump = vec3(0.0, 0.0, (skinHash(cell + vec3(beat, 2.0, 0.0)) - 0.5) * 0.9 * block + tear * 0.3);
+    vec3 split = vec3(0.06, 0.0, 0.06) * hit;
+    vec3 torn = vec3(skinSampleAt(map, jump + split).r, skinSampleAt(map, jump).g, skinSampleAt(map, jump - split).b);
+    diffuseColor.rgb = mix(diffuseColor.rgb, torn * 1.25, hit);
+    float fizz = skinHash(vec3(floor(vSkinPos.z * 400.0), floor(vSkinPos.y * 400.0), beat));
+    float scan = pow(0.5 + 0.5 * sin(vSkinPos.y * 700.0 - uTime * 30.0), 8.0);
+    vec3 fringe = mix(vec3(1.0, 0.1, 0.55), vec3(0.1, 0.95, 1.0), step(0.5, skinHash(cell + vec3(beat, 9.0, 1.0))));
+    totalEmissiveRadiance += fringe * block * 0.7 + vec3(fizz) * tear * 0.9 + vec3(0.2, 0.9, 1.0) * scan * burst * 0.12 + fringe * fres * 0.3;`,
+  // Quicksilver: liquid chrome. A fake sky and ground reflect in it, warped by ripples that roll along the gun,
+  // so the bright and dark bands pour and slide as the gun or the view moves.
+  quicksilver: `
+    float flow = uTime * 0.6;
+    vec3 fp = vec3(sp.x * 2.0, sp.y * 2.0, sp.z * 1.2 + flow);
+    float h = skinFbm(fp + vec3(skinNoise(fp * 0.7 - vec3(0.0, 0.0, flow * 0.5)) * 1.5));
+    float ripple = sin(sp.z * 6.0 + flow * 4.0 + h * 8.0);
+    vec3 R = reflect(-V, N);
+    float e = R.y * 1.3 + (h - 0.5) * 2.8 + ripple * 0.12 + fres * 0.5;
+    float env = smoothstep(-0.14, 0.14, e);
+    float line = exp(-e * e * 60.0);
+    float bands = 0.5 + 0.5 * sin(e * 9.0);
+    float glint = pow(max(dot(R, normalize(vec3(0.4, 0.8, 0.45))), 0.0), 40.0) + pow(max(dot(R, normalize(vec3(-0.6, 0.5, 0.6))), 0.0), 60.0) * 0.6;
+    vec3 chrome = mix(vec3(0.05, 0.055, 0.07), vec3(0.8, 0.86, 0.95), env) * (0.85 + bands * 0.25) + vec3(0.95, 0.97, 1.0) * line * 0.9;
+    diffuseColor.rgb = chrome * 0.25;
+    totalEmissiveRadiance += chrome * 0.6 + vec3(1.0) * glint * 2.4 + vec3(0.7, 0.8, 0.95) * fres * 0.25;`,
+  // Nebula: pink, teal and violet gas swirling slowly behind the paint, with twinkling stars at two depths.
+  nebula: `
+    vec3 p = vSkinPos * 6.0 + V * 0.8;
+    vec3 warp = vec3(skinFbm(p + vec3(0.0, 0.0, uTime * 0.05)), skinFbm(p + vec3(5.2, 1.3, -uTime * 0.04)), 0.0);
+    float gas = skinFbm(p * 1.3 + warp * 2.5 + vec3(uTime * 0.03, 0.0, 0.0));
+    float tint = skinFbm(p * 0.7 - warp * 1.5 + vec3(0.0, uTime * 0.02, 3.0));
+    vec3 col = mix(vec3(1.0, 0.25, 0.65), vec3(0.1, 0.9, 0.85), smoothstep(0.35, 0.65, tint));
+    col = mix(col, vec3(0.5, 0.2, 1.0), smoothstep(0.55, 0.8, warp.x));
+    float dense = smoothstep(0.42, 0.85, gas);
+    vec3 stars = vec3(0.0);
+    for (int k = 1; k <= 2; k++) stars += vec3(1.0, 0.95, 0.9) * pow(skinNoise(vSkinPos * (45.0 + float(k) * 25.0) + V * float(k) * 3.0), 24.0) * (3.0 - float(k));
+    float twinkle = 0.7 + 0.3 * sin(uTime * 3.0 + skinHash(floor(vSkinPos * 80.0)) * 6.28);
+    diffuseColor.rgb *= 0.1;
+    totalEmissiveRadiance += col * dense * dense * 1.6 + col * 0.06 + stars * twinkle + mix(vec3(1.0, 0.4, 0.8), vec3(0.3, 0.9, 1.0), 0.5 + 0.5 * sin(uTime * 0.3)) * fres * fres * 1.2;`,
+  // Spectre: cold blue-white wisps drift up off a dark body, slow and thin, fading in and out like breath.
+  spectre: `
+    vec3 q = vec3(sp.x * 3.0, sp.y * 0.9 - uTime * 0.5, sp.z * 2.4);
+    float bend = skinFbm(q * 0.5 + vec3(0.0, 0.0, uTime * 0.08));
+    float n = skinFbm(q + vec3(bend * 2.0, 0.0, bend * 1.5));
+    float wisp = 1.0 - smoothstep(0.0, 0.05, abs(n - 0.5));
+    float veil = 1.0 - smoothstep(0.0, 0.16, abs(n - 0.5));
+    float mask = smoothstep(0.35, 0.75, skinNoise(vec3(sp.x * 1.5, sp.y * 0.8 - uTime * 0.7, sp.z * 1.5)));
+    float breath = 0.65 + 0.35 * sin(uTime * 0.9 + sp.z * 0.8);
+    vec3 cold = mix(vec3(0.25, 0.5, 1.0), vec3(0.85, 0.95, 1.0), wisp);
+    diffuseColor.rgb = diffuseColor.rgb * 0.18 + vec3(0.0, 0.01, 0.03);
+    totalEmissiveRadiance += cold * (wisp * 1.8 + veil * 0.35) * (0.3 + mask) * breath + vec3(0.45, 0.7, 1.0) * fres * fres * (0.6 + breath * 0.6);`,
+  // Synthwave: a neon floor and sky meet at a glowing horizon down the middle of each part,
+  // and the grid races toward the muzzle.
+  synthwave: `
+    float w = abs(vSkinPos.y) * 26.0 + 0.08;
+    float D = 1.0 / w;
+    float gx = vSkinPos.z * 9.0 * D + uTime * 2.2;
+    float gy = D * 0.9 + uTime * 0.5;
+    float gl = vSkinPos.x * 40.0;
+    float lx = min(fract(gx), 1.0 - fract(gx)) / max(fwidth(gx), 0.0001);
+    float ly = min(fract(gy), 1.0 - fract(gy)) / max(fwidth(gy), 0.0001);
+    float ll = min(fract(gl), 1.0 - fract(gl)) / max(fwidth(gl), 0.0001);
+    float fade = 1.0 - smoothstep(2.5, 10.0, D);
+    float side = 1.0 - abs(normalize(vSkinNrm).y);
+    float rungs = (1.0 - smoothstep(0.5, 1.6, lx)) * fade;
+    float rails = (1.0 - smoothstep(0.5, 1.6, ly)) * fade * side + (1.0 - smoothstep(0.5, 1.6, ll)) * (1.0 - side);
+    float glow = exp(-w * w * 16.0);
+    vec3 magenta = vec3(1.0, 0.12, 0.75);
+    vec3 cyan = vec3(0.1, 0.9, 1.0);
+    vec3 sun = mix(vec3(1.0, 0.6, 0.15), vec3(1.0, 0.15, 0.55), clamp(w, 0.0, 1.0));
+    diffuseColor.rgb *= 0.2;
+    totalEmissiveRadiance += magenta * rungs * 1.8 + cyan * rails * 1.4 + sun * glow * 1.5 + mix(magenta, cyan, 0.5 + 0.5 * sin(uTime * 0.7)) * fres * 0.4;`,
+  // Dev, Source Code: dark glass full of live code. Each lane of glyphs streams toward the muzzle at its own speed,
+  // a read head sweeps along lighting it up, bright slices glitch through now and then, and a mint rim traces the edge.
+  // Triplanar by hand so every face gets its own lanes (flipped so the text reads the right way round on both flanks
+  // and on top); textureGrad keeps the lane seams clean.
+  devsource: `
+    vec3 nrm = normalize(vSkinNrm);
+    vec3 wt = pow(abs(nrm), vec3(4.0));
+    wt /= (wt.x + wt.y + wt.z);
+    float flip = nrm.x >= 0.0 ? -1.0 : 1.0;
+    float beat = floor(uTime * 6.0);
+    float burst = step(0.62, skinHash(vec3(floor(uTime * 1.5), 11.0, 4.0)));
+    float slice = step(0.86, skinHash(vec3(floor(vSkinPos.z * 55.0), beat, 6.0))) * burst;
+    vec2 ga = vec2(sp.z * flip, sp.y), gb = vec2(sp.x, -sp.z), gc = sp.xy;
+    float la = skinHash(vec3(floor(ga.y * 16.0), 3.0, 1.0));
+    float lb = skinHash(vec3(floor(gb.x * 32.0), 5.0, 2.0));
+    float lc = skinHash(vec3(floor(gc.y * 16.0), 7.0, 3.0));
+    vec2 ua = ga + vec2((uTime * (0.05 + la * 0.32) + slice * 0.37) * flip, 0.0);
+    vec2 ub = gb - vec2(0.0, uTime * (0.05 + lb * 0.32) + slice * 0.37);
+    vec2 uc = gc + vec2(uTime * (0.05 + lc * 0.32) + slice * 0.37, 0.0);
+    vec3 code = textureGrad(emissiveMap, ua, dFdx(ga), dFdy(ga)).rgb * wt.x + textureGrad(emissiveMap, ub, dFdx(gb), dFdy(gb)).rgb * wt.y + textureGrad(emissiveMap, uc, dFdx(gc), dFdy(gc)).rgb * wt.z;
+    float lane = la * wt.x + lb * wt.y + lc * wt.z;
+    float hd = fract(vSkinPos.z * 1.6 + uTime * 0.35) - 0.5;
+    float head = exp(-hd * hd * 90.0);
+    float blink = 0.8 + 0.2 * sin(uTime * (4.0 + lane * 9.0) + lane * 30.0);
+    float sheen = pow(max(dot(reflect(-V, N), normalize(vec3(-0.35, 0.85, 0.4))), 0.0), 28.0);
+    vec3 mint = vec3(0.0, 1.0, 0.78);
+    diffuseColor.rgb = diffuseColor.rgb * 0.18 + vec3(0.0, 0.015, 0.014);
+    totalEmissiveRadiance += code * (1.1 * blink + head * 2.8 + slice * 3.5) + mint * (slice * 0.12 + head * 0.06) + vec3(0.7, 1.0, 0.95) * sheen * 0.8 + mint * (fres * 0.45 + smoothstep(0.6, 1.0, fres) * 1.6);`,
+  // Dev, Singularity: a black hole. Hot gas spirals round the gun's long axis, starlight bends around the silhouette,
+  // and a thin blazing ring marks the event horizon.
+  singularity: `
+    float ang = atan(vSkinPos.y, vSkinPos.x + 0.00001);
+    float spin = ang - uTime * 1.7 + vSkinPos.z * 24.0;
+    vec3 swirl = vec3(cos(spin) * 1.3, sin(spin) * 1.3, vSkinPos.z * 8.0 - uTime * 0.35);
+    float gas = skinFbm(swirl + vec3(skinNoise(swirl * 2.1) * 1.4));
+    float arms = pow(0.5 + 0.5 * sin(spin * 2.0 + gas * 6.0), 3.0) * smoothstep(0.28, 0.72, gas);
+    vec3 disk = mix(vec3(0.5, 0.12, 1.0), vec3(1.0, 0.5, 0.12), smoothstep(0.15, 0.7, arms));
+    disk = mix(disk, vec3(1.0, 0.96, 0.88), smoothstep(0.7, 1.0, arms));
+    vec3 bent = refract(-V, N, 0.5);
+    vec3 sky = vSkinPos * 26.0 + bent * (5.0 + fres * 26.0) + vec3(0.0, 0.0, uTime * 0.02);
+    float stars = pow(skinNoise(sky * 1.8), 26.0) * 5.0 + pow(skinNoise(sky * 3.3 + 9.0), 30.0) * 3.0;
+    float face = 1.0 - smoothstep(0.0, 0.3, fres);
+    float ph = (fres - 0.62) * 14.0;
+    float photon = exp(-ph * ph);
+    float horizon = smoothstep(0.82, 1.0, fres);
+    float flare = 0.85 + 0.15 * sin(uTime * 5.0 + ang * 3.0);
+    diffuseColor.rgb *= 0.02;
+    totalEmissiveRadiance += disk * arms * (1.4 + 1.6 * (1.0 - face)) * flare + vec3(0.75, 0.8, 1.0) * stars * (0.25 + face) + vec3(1.0, 0.72, 0.4) * photon * 0.8 + vec3(1.0, 0.92, 0.8) * horizon * 3.0;`,
+  // Dev, Overclock: the gun running far too hot. Heat pulses race from stock to muzzle through a thermal palette,
+  // the circuit traces flare white as each wave passes, the air shimmers and sparks spit off the hottest spots.
+  overclock: `
+    float haze = skinNoise(vec3(sp.x * 5.0, sp.y * 5.0 - uTime * 2.5, sp.z * 5.0)) - 0.5;
+    vec3 wobble = vec3(haze * 0.035, 0.0, haze * 0.05);
+    float surge = sin(vSkinPos.z * 11.0 + uTime * 4.2 + haze * 1.5 + skinFbm(sp * 0.8 + vec3(0.0, 0.0, uTime * 0.9)) * 3.0);
+    float wave = 0.5 + 0.5 * surge;
+    float heat = clamp(wave * (0.78 + 0.22 * sin(uTime * 2.6)) + 0.12 * sin(uTime * 17.0 + sp.z) * step(0.8, wave), 0.0, 1.0);
+    vec3 thermal = mix(vec3(0.02, 0.04, 0.4), vec3(0.55, 0.05, 0.65), smoothstep(0.0, 0.3, heat));
+    thermal = mix(thermal, vec3(1.0, 0.22, 0.04), smoothstep(0.25, 0.55, heat));
+    thermal = mix(thermal, vec3(1.0, 0.78, 0.15), smoothstep(0.55, 0.82, heat));
+    thermal = mix(thermal, vec3(1.0, 1.0, 0.95), smoothstep(0.82, 1.0, heat));
+    vec3 tex = skinSampleAt(emissiveMap, wobble).rgb;
+    float trace = max(max(tex.r, tex.g), tex.b);
+    float flare = pow(wave, 10.0);
+    vec3 cell = floor(vec3(vSkinPos.x * 180.0, vSkinPos.y * 180.0 - uTime * 30.0, vSkinPos.z * 180.0));
+    float spark = step(0.993, skinHash(cell + vec3(0.0, 0.0, floor(uTime * 14.0)))) * smoothstep(0.55, 0.9, heat);
+    diffuseColor.rgb = skinSampleAt(map, wobble).rgb * 0.3;
+    totalEmissiveRadiance += thermal * (0.2 + heat * 1.3) + trace * mix(thermal, vec3(1.0), 0.35 + flare * 0.5) * (0.7 + heat * 2.6 + flare * 4.0) + vec3(1.0, 0.75, 0.4) * spark * 7.0 + thermal * fres * (0.6 + heat);`,
 };
 const NOISE_GLSL = `
 uniform float uTime;
@@ -332,12 +775,13 @@ varying vec3 vSkinPos;
 varying vec3 vSkinNrm;
 uniform float uSkinScale;
 ${NOISE_GLSL}
-vec4 skinSample(sampler2D tex) {
+vec4 skinSampleAt(sampler2D tex, vec3 shift) {
   vec3 w = pow(abs(normalize(vSkinNrm)), vec3(4.0));
   w /= (w.x + w.y + w.z);
-  vec3 p = vSkinPos * uSkinScale;
+  vec3 p = vSkinPos * uSkinScale + shift;
   return texture2D(tex, p.zy) * w.x + texture2D(tex, p.xz) * w.y + texture2D(tex, p.xy) * w.z;
-}`)
+}
+vec4 skinSample(sampler2D tex) { return skinSampleAt(tex, vec3(0.0)); }`)
       .replace('#include <map_fragment>', '#ifdef USE_MAP\n  diffuseColor *= skinSample(map);\n#endif')
       .replace('#include <emissivemap_fragment>', `#ifdef USE_EMISSIVEMAP
   totalEmissiveRadiance *= skinSample(emissiveMap).rgb;

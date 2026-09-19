@@ -2,9 +2,9 @@
 // The menu redraws often, so every animation runs off a start time: a redraw mid-spin picks up where
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
-import { COSMETICS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
+import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
 import * as THREE from 'three';
-import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, diceMultiplier, finishInfo, finishPrice } from '../shared/economy.js';
+import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, PUBLIC_FINISHES, PUBLIC_RARITIES } from '../shared/economy.js';
 import { game } from './state.js';
 import { net } from './net.js';
 import { play } from './audio.js';
@@ -17,7 +17,9 @@ import { skinArt } from './weaponart.js';
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 export const COIN = '<svg class="coin-icon" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><polygon points="10,1 18,5.5 18,14.5 10,19 2,14.5 2,5.5" fill="#ffb547"/><polygon points="10,4 15.4,7 15.4,13 10,16 4.6,13 4.6,7" fill="none" stroke="#7a4a00" stroke-width="1.2"/><path d="M8.3 6.8v6.4M8.3 10l3.6-3.2M9.6 9l2.5 4.2" stroke="#7a4a00" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>';
-export const coins = (n) => `<span class="coins">${COIN}${Number(n).toLocaleString('en')}</span>`;
+// A coin amount. Anything that isn't a number shows as 0 rather than NaN.
+const whole = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
+export const coins = (n) => `<span class="coins">${COIN}${whole(n).toLocaleString('en')}</span>`;
 // One module, four menu pages. Each page shows its own tabs and remembers the last one opened.
 const SECTIONS = {
   locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
@@ -66,6 +68,10 @@ let wallet = { to: '', amount: '', pilot: null, looking: false };
 
 export function initShop(context) { ctx = context; }
 const loggedIn = () => Boolean(game.username && game.profile);
+// The developers' accounts see their Dev class items; everyone else never sees them listed at all.
+const isDev = () => Boolean(game.profile?.dev);
+const listed = (item) => !item.dev || isDev();
+const devChip = '<em class="dev-chip">DEV</em>';
 function redraw() { if (ctx?.onShop()) ctx.rerender(); }
 const RARITY_RANK = Object.fromEntries(Object.keys(RARITY).map((id, index) => [id, index]));
 // The reel has landed (or was skipped): show the reveal and let the coin counter catch up.
@@ -195,7 +201,8 @@ net.on('drop', (message) => {
   if (message.drop.name !== game.username) ctx?.toast(`${message.drop.name} unboxed ${info.name} (${RARITY[message.drop.rarity].name})`, 'good');
   redraw();
 });
-net.on('profile', (message) => { game.profile = message.profile; ctx?.refreshCoins(); redraw(); });
+// While a crate or game is still animating, a newer profile replaces the held one instead of jumping ahead.
+net.on('profile', (message) => { if (held) held = message.profile; else game.profile = message.profile; ctx?.refreshCoins(); redraw(); });
 
 function equip(weapon, finish) {
   const skins = { ...(game.look.skins || {}) };
@@ -209,8 +216,10 @@ function equip(weapon, finish) {
 // moved into #skin-stage after each draw. Shader finishes animate here just as they do in hand.
 let stage = null;
 const thumbs = new Map();
+let thumbsForDev = null;
 function makeThumbs() {
-  if (thumbs.size) return;
+  if (thumbsForDev !== null && (thumbsForDev || !isDev())) return;
+  thumbsForDev = isDev();
   const canvas = document.createElement('canvas');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setSize(168, 126, false);
@@ -222,7 +231,7 @@ function makeThumbs() {
   camera.position.set(1.7, 1.25, 3.0); camera.lookAt(0, 0.3, 0);
   for (const c of Object.values(CRATES)) { const model = buildCrate(c); poseCrate(model, null, 0); model.rotation.y = -0.2; shoot(`crate:${c.id}`, model); }
   camera.position.set(0.015, -0.03, 0.125); camera.lookAt(0, -0.032, 0);
-  for (const item of COSMETICS.charm) { const model = buildCharm(item.id); if (model) { model.rotation.y = 0.5; shoot(`charm:${item.id}`, model); } }
+  for (const item of COSMETICS.charm.filter(listed)) { const model = buildCharm(item.id); if (model) { model.rotation.y = 0.5; shoot(`charm:${item.id}`, model); } }
   // Headgear, faces and packs: one operator, redressed for each shot.
   const pilot = buildOperator('#8794a1', '#6ce6d1');
   styleOperator(pilot, { team: 'friend', headgear: 'bare', face: 'none', pack: 'none' });
@@ -230,8 +239,8 @@ function makeThumbs() {
   scene.add(pilot);
   for (const kind of ['headgear', 'face', 'pack']) {
     if (kind === 'pack') { camera.position.set(0.9, 1.75, 1.75); camera.lookAt(0, 1.4, 0.1); } else { camera.position.set(-0.55, 1.72, -1.2); camera.lookAt(0, 1.64, 0); }
-    for (const item of COSMETICS[kind]) {
-      styleOperator(pilot, { headgear: kind === 'headgear' ? item.id : kind === 'face' ? 'helmet' : 'bare', face: kind === 'face' ? item.id : 'none', pack: kind === 'pack' ? item.id : 'none' });
+    for (const item of COSMETICS[kind].filter(listed)) {
+      styleOperator(pilot, { headgear: kind === 'headgear' ? item.id : 'bare', face: kind === 'face' ? item.id : 'none', pack: kind === 'pack' ? item.id : 'none' });
       renderer.render(scene, camera);
       thumbs.set(`gear:${kind}:${item.id}`, canvas.toDataURL('image/png'));
     }
@@ -345,7 +354,7 @@ export function mountShop() {
 function showingFinish() { const equipped = game.look.skins?.[weaponId] || null; return preview === undefined ? null : preview ?? equipped; }
 
 // ------------------------------------------------------------------ skins
-const RARITY_ORDER = Object.keys(RARITY);
+const rarityOrder = () => (isDev() ? [...PUBLIC_RARITIES, 'dev'] : PUBLIC_RARITIES);
 function skinsHtml() {
   const profile = game.profile;
   const owned = profile.skins?.[weaponId] || [];
@@ -354,27 +363,27 @@ function skinsHtml() {
   const weapons = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map(weaponButton).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
   const card = (finish) => {
     const info = finishInfo(finish.id), rarity = RARITY[info.rarity];
-    const mine = owned.includes(finish.id), on = equipped === finish.id;
+    const mine = owned.includes(finish.id) || (devFinish(finish.id) && isDev()), on = equipped === finish.id;
     const key = `skin:${weaponId}:${finish.id}`;
     const action = on ? '<em class="state on">Equipped</em>' : mine ? `<button type="button" class="mini" data-equip="${finish.id}">Equip</button>`
       : !rarity.price ? '<em class="state crates-only">Crates only</em>'
       : `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-buy-skin="${finish.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(rarity.price)}</button>`;
-    return `<div class="finish-card rarity-${info.rarity}${animatedFinish(finish.id) ? ' fx' : ''}${showing === finish.id ? ' showing' : ''}${on ? ' on' : ''}" style="--rarity:${rarity.color}"><button type="button" class="finish-look" data-preview="${finish.id}"><img src="${finishSwatch(finish.id)}" alt="" /><b>${info.name}</b><small>${rarity.name}</small></button>${action}</div>`;
+    return `<div class="finish-card rarity-${info.rarity}${animatedFinish(finish.id) ? ' fx' : ''}${showing === finish.id ? ' showing' : ''}${on ? ' on' : ''}" style="--rarity:${rarity.color}"><button type="button" class="finish-look" data-preview="${finish.id}"><img src="${finishSwatch(finish.id)}" alt="" /><b>${info.name}</b><small>${devFinish(finish.id) ? devChip : rarity.name}</small></button>${action}</div>`;
   };
   const stock = `<div class="finish-card${!showing ? ' showing' : ''}${!equipped ? ' on' : ''}"><button type="button" class="finish-look" data-preview=""><i class="finish-plain"></i><b>Factory</b><small>Default</small></button>${equipped ? '<button type="button" class="mini" data-equip="">Equip</button>' : '<em class="state on">Equipped</em>'}</div>`;
   const info = showing && finishInfo(showing);
   return `<div class="shop-skins">
     <nav class="shop-weapons" aria-label="Weapons">${weapons}</nav>
     <div class="shop-stage">
-      <div class="panel skin-preview${info ? ` rarity-${info.rarity}` : ''}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[weaponId].tag}</small><h3>${WEAPONS[weaponId].name}</h3><span>${info ? `<b style="color:${RARITY[info.rarity].color}">${info.name}</b> · ${RARITY[info.rarity].name}${animatedFinish(info.id) ? ' · animated' : ''}` : 'Factory finish'}</span>${info ? `<p class="skin-price">${owned.includes(info.id) ? 'Owned' : RARITY[info.rarity].price ? coins(RARITY[info.rarity].price) : 'Crates only'}</p>` : ''}</div></div>
-      <div class="segmented rarity-filter">${['all', ...RARITY_ORDER].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? 'All' : RARITY[id].name}</button>`).join('')}</div>
-      <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${FINISHES.filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
+      <div class="panel skin-preview${info ? ` rarity-${info.rarity}` : ''}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[weaponId].tag}</small><h3>${WEAPONS[weaponId].name}</h3><span>${info ? `<b style="color:${RARITY[info.rarity].color}">${info.name}</b> · ${RARITY[info.rarity].name}${animatedFinish(info.id) ? ' · animated' : ''}` : 'Factory finish'}</span>${info ? `<p class="skin-price">${devFinish(info.id) ? DEV_CLASS.blurb : owned.includes(info.id) ? 'Owned' : RARITY[info.rarity].price ? coins(RARITY[info.rarity].price) : 'Crates only'}</p>` : ''}</div></div>
+      <div class="segmented rarity-filter">${['all', ...rarityOrder()].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? 'All' : RARITY[id].name}</button>`).join('')}</div>
+      <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${(isDev() ? FINISHES : PUBLIC_FINISHES).filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
     </div></div>`;
 }
 function weaponButton(weapon) {
   const finish = game.look.skins?.[weapon.id];
   const count = game.profile.skins?.[weapon.id]?.length || 0;
-  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}"><span>${weapon.name}</span>${finish ? `<img src="${finishSwatch(finish)}" alt="" />` : ''}<small>${count ? `${count}/${FINISHES.length}` : ''}</small></button>`;
+  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}"><span>${weapon.name}</span>${finish ? `<img src="${finishSwatch(finish)}" alt="" />` : ''}<small>${count ? `${count}/${PUBLIC_FINISHES.length}` : ''}</small></button>`;
 }
 
 // ------------------------------------------------------------------ crates
@@ -444,6 +453,8 @@ function cratesHtml() {
 function ownedSkins() {
   const list = [];
   for (const [weapon, finishes] of Object.entries(game.profile.skins || {})) for (const finish of finishes) if (WEAPONS[weapon] && finishInfo(finish)) list.push({ weapon, finish, rarity: finishInfo(finish).rarity });
+  // Developers carry the Dev class finishes for every gun; they show up for whichever gun is picked.
+  if (isDev()) { const weapon = WEAPONS[inventoryPick?.weapon] ? inventoryPick.weapon : 'm44'; for (const finish of FINISHES) if (devFinish(finish.id)) list.push({ weapon, finish: finish.id, rarity: 'dev' }); }
   return list.sort((a, b) => RARITY_RANK[b.rarity] - RARITY_RANK[a.rarity] || finishInfo(a.finish).name.localeCompare(finishInfo(b.finish).name));
 }
 const skinKey = (item) => `${item.weapon}:${item.finish}`;
@@ -460,7 +471,7 @@ function inventoryHtml() {
   const shown = items.filter((item) => rarityFilter === 'all' || item.rarity === rarityFilter);
   const card = (item) => {
     const key = skinKey(item), picked = trade.some((t) => skinKey(t) === key);
-    const blocked = tradeMode && !picked && (item.rarity === 'mythic' || (tradeRarity && item.rarity !== tradeRarity) || trade.length >= TRADE_UP);
+    const blocked = tradeMode && !picked && (item.rarity === 'mythic' || item.rarity === 'dev' || (tradeRarity && item.rarity !== tradeRarity) || trade.length >= TRADE_UP);
     return `<button type="button" class="inv-card rarity-${item.rarity}${key === skinKey(pick) && !tradeMode ? ' active' : ''}${picked ? ' picked' : ''}${blocked ? ' blocked' : ''}${game.look.skins?.[item.weapon] === item.finish ? ' on' : ''}" style="--rarity:${RARITY[item.rarity].color}" data-inv="${key}"><img src="${skinArt(item.weapon, item.finish)}" alt="" /><b>${finishInfo(item.finish).name}</b><small>${WEAPONS[item.weapon].name}</small></button>`;
   };
   const slots = Array.from({ length: TRADE_UP }, (_, i) => trade[i] ? `<img src="${finishSwatch(trade[i].finish)}" alt="" title="${dropName(trade[i])}" />` : '<i></i>').join('');
@@ -468,11 +479,11 @@ function inventoryHtml() {
   return `<div class="shop-inventory">
     <div class="inv-top">
       <div class="panel skin-preview rarity-${pick.rarity}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[pick.weapon].tag}</small><h3>${info.name}</h3><span>${WEAPONS[pick.weapon].name} · <b style="color:${rarity.color}">${rarity.name}</b></span>
-        <div class="button-row">${equipped ? '<em class="state on">Equipped</em>' : `<button type="button" class="mini" data-inv-equip="1">Equip</button>`}<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button></div></div></div>
+        <div class="button-row">${equipped ? '<em class="state on">Equipped</em>' : `<button type="button" class="mini" data-inv-equip="1">Equip</button>`}${pick.rarity === 'dev' ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : `<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button>`}</div></div></div>
       <div class="panel trade-panel"><p class="eyebrow">Trade-up</p><p class="muted">${TRADE_UP} skins of one rarity for 1 random skin of the next.</p><div class="trade-slots">${slots}</div>
         <div class="button-row">${tradeMode ? `<button type="button" data-trade-go="1" ${trade.length === TRADE_UP && !busy ? '' : 'disabled'}>Trade up${tradeRarity ? ` to ${RARITY[NEXT_RARITY[tradeRarity]].name}` : ''}</button><button type="button" class="ghost-button" data-trade-cancel="1">Cancel</button>` : '<button type="button" class="secondary-button" data-trade-start="1">Pick skins</button>'}</div></div>
     </div>
-    <div class="inv-head"><div class="segmented rarity-filter">${['all', ...RARITY_ORDER].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? `All ${items.length}` : `${RARITY[id].name} ${counts.find(([r]) => r === id)?.[1] || 0}`}</button>`).join('')}</div>${tradeMode ? `<span class="muted">Picking ${trade.length}/${TRADE_UP}</span>` : ''}</div>
+    <div class="inv-head"><div class="segmented rarity-filter">${['all', ...PUBLIC_RARITIES].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? `All ${items.length}` : `${RARITY[id].name} ${counts.find(([r]) => r === id)?.[1] || 0}`}</button>`).join('')}</div>${tradeMode ? `<span class="muted">Picking ${trade.length}/${TRADE_UP}</span>` : ''}</div>
     <div class="inv-grid">${shown.map(card).join('') || '<p class="muted">None of that rarity.</p>'}</div></div>`;
 }
 
@@ -483,8 +494,8 @@ const LOOK_KEY = { suit: 'color', visor: 'accent' };
 const lookKey = (kind) => LOOK_KEY[kind] || kind;
 function tryLook() { return tryOn ? { ...game.look, [lookKey(gearKind)]: tryOn } : { ...game.look }; }
 function gearStatus(kind, item) {
-  const owned = (game.profile.owned || []).includes(`${kind}:${item.id}`);
-  const unlocked = item.price ? owned : (game.profile.level || 1) >= item.level;
+  const owned = (game.profile.owned || []).includes(`${kind}:${item.id}`) || Boolean(item.dev && isDev());
+  const unlocked = item.dev ? isDev() : item.price ? owned : (game.profile.level || 1) >= item.level;
   return { owned, unlocked, equipped: game.look[lookKey(kind)] === item.id };
 }
 function gearAction(kind, item, state) {
@@ -495,23 +506,24 @@ function gearAction(kind, item, state) {
   return `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-gear-buy="${item.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(item.price)}</button>`;
 }
 function gearVisual(kind, item) {
+  if (item.id === 'devprism') return '<i class="gear-swatch dev-prism"></i>';
   if (kind === 'suit' || kind === 'visor' || kind === 'tracer') return `<i class="gear-swatch" style="background:${item.id}"></i>`;
   if (kind === 'pattern') return `<i class="gear-swatch" style="background-color:${game.look.color};${item.id === 'solid' ? '' : `background-image:url(${patternSwatch(item.id)})`}"></i>`;
-  if (kind === 'title') return `<i class="gear-title">${escapeHtml(item.name)}</i>`;
+  if (kind === 'title') return `<i class="gear-title${item.dev ? ' dev-title' : ''}">${escapeHtml(item.name)}</i>`;
   const shot = thumb(`gear:${kind}:${item.id}`);
   return shot ? `<img class="gear-thumb" src="${shot}" alt="" />` : '';
 }
 function gearHtml() {
   const look = tryLook();
   const current = COSMETICS[gearKind].find((item) => item.id === look[lookKey(gearKind)]);
-  const cards = COSMETICS[gearKind].map((item) => {
+  const cards = COSMETICS[gearKind].filter(listed).map((item) => {
     const state = gearStatus(gearKind, item);
-    return `<div class="gear-card${state.equipped ? ' on' : ''}${tryOn === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}"><button type="button" class="gear-look" data-try="${item.id}">${gearVisual(gearKind, item)}<b>${escapeHtml(item.name)}</b><small>${item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction(gearKind, item, state)}</div>`;
+    return `<div class="gear-card${state.equipped ? ' on' : ''}${tryOn === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-try="${item.id}">${gearVisual(gearKind, item)}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction(gearKind, item, state)}</div>`;
   }).join('');
   return `<div class="shop-gear">
     <div class="panel operator-try"><div id="skin-stage" class="skin-stage tall"></div>
-      <div class="try-tag"><small>${escapeHtml(look.title)}</small><b>${escapeHtml(game.profile.name)}</b>${tryOn ? `<span>Trying on: ${escapeHtml(current?.name || '')}</span><button type="button" class="ghost-button" data-try-reset="1">Back to mine</button>` : '<span>Click anything to try it on.</span>'}</div>
-      ${gearKind === 'tracer' ? `<i class="tracer-demo" style="--tracer:${look.tracer}"></i>` : ''}</div>
+      <div class="try-tag"><small${look.title === 'Developer' ? ' class="dev-title"' : ''}>${escapeHtml(look.title)}</small><b>${escapeHtml(game.profile.name)}</b>${current?.dev ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : ''}${tryOn ? `<span>Trying on: ${escapeHtml(current?.name || '')}</span><button type="button" class="ghost-button" data-try-reset="1">Back to mine</button>` : '<span>Click anything to try it on.</span>'}</div>
+      ${gearKind === 'tracer' ? `<i class="tracer-demo${look.tracer === 'devprism' ? ' dev-prism' : ''}" style="--tracer:${look.tracer === 'devprism' ? '#00ffc6' : look.tracer}"></i>` : ''}</div>
     <div class="gear-side"><div class="segmented gear-kinds">${GEAR_KINDS.map(([id, label]) => `<button type="button" data-gear-kind="${id}" class="${gearKind === id ? 'active' : ''}">${label}</button>`).join('')}</div>
       <div class="gear-grid">${cards}</div></div></div>`;
 }
@@ -520,13 +532,13 @@ function gearHtml() {
 const CHARM_GUNS = ['talon', 'm44', 'wasp', 'breaker', 'p9'];
 function charmsHtml() {
   const showing = charmTry ?? game.look.charm;
-  const cards = COSMETICS.charm.map((item) => {
+  const cards = COSMETICS.charm.filter(listed).map((item) => {
     const state = gearStatus('charm', item);
-    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
+    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
   }).join('');
   const item = COSMETICS.charm.find((entry) => entry.id === showing);
   return `<div class="shop-charms">
-    <div class="panel skin-preview"><div id="skin-stage" class="skin-stage"></div><div><small>Gun charm</small><h3>${escapeHtml(item?.name || 'None')}</h3><span>On a chain. Moves with recoil, reloads and every step.</span>
+    <div class="panel skin-preview"><div id="skin-stage" class="skin-stage"></div><div><small>${item?.dev ? devChip : 'Gun charm'}</small><h3>${escapeHtml(item?.name || 'None')}</h3><span>${item?.dev ? DEV_CLASS.blurb : 'On a chain. Moves with recoil, reloads and every step.'}</span>
       <div class="segmented charm-guns">${CHARM_GUNS.map((id) => `<button type="button" data-charm-gun="${id}" class="${charmWeapon === id ? 'active' : ''}">${WEAPONS[id].short}</button>`).join('')}</div></div></div>
     <div class="gear-grid">${cards}</div></div>`;
 }
@@ -593,9 +605,9 @@ function gamesHtml() {
   }).join('');
   const table = SLOTS.symbols.slice().reverse().map((sym) => `<li><b>${sym.icon}${sym.icon}${sym.icon}</b><span>×${sym.three}</span><b>${sym.icon}${sym.icon}</b><span>×${sym.two}</span></li>`).join('');
   const names = { coinflip: 'Coin flip', dice: 'Dice', slots: 'Slots', plinko: 'Plinko', hilo: 'Higher or lower', crash: 'Crash' };
-  const log = (game.profile.gameLog || []).map((entry) => { const diff = entry.payout - entry.stake; return `<div class="bet-row"><span>${names[entry.game] || entry.game}</span><small>${escapeHtml(entry.note || '')}</small><em>${entry.stake}</em><b class="${diff > 0 ? 'good' : diff < 0 ? 'bad' : ''}">${diff > 0 ? '+' : ''}${diff}</b><small>${WHEN(entry.at)}</small></div>`; }).join('') || '<p class="muted">No bets yet.</p>';
+  const log = (game.profile.gameLog || []).map((entry) => { const diff = whole(entry.payout) - whole(entry.stake); return `<div class="bet-row"><span>${names[entry.game] || entry.game}</span><small>${escapeHtml(entry.note || '')}</small><em>${entry.stake}</em><b class="${diff > 0 ? 'good' : diff < 0 ? 'bad' : ''}">${diff > 0 ? '+' : ''}${diff}</b><small>${WHEN(entry.at)}</small></div>`; }).join('') || '<p class="muted">No bets yet.</p>';
   const played = game.profile.gameLog || [];
-  const total = played.reduce((sum, entry) => sum + entry.payout - entry.stake, 0);
+  const total = played.reduce((sum, entry) => sum + whole(entry.payout) - whole(entry.stake), 0);
   return `<div class="shop-games">
     <div class="panel game-stake">${stakeHtml()}<small class="muted">Every game keeps about 5%. Play for fun.</small></div>
     <div class="game-grid">
@@ -648,8 +660,8 @@ function gameFrame() {
 const WHEN = (at) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
 const SOURCE_NAMES = { match: 'Matches', wager: 'Wagers', crate: 'Crates', scrap: 'Scrap', game: 'Games', receive: 'Received', send: 'Sent', refund: 'Refunds', starter: 'Starter', shop: 'Shop', trade: 'Trade-ups' };
 function barList(entries) {
-  const top = Math.max(1, ...entries.map(([, n]) => n));
-  return entries.length ? entries.map(([kind, n]) => `<div class="bar-row"><span>${SOURCE_NAMES[kind] || kind}</span><i style="width:${Math.max(2, (n / top) * 100)}%"></i><b>${n.toLocaleString('en')}</b></div>`).join('') : '<p class="muted">Nothing yet.</p>';
+  const top = Math.max(1, ...entries.map(([, n]) => whole(n)));
+  return entries.length ? entries.map(([kind, n]) => `<div class="bar-row"><span>${SOURCE_NAMES[kind] || kind}</span><i style="width:${Math.max(2, (whole(n) / top) * 100)}%"></i><b>${whole(n).toLocaleString('en')}</b></div>`).join('') : '<p class="muted">Nothing yet.</p>';
 }
 function walletHtml() {
   const profile = game.profile;
@@ -660,9 +672,9 @@ function walletHtml() {
   const card = wallet.looking ? '<p class="muted">Looking…</p>' : wallet.to.trim().length >= 2 && pilot === null ? '<p class="muted">No pilot with that name.</p>'
     : pilot ? `<div class="pilot-card">${avatarHtml(pilot, 44)}<div><b>${escapeHtml(pilot.name)}</b><small>${escapeHtml(pilot.title)} · LV ${pilot.level}</small></div>${pilot.you || isFriend ? '' : `<button type="button" class="mini" data-friend-add="${escapeHtml(pilot.name)}">Add friend</button>`}</div>` : '';
   const canSend = pilot && !pilot.you && Number.isInteger(amount) && amount >= 1 && amount <= profile.coins;
-  const log = (profile.coinLog || []).map((entry) => `<div class="coin-row"><b class="${entry.amount > 0 ? 'good' : entry.amount < 0 ? 'bad' : ''}">${entry.amount > 0 ? '+' : ''}${entry.amount.toLocaleString('en')}</b><span>${escapeHtml(entry.note)}</span><small>${WHEN(entry.at)}</small></div>`).join('') || '<p class="muted">Nothing yet.</p>';
+  const log = (profile.coinLog || []).map((entry) => `<div class="coin-row"><b class="${entry.amount > 0 ? 'good' : entry.amount < 0 ? 'bad' : ''}">${entry.amount > 0 ? '+' : ''}${whole(entry.amount).toLocaleString('en')}</b><span>${escapeHtml(entry.note)}</span><small>${WHEN(entry.at)}</small></div>`).join('') || '<p class="muted">Nothing yet.</p>';
   // Last 14 days, oldest first.
-  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(Date.now() - (13 - i) * 86400e3); const key = dateKey(d); return { key, label: d.toLocaleDateString(undefined, { weekday: 'narrow' }), ...(profile.coinDays?.[key] || { in: 0, out: 0 }) }; });
+  const days = Array.from({ length: 14 }, (_, i) => { const d = new Date(Date.now() - (13 - i) * 86400e3); const key = dateKey(d); const day = profile.coinDays?.[key] || {}; return { key, label: d.toLocaleDateString(undefined, { weekday: 'narrow' }), in: whole(day.in), out: whole(day.out) }; });
   const peak = Math.max(1, ...days.map((d) => Math.max(d.in, d.out)));
   const today = days[13], week = days.slice(7).reduce((sum, d) => sum + d.in - d.out, 0);
   const chart = days.map((d) => `<div class="day" title="${d.key}: +${d.in} / -${d.out}"><i class="in" style="height:${(d.in / peak) * 100}%"></i><i class="out" style="height:${(d.out / peak) * 100}%"></i><small>${d.label}</small></div>`).join('');
@@ -797,13 +809,14 @@ export function onShopClick(button) {
     const rarity = finishInfo(finish).rarity;
     if (index >= 0) trade.splice(index, 1);
     else if (rarity === 'mythic') { ctx.toast('Mythic is as high as it goes.', 'warn'); play('deny'); return true; }
+    else if (rarity === 'dev') { ctx.toast('Dev items can\'t be traded.', 'warn'); play('deny'); return true; }
     else if (trade.length && finishInfo(trade[0].finish).rarity !== rarity) { ctx.toast('All five must be the same rarity.', 'warn'); play('deny'); return true; }
     else if (trade.length < TRADE_UP) trade.push({ weapon, finish });
     play('ui');
     return true;
   }
   if (d.invEquip && inventoryPick) { equip(inventoryPick.weapon, inventoryPick.finish); play('ready'); return true; }
-  if (d.scrap && inventoryPick) {
+  if (d.scrap && inventoryPick && !devFinish(inventoryPick.finish)) {
     const key = `scrap:${skinKey(inventoryPick)}`;
     if (armed !== key) { armed = key; play('ui'); return true; }
     request({ type: 'shop', action: 'scrap', ...inventoryPick });

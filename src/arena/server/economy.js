@@ -29,7 +29,7 @@ const wholeCoins = (value, min, max) => (Number.isInteger(value) && value >= min
 
 export function buySkin(profiles, token, weapon, finish) {
   const info = finishInfo(finish);
-  if (!WEAPONS[weapon] || !info) return { error: 'Not in the shop.' };
+  if (!WEAPONS[weapon] || !info || info.rarity === 'dev') return { error: 'Not in the shop.' };
   const owned = (profiles.wallet(token).skins[weapon] ||= []);
   if (owned.includes(finish)) return { error: 'Already yours.' };
   if (!finishPrice(finish)) return { error: 'Mythics only come from crates.' };

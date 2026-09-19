@@ -355,7 +355,8 @@ export function masteryTier(kills) {
 }
 
 export const COSMETICS = {
-  // `level` unlocks with XP; `price` is bought once with coins.
+  // `level` unlocks with XP; `price` is bought once with coins; `dev` items belong to the developers'
+  // accounts only and are never listed anywhere else.
   suit: [
     { id: '#ec6a9e', name: 'Coral', level: 1 }, { id: '#6ce6d1', name: 'Mint', level: 1 },
     { id: '#ffc857', name: 'Gold', level: 1 }, { id: '#8fa7ff', name: 'Blue', level: 1 },
@@ -366,6 +367,11 @@ export const COSMETICS = {
     { id: '#ff8a1f', name: 'Blaze', price: 450 }, { id: '#39ff88', name: 'Acid', price: 600 },
     { id: '#ff4fd8', name: 'Hot Pink', price: 600 }, { id: '#ffffff', name: 'Arctic White', price: 800 },
     { id: '#0b0b0e', name: 'Void Black', price: 1200 },
+    { id: '#3a3d42', name: 'Charcoal', price: 350 }, { id: '#2f4a2a', name: 'Forest', price: 400 },
+    { id: '#1f8a8a', name: 'Teal', price: 400 }, { id: '#b3122e', name: 'Crimson', price: 450 },
+    { id: '#b8a4e3', name: 'Lavender', price: 450 }, { id: '#d9a21f', name: 'Mustard', price: 450 },
+    { id: '#7cc4ff', name: 'Sky', price: 500 }, { id: '#ff6a2a', name: 'Tangerine', price: 600 },
+    { id: '#bfe8ff', name: 'Ice', price: 700 }, { id: '#e0a48f', name: 'Rose Gold', price: 900 },
   ],
   visor: [
     { id: '#6ce6d1', name: 'Mint', level: 1 }, { id: '#ff7148', name: 'Orange', level: 1 },
@@ -374,6 +380,10 @@ export const COSMETICS = {
     { id: '#ff2a2a', name: 'Red Alert', price: 400 }, { id: '#39ff88', name: 'Night Vision', price: 400 },
     { id: '#3fa9ff', name: 'Ice', price: 400 }, { id: '#ff4fd8', name: 'Magenta', price: 600 },
     { id: '#fff36a', name: 'Sodium', price: 600 },
+    { id: '#00ffc6', name: 'Aqua', price: 450 }, { id: '#ff9a3a', name: 'Amber', price: 450 },
+    { id: '#ffd1a3', name: 'Peach', price: 450 }, { id: '#b0ff3a', name: 'Lime', price: 500 },
+    { id: '#ff3a8a', name: 'Rose', price: 500 }, { id: '#40ffff', name: 'Cyan', price: 500 },
+    { id: '#7a5cff', name: 'Indigo', price: 600 }, { id: '#e8e8e8', name: 'Chrome', price: 700 },
   ],
   tracer: [
     { id: '#ffc857', name: 'Brass', level: 1 }, { id: '#6ce6d1', name: 'Mint', level: 2 },
@@ -382,6 +392,11 @@ export const COSMETICS = {
     { id: '#ff2a2a', name: 'Crimson', price: 500 }, { id: '#39ff88', name: 'Toxic', price: 500 },
     { id: '#3fa9ff', name: 'Plasma', price: 700 }, { id: '#ff4fd8', name: 'Neon Pink', price: 700 },
     { id: '#ff8a1f', name: 'Ember', price: 900 },
+    { id: '#00ffc6', name: 'Aqua', price: 600 }, { id: '#b0ff3a', name: 'Lime', price: 600 },
+    { id: '#ffd1a3', name: 'Peach', price: 600 }, { id: '#40ffff', name: 'Cyan', price: 700 },
+    { id: '#7a5cff', name: 'Indigo', price: 800 }, { id: '#ff3a8a', name: 'Rose', price: 800 },
+    { id: '#ffe14d', name: 'Sunburst', price: 900 }, { id: '#c8b6ff', name: 'Lilac', price: 900 },
+    { id: 'devprism', name: 'Prism Rail', dev: true },
   ],
   title: [
     { id: 'Recruit', name: 'Recruit', level: 1 }, { id: 'Marksman', name: 'Marksman', level: 2 },
@@ -391,6 +406,15 @@ export const COSMETICS = {
     { id: 'Night Owl', name: 'Night Owl', price: 500 }, { id: 'Wallbanger', name: 'Wallbanger', price: 800 },
     { id: 'Headhunter', name: 'Headhunter', price: 1200 }, { id: 'High Roller', name: 'High Roller', price: 2000 },
     { id: 'Untouchable', name: 'Untouchable', price: 3500 }, { id: 'Legend', name: 'Legend', price: 7500 },
+    { id: 'Sharpshooter', name: 'Sharpshooter', level: 25 }, { id: 'Veteran', name: 'Veteran', level: 30 },
+    { id: 'Phantom', name: 'Phantom', level: 40 }, { id: 'Mythic', name: 'Mythic', level: 50 },
+    { id: 'Camper', name: 'Camper', price: 600 }, { id: 'Tactician', name: 'Tactician', price: 900 },
+    { id: 'Menace', name: 'Menace', price: 1000 }, { id: 'Glass Cannon', name: 'Glass Cannon', price: 1200 },
+    { id: 'Storm Chaser', name: 'Storm Chaser', price: 1400 }, { id: 'One Tap', name: 'One Tap', price: 1500 },
+    { id: 'No Scope', name: 'No Scope', price: 1800 }, { id: 'Unboxer', name: 'Unboxer', price: 2200 },
+    { id: 'Clutch King', name: 'Clutch King', price: 2500 }, { id: 'Coin Goblin', name: 'Coin Goblin', price: 3000 },
+    { id: 'Warlord', name: 'Warlord', price: 5000 }, { id: 'Big Spender', name: 'Big Spender', price: 10000 },
+    { id: 'Developer', name: 'Developer', dev: true },
   ],
   headgear: [
     { id: 'helmet', name: 'Combat helmet', level: 1 }, { id: 'cap', name: 'Field cap', level: 1 },
@@ -399,6 +423,11 @@ export const COSMETICS = {
     { id: 'hood', name: 'Hood', price: 600 }, { id: 'headset', name: 'Comms headset', price: 700 },
     { id: 'beret', name: 'Beret', price: 900 }, { id: 'nvg', name: 'Night vision', price: 1800 },
     { id: 'crown', name: 'Crown', price: 8000 },
+    { id: 'hardhat', name: 'Hard hat', price: 600 }, { id: 'cowboy', name: 'Cowboy hat', price: 1400 },
+    { id: 'mohawk', name: 'Mohawk', price: 1600 }, { id: 'tophat', name: 'Top hat', price: 2200 },
+    { id: 'viking', name: 'Viking helm', price: 3500 }, { id: 'wizard', name: 'Wizard hat', price: 4500 },
+    { id: 'kabuto', name: 'Kabuto', price: 6000 }, { id: 'bubble', name: 'Space helmet', price: 7000 },
+    { id: 'devhalo', name: 'Dev halo', dev: true },
   ],
   face: [
     { id: 'visor', name: 'Visor', level: 1 }, { id: 'none', name: 'Balaclava', level: 1 },
@@ -406,12 +435,20 @@ export const COSMETICS = {
     { id: 'scarf', name: 'Face scarf', price: 600 }, { id: 'respirator', name: 'Respirator', price: 900 },
     { id: 'gasmask', name: 'Gas mask', price: 1200 }, { id: 'skull', name: 'Skull mask', price: 2500 },
     { id: 'cyber', name: 'Cyber visor', price: 4000 },
+    { id: 'bandit', name: 'Bandit mask', price: 700 }, { id: 'aviators', name: 'Aviators', price: 800 },
+    { id: 'monocle', name: 'Monocle', price: 1500 }, { id: 'hockey', name: 'Hockey mask', price: 1800 },
+    { id: 'oni', name: 'Oni mask', price: 5000 }, { id: 'plague', name: 'Plague mask', price: 6500 },
+    { id: 'devmask', name: 'Pixel mask', dev: true },
   ],
   pack: [
     { id: 'radio', name: 'Radio pack', level: 1 }, { id: 'none', name: 'No pack', level: 1 },
     { id: 'rucksack', name: 'Rucksack', level: 4 }, { id: 'sling', name: 'Sling bag', price: 400 },
     { id: 'parachute', name: 'Parachute', price: 900 }, { id: 'katana', name: 'Katana', price: 2500 },
     { id: 'jetpack', name: 'Jetpack', price: 5000 },
+    { id: 'scuba', name: 'Scuba tanks', price: 1200 }, { id: 'quiver', name: 'Quiver', price: 1600 },
+    { id: 'riot', name: 'Riot shield', price: 2000 }, { id: 'banner', name: 'War banner', price: 2800 },
+    { id: 'cape', name: 'Cape', price: 3000 }, { id: 'greatsword', name: 'Greatsword', price: 6000 },
+    { id: 'devwings', name: 'Data wings', dev: true },
   ],
   pattern: [
     { id: 'solid', name: 'Solid', level: 1 }, { id: 'stripes', name: 'Stripes', level: 6 },
@@ -419,6 +456,10 @@ export const COSMETICS = {
     { id: 'flecktarn', name: 'Flecktarn', price: 700 }, { id: 'digital', name: 'Digital', price: 800 },
     { id: 'splinter', name: 'Splinter', price: 900 }, { id: 'tiger', name: 'Tiger stripe', price: 1100 },
     { id: 'hex', name: 'Hex', price: 1500 },
+    { id: 'multicam', name: 'Multicam', price: 700 }, { id: 'chevron', name: 'Chevron', price: 900 },
+    { id: 'topo', name: 'Topo', price: 1100 }, { id: 'honeycomb', name: 'Honeycomb', price: 1200 },
+    { id: 'dazzle', name: 'Dazzle', price: 1600 }, { id: 'scales', name: 'Scales', price: 2000 },
+    { id: 'devcircuit', name: 'Dev circuit', dev: true },
   ],
   // Hangs off the side of your gun on a chain. It swings with recoil, reloads and every move you make.
   // The models are in client/charms.js: every id here needs a maker there.
@@ -431,15 +472,22 @@ export const COSMETICS = {
     { id: 'moon', name: 'Crescent', price: 2200 }, { id: 'bolt', name: 'Lightning', price: 2200 }, { id: 'shuriken', name: 'Shuriken', price: 2500 }, { id: 'reticle', name: 'Krosshair', price: 2500 },
     { id: 'flame', name: 'Flame', price: 3000 }, { id: 'd20', name: 'D20', price: 3000 }, { id: 'planet', name: 'Ringed planet', price: 3500 }, { id: 'diamond', name: 'Diamond', price: 4000 },
     { id: 'ufo', name: 'UFO', price: 5000 }, { id: 'crown', name: 'Crown', price: 6000 },
+    { id: 'donut', name: 'Donut', price: 800 }, { id: 'pizza', name: 'Pizza slice', price: 900 }, { id: 'pumpkin', name: 'Pumpkin', price: 1000 }, { id: 'snowflake', name: 'Snowflake', price: 1200 },
+    { id: 'cube', name: 'Puzzle cube', price: 1500 }, { id: 'gamepad', name: 'Gamepad', price: 1600 }, { id: 'cat', name: 'Cat', price: 1800 }, { id: 'bomb', name: 'Cartoon bomb', price: 2000 },
+    { id: 'rocket', name: 'Rocket', price: 2200 }, { id: 'medal', name: 'Medal', price: 2500 }, { id: 'trophy', name: 'Trophy', price: 3500 }, { id: 'emerald', name: 'Emerald', price: 4500 },
+    { id: 'devcore', name: 'Dev core', dev: true },
   ],
 };
 export const DEFAULT_LOOK = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {} };
 // owned: the pilot's bought items as 'kind:id' strings.
-export function cosmeticUnlocked(kind, id, level, owned = []) {
+export function cosmeticUnlocked(kind, id, level, owned = [], dev = false) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
   if (!item) return false;
+  if (item.dev) return Boolean(dev);
   return item.price ? owned.includes(`${kind}:${id}`) : level >= item.level;
 }
+// The developers' own class. Items in it can't be bought, won or traded.
+export const DEV_CLASS = { id: 'dev', name: 'Dev', color: '#00ffc6', blurb: 'Dev only. Nobody else can get this.' };
 
 export const CONTRACTS = [
   { id: 'kills', text: 'Get {n} kills', n: 12, xp: 300 },

@@ -1393,3 +1393,15 @@ button.cash-out .coins { color: var(--void); }
 .end-head .end-score span { color: var(--haze); font: 500 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
 @media (max-width: 760px) { .royale-steps { grid-template-columns: 1fr 1fr; } }
 .end-tables.royale-table { display: block; }
+
+/* ---- Dev class: the developers' own items and title. Nothing else uses these colours or moves like this. */
+@keyframes dev-flow { to { background-position: 200% 50%; } }
+@keyframes dev-glitch { 0%, 92%, 100% { transform: none; text-shadow: none; } 93% { transform: translateX(1px); text-shadow: -2px 0 #ff3a8a, 2px 0 #40ffff; } 95% { transform: translateX(-1px); text-shadow: 2px 0 #ff3a8a, -2px 0 #40ffff; } 97% { transform: none; text-shadow: 1px 0 #7a5cff; } }
+.dev-title { background: linear-gradient(90deg, #00ffc6, #40ffff, #b58cff, #ffb547, #00ffc6); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent !important; animation: dev-flow 3s linear infinite; font-weight: 700; }
+.gear-title.dev-title { display: block; animation: dev-flow 3s linear infinite, dev-glitch 4s steps(1) infinite; }
+.dev-chip { display: inline-block; padding: 1px 6px; border: 1px solid #00ffc6; background: linear-gradient(90deg, rgba(0, 255, 198, .08), rgba(181, 140, 255, .22), rgba(0, 255, 198, .08)); background-size: 200% 100%; color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .2em; font-style: normal; box-shadow: 0 0 10px rgba(0, 255, 198, .35); animation: dev-flow 2.4s linear infinite; }
+.gear-card.dev, .finish-card.rarity-dev { position: relative; border-top: 2px solid transparent; border-image: linear-gradient(90deg, #00ffc6, #b58cff, #40ffff, #00ffc6) 1; box-shadow: 0 0 0 1px rgba(0, 255, 198, .25), 0 0 22px rgba(0, 255, 198, .14); background: linear-gradient(160deg, rgba(0, 255, 198, .07), rgba(12, 17, 22, .8) 55%); }
+.gear-card.dev .gear-look b, .finish-card.rarity-dev b { color: #d8fff4; }
+.gear-swatch.dev-prism, .tracer-demo.dev-prism { background: linear-gradient(90deg, #ff3a8a, #ffb547, #b0ff3a, #00ffc6, #40ffff, #7a5cff, #ff3a8a); background-size: 200% 100%; animation: dev-flow 1.6s linear infinite; }
+.tracer-demo.dev-prism { box-shadow: 0 0 14px #00ffc6; }
+.dev-note { color: #00ffc6; }

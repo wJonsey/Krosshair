@@ -7,6 +7,7 @@ import { WebSocketServer } from 'ws';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
+import { isDev } from './server/devs.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
 import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
@@ -211,6 +212,7 @@ function signIn(socket, account, message, session = null) {
   socket.identified = true;
   const profile = profiles.get(socket.token);
   profile.name = account.username;
+  profiles.setDev(socket.token, isDev(account));
   profiles.scheduleSave();
   if (socket.player) { socket.player.name = account.username; socket.room.pushRoom(); }
   send(socket, { type: 'identity', username: account.username, avatar: avatarOf(account), session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });

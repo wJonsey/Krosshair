@@ -159,11 +159,14 @@ export function renderPreview() {
 }
 function refreshPreviewLook() { if (preview) styleOperator(preview.model, lookOf(game.look)); }
 
+// A pilot's title. The developers' title gets the Dev class look everywhere it shows.
+const titleHtml = (title) => (title === 'Developer' ? '<span class="dev-title">Developer</span>' : escapeHtml(title || ''));
+
 // ------------------------------------------------------------------ home
 // Colour swatches: level ones show the level they need, coin ones show a coin until bought.
 function swatchRow(kind, key, level) {
   const owned = game.profile?.owned || [];
-  return COSMETICS[kind].map((item) => {
+  return COSMETICS[kind].filter((item) => !item.dev).map((item) => {
     const forSale = item.price && !owned.includes(`${kind}:${item.id}`);
     const locked = forSale || (!item.price && level < item.level);
     const selected = game.look[key] === item.id;
@@ -195,7 +198,7 @@ function careerHtml() {
   const recent = profile.recent.length ? `<p class="recent"><span>RECENT PILOTS</span> ${profile.recent.map(escapeHtml).join(' · ')}</p>` : '';
   return `
     <div class="career-col"><div class="panel career"><p class="eyebrow">Service record</p>
-      <div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP to level ${level + 1}</small></div><div class="rank"><span>SKILL RATING</span><b>${profile.rankedMatches ? profile.rating : '-'}</b></div></div>
+      <div class="level-row"><b class="level">${level}</b><div><strong>${titleHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP to level ${level + 1}</small></div><div class="rank"><span>SKILL RATING</span><b>${profile.rankedMatches ? profile.rating : '-'}</b></div></div>
       ${rankPanelHtml(profile)}
       <div class="stat-grid"><div><b>${s.matches}</b><span>MATCHES</span></div><div><b>${winRate}%</b><span>WIN RATE</span></div><div><b>${kd}</b><span>K / D</span></div><div><b>${accuracy}%</b><span>ACCURACY</span></div><div><b>${playerKills}</b><span>PLAYER KILLS</span></div><div><b>${botKills}</b><span>BOT KILLS</span></div><div><b>${s.headshots}</b><span>HEADSHOTS</span></div><div><b>${s.longest} M</b><span>LONGEST KILL</span></div><div><b>${s.assists}</b><span>ASSISTS</span></div><div><b>${s.clutches}</b><span>CLUTCHES</span></div><div><b>${s.mvps}</b><span>MVPS</span></div><div><b>${s.wallbangs || 0}</b><span>WALLBANGS</span></div></div>
     </div>
@@ -267,7 +270,7 @@ net.on('leaderboard', (message) => { boards = message.boards; if (game.screen ==
 setInterval(() => { if (game.screen === 'home' && (homePage === 'leaderboard' || homePage === 'play') && !document.hidden) askBoards(); }, 2000);
 const pilotFace = (row) => (row.avatar ? `<img class="avatar" src="${escapeHtml(row.avatar)}" alt="" width="28" height="28" loading="lazy" referrerpolicy="no-referrer" />` : `<i class="avatar blank">${escapeHtml(row.name.slice(0, 1).toUpperCase())}</i>`);
 const boardRank = (id, row) => (id === 'rating' ? rankBadge(rankInfo(row.value), 22) : '');
-const boardRow = (id, row) => `<div class="board-row${row.you ? ' you' : ''}"><b class="place">${row.rank}</b>${pilotFace(row)}<span class="who"><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.title)} · LV ${row.level}${id === 'rating' ? ` · ${rankInfo(row.value).name}` : ''}</small></span><em>${boardRank(id, row)}${boardValue(id, row)}</em></div>`;
+const boardRow = (id, row) => `<div class="board-row${row.you ? ' you' : ''}"><b class="place">${row.rank}</b>${pilotFace(row)}<span class="who"><strong>${escapeHtml(row.name)}</strong><small>${titleHtml(row.title)} · LV ${row.level}${id === 'rating' ? ` · ${rankInfo(row.value).name}` : ''}</small></span><em>${boardRank(id, row)}${boardValue(id, row)}</em></div>`;
 
 function leaderboardPageHtml() {
   askBoards();
@@ -280,7 +283,7 @@ function leaderboardPageHtml() {
   const mine = board.you ? `You are <b>#${board.you.rank}</b> of ${board.total.toLocaleString()}` : game.username ? (boardTab === 'rating' ? 'Finish placements to get on the board.' : 'Play a match to get on the board.') : 'Log in to see where you stand.';
   return `<section class="page-wide"><p class="eyebrow">Leaderboard <small>${board.total.toLocaleString()} pilot${board.total === 1 ? '' : 's'}</small></p><h1 class="page-title">Top <em>guns.</em></h1>
     <div class="board-head">${tabs}<p class="board-mine">${mine}</p></div>
-    ${board.top.length ? `<div class="podium">${podium.map((row) => `<div class="panel podium-card place-${row.rank}${row.you ? ' you' : ''}"><span class="medal">${row.rank}</span>${pilotFace(row)}<strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.title)} · LV ${row.level}${boardTab === 'rating' ? ` · ${rankInfo(row.value).name}` : ''}</small><em>${boardRank(boardTab, row)}${boardValue(boardTab, row)}</em></div>`).join('')}</div>
+    ${board.top.length ? `<div class="podium">${podium.map((row) => `<div class="panel podium-card place-${row.rank}${row.you ? ' you' : ''}"><span class="medal">${row.rank}</span>${pilotFace(row)}<strong>${escapeHtml(row.name)}</strong><small>${titleHtml(row.title)} · LV ${row.level}${boardTab === 'rating' ? ` · ${rankInfo(row.value).name}` : ''}</small><em>${boardRank(boardTab, row)}${boardValue(boardTab, row)}</em></div>`).join('')}</div>
     ${rest.length ? `<div class="panel board-list">${rest.map((row) => boardRow(boardTab, row)).join('')}</div>` : ''}
     ${board.you && board.you.rank > 50 ? `<div class="panel board-list"><div class="board-row you"><b class="place">${board.you.rank}</b><i class="avatar blank">★</i><span class="who"><strong>${escapeHtml(game.username || 'You')}</strong><small>Your position</small></span><em>${boardValue(boardTab, board.you)}</em></div></div>` : ''}` : `<div class="panel"><p class="muted">${empty}</p></div>`}</section>`;
 }
@@ -326,7 +329,7 @@ function playPageHtml() {
       <canvas id="operator-preview" width="420" height="640"></canvas>
       <div class="play-stage-info">
         ${game.username ? '' : authHtml()}
-        ${profile ? `<div class="level-row"><b class="level">${level}</b><div><strong>${escapeHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP · ${game.username ? rankInfo(profile.rating, profile.rankedMatches).name.toUpperCase() : 'GUEST'}</small></div></div>` : net.connected ? '' : '<p class="muted">Connecting…</p>'}
+        ${profile ? `<div class="level-row"><b class="level">${level}</b><div><strong>${titleHtml(game.look.title)} ${escapeHtml(profile.name)}</strong><div class="meter"><i style="width:${progress}%"></i></div><small>${profile.xp - base} / ${next - base} XP · ${game.username ? rankInfo(profile.rating, profile.rankedMatches).name.toUpperCase() : 'GUEST'}</small></div></div>` : net.connected ? '' : '<p class="muted">Connecting…</p>'}
         <div class="link-row"><button type="button" class="ghost-button" data-page="locker">Locker</button><button type="button" class="ghost-button" data-page="career">Profile →</button></div>
       </div>
     </section>
@@ -343,7 +346,7 @@ function operatorPageHtml(level) {
   const group = (label, kind, key) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, key))}</small></p><div class="swatches">${swatchRow(kind, key, level)}</div></div>`;
   // Gear: level items unlock with XP, priced ones are bought once with coins (click twice to confirm).
   const owned = game.profile?.owned || [];
-  const gear = (label, kind) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, kind))}</small></p><div class="gear-options">${COSMETICS[kind].map((item) => {
+  const gear = (label, kind) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, kind))}</small></p><div class="gear-options">${COSMETICS[kind].filter((item) => !item.dev).map((item) => {
     const bought = owned.includes(`${kind}:${item.id}`), key = `gear:${kind}:${item.id}`;
     const locked = item.price ? !bought : level < item.level;
     const tag = item.price && !bought ? `${armedGear === key ? 'Confirm ' : ''}${coins(item.price)}` : locked ? `LV ${item.level}` : '';
@@ -354,7 +357,7 @@ function operatorPageHtml(level) {
     <section class="page-main operator-stage">
       <p class="eyebrow">Operator</p>
       <h1 class="page-title">Your <em>silhouette.</em></h1>
-      <div class="stage"><canvas id="operator-preview" width="360" height="460"></canvas><div class="stage-tag"><small>${escapeHtml(game.look.title)}</small><b>${escapeHtml(game.profile?.name || game.name || 'Unnamed pilot')}</b><span>LEVEL ${level}</span></div></div>
+      <div class="stage"><canvas id="operator-preview" width="360" height="460"></canvas><div class="stage-tag"><small>${titleHtml(game.look.title)}</small><b>${escapeHtml(game.profile?.name || game.name || 'Unnamed pilot')}</b><span>LEVEL ${level}</span></div></div>
     </section>
     <aside class="page-side">
       ${group('Suit', 'suit', 'color')}${gear('Pattern', 'pattern')}${gear('Headgear', 'headgear')}${gear('Face', 'face')}${gear('Pack', 'pack')}${group('Visor', 'visor', 'accent')}${group('Tracer', 'tracer', 'tracer')}
@@ -433,7 +436,7 @@ export function renderHome() {
 // kind: the COSMETICS list; key: the look field it sets (the same, except colours: suit → color, visor → accent).
 function chooseGear(kind, id, key = kind) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
-  if (!item) return;
+  if (!item || (item.dev && !game.profile?.dev)) return;
   const armKey = `gear:${kind}:${id}`;
   if (item.price && !(game.profile?.owned || []).includes(`${kind}:${id}`)) {
     if (!game.username) { toast('Coins need a Discord login.', 'warn'); play('deny'); return; }
@@ -563,7 +566,7 @@ export function renderLobby() {
   const custom = room.queue === 'custom';
   const wager = room.wager;
   const seats = wager ? wager.size : 4;
-  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}` : `${escapeHtml(p.title || '')} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
+  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}` : `${titleHtml(p.title)} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
   const teamColumn = (team, label) => {
     const players = room.players.filter((p) => p.team === team);
     const open = Math.max(0, seats - players.length);
@@ -639,7 +642,7 @@ function renderRoyaleLobby(room) {
   const draft = $('#lobby-chat-input')?.value || '';
   const chatFocused = document.activeElement?.id === 'lobby-chat-input';
   const humans = room.players.filter((p) => !p.bot);
-  const pilots = humans.map((p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}</b><small>${escapeHtml(p.title || '')} · LV ${p.level}</small></div></div>`).join('');
+  const pilots = humans.map((p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}</b><small>${titleHtml(p.title)} · LV ${p.level}</small></div></div>`).join('');
   lobby.innerHTML = `
     <div class="menu-shell lobby-shell">
       <header class="menu-bar">

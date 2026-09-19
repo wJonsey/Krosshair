@@ -32,6 +32,35 @@ function limb(group, key, length, top, bottom, material, sides = 6) {
   return add(group, geo(`limb:${key}`, () => new THREE.CylinderGeometry(top, bottom, length, sides).translate(0, -length / 2, 0)), material);
 }
 const gem = (group, key, radius, material, position, scale = null) => add(group, geo(`gem:${key}`, () => new THREE.IcosahedronGeometry(radius, 0)), material, position, null, scale);
+// Bends a fresh geometry once, before it is cached: `move` shifts each vertex in place.
+const bend = new THREE.Vector3();
+function warp(geometry, move) {
+  const points = geometry.attributes.position;
+  for (let i = 0; i < points.count; i += 1) { move(bend.fromBufferAttribute(points, i)); points.setXYZ(i, bend.x, bend.y, bend.z); }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+// A torus arc thinning to `tip` of its thickness: horns. It leaves the origin heading +x and curls up.
+function horn(radius, tube, arc, tip) {
+  return warp(new THREE.TorusGeometry(radius, tube, 6, 10, arc), (p) => {
+    const a = Math.max(0, Math.atan2(p.y, p.x)), cx = Math.cos(a) * radius, cy = Math.sin(a) * radius, k = 1 - (1 - tip) * Math.min(1, a / arc);
+    p.set(cx + (p.x - cx) * k, cy + (p.y - cy) * k, p.z * k);
+  }).translate(-radius, 0, 0).rotateZ(-Math.PI / 2);
+}
+// A flat outline from [x, y] points, extruded and centred on z: stars, chevrons.
+const outline = (points, depth) => new THREE.ExtrudeGeometry(new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, y))), { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
+// The full face masks share one shell, an ellipsoid with these radii about the head centre. onMask sits a
+// part on its front facing out: `lift` moves it off the surface, `roll` turns it about the surface normal.
+const MASK = [0.133, 0.157, 0.147], FRONT = new THREE.Vector3(0, 0, -1), facing = new THREE.Vector3();
+function onMask(mesh, x, y, lift = 0, roll = 0) {
+  const [a, b, c] = MASK;
+  const z = -c * Math.sqrt(Math.max(0.05, 1 - (x / a) ** 2 - (y / b) ** 2));
+  facing.set(x / (a * a), y / (b * b), z / (c * c)).normalize();
+  mesh.position.set(x, y, z).addScaledVector(facing, lift);
+  mesh.quaternion.setFromUnitVectors(FRONT, facing);
+  if (roll) mesh.rotateZ(roll);
+  return mesh;
+}
 
 // ------------------------------------------------------------------ arms
 const UPPER = 0.29, FORE = 0.29;
@@ -87,6 +116,17 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const visorMat = mat(accent, { emissive: accent, glow: 1.4, rough: 0.15, metal: 0.4 });
   const teamMat = mat('#ffffff', { emissive: '#ffffff', glow: 1.8 });
   const gold = mat('#e2b646', { rough: 0.25, metal: 0.6, emissive: '#6b4a08', glow: 0.6 });
+  // Cosmetic materials. The opaque ones join `materials` below so a decoy fades them too.
+  const yellow = mat('#f2c21a', { rough: 0.4, metal: 0.15 }), felt = mat('#6b4629', { rough: 0.95 }), silk = mat('#141418', { rough: 0.3, metal: 0.2 });
+  const iron = mat('#5b6168', { rough: 0.45, metal: 0.55 }), bone = mat('#e6d9bb', { rough: 0.6 }), lacquer = mat('#1c1418', { rough: 0.25, metal: 0.25 });
+  const white = mat('#eeebe2', { rough: 0.5 }), red = mat('#c01c24', { rough: 0.5 }), leather = mat('#6b4526', { rough: 0.85 }), hide = mat('#2e231c', { rough: 0.8 });
+  const lens = mat('#0d1318', { rough: 0.08, metal: 0.8 }), steel = mat('#d3dae0', { rough: 0.22, metal: 0.5 }), shieldMat = mat('#3a434d', { rough: 0.45, metal: 0.3 });
+  const starMat = mat('#fff1a6', { emissive: '#ffd84a', glow: 2.2 }), haloMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.6 }), pixelMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.4 });
+  const mirror = new THREE.MeshStandardMaterial({ color: '#06080b', roughness: 0.12, metalness: 0.85 });
+  lacquer.side = THREE.DoubleSide;
+  // See-through ones stay out of that list: glass, and the additive light of the dev items.
+  const glass = new THREE.MeshStandardMaterial({ color: '#dff1ff', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.25, depthWrite: false });
+  const holo = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
 
   // --- hips and legs ---------------------------------------------------------------------------
   const hips = new THREE.Group();
@@ -174,6 +214,99 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
     flames.push(add(jetpack, geo('jetFlame', () => new THREE.ConeGeometry(0.035, 0.14, 6)), mat('#ff9a3a', { emissive: '#ff7a1a', glow: 3 }), [side * 0.09, -0.01, 0.255], [Math.PI, 0, 0]));
   }
   block(jetpack, 'jetFrame', [0.26, 0.1, 0.07], gear, [0, 0.38, 0.19]);
+  const scuba = packGroup('scuba');
+  block(scuba, 'scubaPlate', [0.2, 0.34, 0.03], gear, [0, 0.29, 0.18]);
+  for (const side of [-1, 1]) {
+    add(scuba, geo('scubaTank', () => new THREE.CylinderGeometry(0.068, 0.068, 0.36, 10)), yellow, [side * 0.076, 0.28, 0.24]);
+    for (const [y, flip] of [[0.46, 0], [0.1, Math.PI]]) add(scuba, geo('scubaDome', () => new THREE.SphereGeometry(0.068, 10, 4, 0, Math.PI * 2, 0, Math.PI / 2)), yellow, [side * 0.076, y, 0.24], [flip, 0, 0]);
+    for (const y of [0.19, 0.37]) add(scuba, geo('scubaBand', () => new THREE.CylinderGeometry(0.071, 0.071, 0.024, 10)), dark, [side * 0.076, y, 0.24]);
+    add(scuba, geo('scubaNeck', () => new THREE.CylinderGeometry(0.018, 0.022, 0.05, 6)), dark, [side * 0.076, 0.54, 0.24]);
+    add(scuba, geo('scubaKnob', () => new THREE.CylinderGeometry(0.022, 0.022, 0.014, 8)), dark, [side * 0.135, 0.565, 0.24], [0, 0, Math.PI / 2]);
+  }
+  block(scuba, 'scubaManifold', [0.2, 0.035, 0.04], dark, [0, 0.565, 0.24]);
+  block(scuba, 'scubaReg', [0.05, 0.045, 0.05], metal, [0.03, 0.6, 0.245]);
+  // The hose runs over the right shoulder to a mouthpiece on the chest.
+  add(scuba, geo('scubaHose', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0.05, 0.605, 0.26], [0.13, 0.63, 0.19], [0.19, 0.585, 0.05], [0.195, 0.53, -0.1], [0.13, 0.46, -0.19]].map((p) => new THREE.Vector3(...p))), 20, 0.012, 5)), dark);
+  block(scuba, 'scubaMouth', [0.045, 0.03, 0.03], gear, [0.125, 0.455, -0.2]);
+  const quiver = packGroup('quiver');
+  const slung = new THREE.Group();
+  slung.position.set(0.02, 0.3, 0.225); slung.rotation.z = -0.5; quiver.add(slung);
+  add(slung, geo('quiver', () => new THREE.CylinderGeometry(0.058, 0.046, 0.5, 8)), leather);
+  add(slung, geo('quiverRim', () => new THREE.CylinderGeometry(0.062, 0.062, 0.035, 8)), dark, [0, 0.24, 0]);
+  add(slung, geo('quiverCap', () => new THREE.CylinderGeometry(0.05, 0.04, 0.03, 8)), dark, [0, -0.255, 0]);
+  [[-0.022, -0.012, 0.1, 0.08], [0.004, 0.018, -0.06, -0.05], [0.024, -0.008, -0.12, 0.02], [-0.004, -0.028, 0.14, -0.1], [-0.02, 0.02, -0.02, 0.13]].forEach(([x, z, tipX, tipZ], k) => {
+    const arrow = new THREE.Group();
+    arrow.position.set(x, 0.16, z); arrow.rotation.set(tipX, 0, tipZ); slung.add(arrow);
+    add(arrow, geo('arrowShaft', () => new THREE.CylinderGeometry(0.0045, 0.0045, 0.3, 4).translate(0, 0.15, 0)), felt);
+    add(arrow, geo('fletch', () => new THREE.ConeGeometry(0.014, 0.07, 4)), k % 2 ? bone : suit, [0, 0.25, 0], [Math.PI, 0, 0]);
+    block(arrow, 'nock', [0.01, 0.012, 0.01], dark, [0, 0.3, 0]);
+  });
+  block(quiver, 'quiverStrap', [0.04, 0.62, 0.02], leather, [0, 0.31, -0.178], [0.05, 0, -0.75]);
+  block(quiver, 'quiverBuckle', [0.035, 0.03, 0.012], gold, [0.06, 0.37, -0.19], [0.05, 0, -0.75]);
+  // Riot shield: a framed ballistic panel with a viewport, the back strip becomes its stripe.
+  const riot = packGroup('riot');
+  block(riot, 'riotMount', [0.16, 0.18, 0.11], gear, [0, 0.32, 0.22]);
+  block(riot, 'riotRim', [0.48, 0.77, 0.018], plate, [0, 0.175, 0.275]);
+  block(riot, 'riotShield', [0.46, 0.75, 0.025], shieldMat, [0, 0.175, 0.285]);
+  block(riot, 'riotPort', [0.2, 0.035, 0.006], visorMat, [0, 0.49, 0.2995]);
+  for (const x of [-0.2, 0.2]) for (const y of [-0.17, 0.52]) gem(riot, 'riotBolt', 0.009, plate, [x, y, 0.298]);
+  // War banner (sashimono): the flag hangs from a crossbar in strips so it can ripple.
+  const banner = packGroup('banner');
+  add(banner, geo('bannerPole', () => new THREE.CylinderGeometry(0.011, 0.014, 1.2, 6)), lacquer, [0, 0.66, 0.235]);
+  add(banner, geo('bannerBar', () => new THREE.CylinderGeometry(0.008, 0.008, 0.33, 5)), lacquer, [0.165, 1.2, 0.235], [0, 0, Math.PI / 2]);
+  gem(banner, 'bannerTop', 0.022, gold, [0, 1.275, 0.235]);
+  block(banner, 'bannerSocket', [0.045, 0.1, 0.06], dark, [0, 0.1, 0.21]);
+  block(banner, 'bannerBrace', [0.045, 0.035, 0.09], dark, [0, 0.47, 0.2]);
+  const flag = [];
+  for (let k = 0, hinge = banner; k < 5; k += 1) {
+    const strip = new THREE.Group();
+    strip.position.set(k ? 0.064 : 0.012, k ? 0 : 1.19, k ? 0 : 0.235); strip.rotation.y = k ? -0.05 : -0.08;
+    add(strip, geo('flagStrip', () => new THREE.BoxGeometry(0.064, 0.56, 0.007).translate(0.032, -0.28, 0)), suit);
+    hinge.add(strip); flag.push(strip); hinge = strip;
+  }
+  add(flag[2], geo('flagMon', () => new THREE.CylinderGeometry(0.03, 0.03, 0.013, 12)), gold, [0.032, -0.2, 0], [Math.PI / 2, 0, 0]);
+  // Cape: four hinged panels from the shoulders to the knees, swung in animateCosmetics.
+  const cape = packGroup('cape');
+  block(cape, 'capeCollar', [0.38, 0.055, 0.1], suit, [0, 0.515, 0.135]);
+  for (const side of [-1, 1]) gem(cape, 'capeClasp', 0.022, gold, [side * 0.16, 0.51, 0.19]);
+  const capeParts = [];
+  for (let k = 0, hinge = cape; k < 4; k += 1) {
+    const part = new THREE.Group();
+    part.position.set(0, k ? -0.265 : 0.5, k ? 0 : 0.18); part.rotation.x = k ? 0 : -0.08;
+    add(part, geo('capePanel', () => new THREE.BoxGeometry(1, 0.275, 0.014).translate(0, -0.1375, 0)), suit, [0, 0, 0], null, [0.36 + k * 0.035, 1, 1]);
+    hinge.add(part); capeParts.push(part); hinge = part;
+  }
+  // Greatsword across the back, hilt over the right shoulder.
+  const greatsword = packGroup('greatsword');
+  const sword = new THREE.Group();
+  sword.position.set(0, 0.28, 0.225); sword.rotation.z = -0.5; greatsword.add(sword);
+  block(sword, 'swordBlade', [0.08, 0.84, 0.012], steel, [0, -0.22, 0]);
+  add(sword, geo('swordTip', () => new THREE.ConeGeometry(0.0566, 0.13, 4).rotateY(Math.PI / 4)), steel, [0, -0.705, 0], [Math.PI, 0, 0], [1, 1, 0.15]);
+  block(sword, 'swordFuller', [0.014, 0.66, 0.016], dark, [0, -0.17, 0]);
+  block(sword, 'swordGuard', [0.3, 0.035, 0.04], metal, [0, 0.215, 0]);
+  for (const side of [-1, 1]) gem(sword, 'swordGuardEnd', 0.024, gold, [side * 0.155, 0.215, 0]);
+  add(sword, geo('swordGrip', () => new THREE.CylinderGeometry(0.019, 0.021, 0.27, 6)), dark, [0, 0.365, 0]);
+  for (let k = 0; k < 5; k += 1) add(sword, geo('swordWrap', () => new THREE.CylinderGeometry(0.023, 0.023, 0.016, 6)), suit, [0, 0.26 + k * 0.05, 0], [0, 0, 0.25]);
+  gem(sword, 'swordPommel', 0.034, gold, [0, 0.525, 0]);
+  for (const y of [-0.3, 0.05]) block(sword, 'swordStrap', [0.11, 0.03, 0.06], dark, [0, y, -0.025]);
+  // Data wings (dev): additive feather panels on two hinged bones. Flap, fold and shimmer in animateCosmetics.
+  const devwings = packGroup('devwings');
+  const wingMats = [0, 1, 2, 3, 4].map((k) => holo(new THREE.Color('#00ffc6').lerp(new THREE.Color('#2ad4ff'), k / 4), 0.45)), spar = holo('#c8fff4', 0.85);
+  gem(devwings, 'wingCore', 0.028, haloMat, [0, 0.43, 0.2]);
+  const feather = (group, k, x, y, turn, length, layer, width = 1) => add(group, geo('feather', () => new THREE.CircleGeometry(1, 4).scale(0.04, 0.13, 1).translate(0, -0.13, 0)), wingMats[k % 5], [x, y, layer], [0, 0, turn], [width, length, 1]);
+  const wings = [-1, 1].map((side) => {
+    // Built as the right wing; the left is its mirror image.
+    const wing = new THREE.Group();
+    wing.position.set(side * 0.05, 0.44, 0.215); wing.scale.x = side; wing.rotation.set(0, -side * 0.3, side * 0.1); devwings.add(wing);
+    const hand = new THREE.Group();
+    hand.position.set(0.25, 0.14, 0); hand.rotation.z = -0.12; wing.add(hand);
+    block(wing, 'wingArm', [0.29, 0.012, 0.012], spar, [0.125, 0.07, 0], [0, 0, 0.51]);
+    block(hand, 'wingHand', [0.32, 0.01, 0.01], spar, [0.16, 0, 0]);
+    for (let k = 0; k < 5; k += 1) feather(wing, k, 0.03 + k * 0.05, 0.017 + k * 0.028, k * 0.06, 1.15 + k * 0.06, k * 0.004);
+    for (let k = 0; k < 6; k += 1) feather(hand, k + 5, 0.02 + k * 0.055, 0, 0.3 + k * 0.2, 1.5 + k * 0.13, k * 0.004);
+    for (let k = 0; k < 3; k += 1) { feather(wing, k + 1, 0.06 + k * 0.07, 0.034 + k * 0.039, 0.1, 0.6, 0.012, 0.8); feather(hand, k + 6, 0.05 + k * 0.09, 0, 0.4 + k * 0.25, 0.65, 0.012, 0.8); }
+    return { wing, hand, side };
+  });
   // Team strips: chest, back and both shoulders, so a side is readable from any angle.
   block(chest, 'stripF', [0.18, 0.03, 0.012], teamMat, [0, 0.43, -0.176], [0.16, 0, 0]);
   block(chest, 'stripB', [0.22, 0.04, 0.015], teamMat, [0, 0.43, 0.3]);
@@ -193,7 +326,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   add(head, geo('neck', () => new THREE.CylinderGeometry(0.052, 0.062, 0.12, 6)), dark, [0, -0.09, 0.008]);
   const face = add(head, geo('face', () => new THREE.IcosahedronGeometry(0.128, 1)), skin, [0, 0, 0], null, [0.92, 1.08, 1]);
   add(head, geo('balaclava', () => new THREE.SphereGeometry(0.133, 10, 6, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48)), dark, [0, 0, 0], null, [0.95, 1.08, 1.02]);
-  block(head, 'jaw', [0.12, 0.05, 0.06], dark, [0, -0.095, -0.075], [0.35, 0, 0]);
+  const jaw = block(head, 'jaw', [0.12, 0.05, 0.06], dark, [0, -0.095, -0.075], [0.35, 0, 0]);
   void face;
   // Headgear and face options: one group each, only the chosen one visible. The team lights stay on
   // every option so a side is always readable.
@@ -214,7 +347,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   add(beanie, geo('beanie', () => new THREE.SphereGeometry(0.146, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.55)), dark, [0, 0.04, 0], null, [1, 1.12, 1.06]);
   add(beanie, geo('beanieFold', () => new THREE.CylinderGeometry(0.152, 0.152, 0.05, 10, 1, true)), suit, [0, 0.04, 0]);
   const hairMat = mat('#2a1f18', { rough: 0.95 });
-  const hairOn = (group) => { add(group, geo('hair', () => new THREE.SphereGeometry(0.134, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.45)), hairMat, [0, 0.02, 0], null, [0.95, 1.05, 1.03]); block(group, 'fringe', [0.17, 0.035, 0.05], hairMat, [0, 0.09, -0.105], [0.5, 0, 0]); };
+  const hairOn = (group, fringe = true) => { add(group, geo('hair', () => new THREE.SphereGeometry(0.134, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.45)), hairMat, [0, 0.02, 0], null, [0.95, 1.05, 1.03]); if (fringe) block(group, 'fringe', [0.17, 0.035, 0.05], hairMat, [0, 0.09, -0.105], [0.5, 0, 0]); };
   hairOn(option(headgear, 'bare', false));
   const hood = option(headgear, 'hood', false);
   add(hood, geo('hood', () => new THREE.SphereGeometry(0.18, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.72)), suit, [0, 0.01, 0.02], null, [1.02, 1.05, 1.12]);
@@ -244,6 +377,110 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   add(crown, geo('crownBand', () => new THREE.CylinderGeometry(0.13, 0.125, 0.06, 12, 1, true)), gold, [0, 0.13, 0]).material.side = THREE.DoubleSide;
   const ruby = mat('#ff2a4a', { emissive: '#ff2a4a', glow: 1.5 });
   for (let k = 0; k < 6; k += 1) { const a = (k / 6) * Math.PI * 2; add(crown, geo('crownSpike', () => new THREE.ConeGeometry(0.022, 0.07, 4)), gold, [Math.cos(a) * 0.125, 0.19, Math.sin(a) * 0.125]); gem(crown, 'crownGem', 0.013, k % 2 ? ruby : visorMat, [Math.cos(a) * 0.132, 0.13, Math.sin(a) * 0.132]); }
+  // Hard hat. The bracket turns the helmet light into its lamp.
+  const hardhat = option(headgear, 'hardhat', false);
+  hairOn(hardhat, false);
+  add(hardhat, geo('hardDome', () => new THREE.SphereGeometry(0.162, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2)), yellow, [0, 0.03, 0], null, [1, 1, 1.1]);
+  add(hardhat, geo('hardRim', () => new THREE.CylinderGeometry(0.174, 0.178, 0.014, 12)), yellow, [0, 0.032, 0], null, [1, 1, 1.1]);
+  add(hardhat, geo('hardRidge', () => new THREE.TorusGeometry(0.162, 0.016, 4, 12, Math.PI)), yellow, [0, 0.03, 0], [0, Math.PI / 2, 0], [1.1, 1, 1]);
+  block(hardhat, 'hardPeak', [0.2, 0.014, 0.075], yellow, [0, 0.035, -0.215], [-0.1, 0, 0]);
+  block(hardhat, 'hardLamp', [0.03, 0.03, 0.04], dark, [0, 0.105, -0.16]);
+  // Cowboy hat: the crown is creased down the middle and pinched at the front; the brim curls up at the sides.
+  const cowboy = option(headgear, 'cowboy', false);
+  hairOn(cowboy);
+  add(cowboy, geo('cowboyCrown', () => warp(new THREE.CylinderGeometry(0.106, 0.135, 0.13, 12), (p) => { if (p.y > 0) { p.y -= 0.032 * Math.max(0, 1 - Math.abs(p.x) / 0.06); p.x *= 1 - Math.max(0, -p.z) * 2.4; } })), felt, [0, 0.14, 0], null, [0.95, 1, 1.12]);
+  add(cowboy, geo('cowboyBrim', () => warp(new THREE.CylinderGeometry(0.25, 0.25, 0.012, 20), (p) => { p.z *= 1.12; const s = Math.max(0, Math.abs(p.x) - 0.1); p.y += s * s * 2.6 - p.z * p.z * 0.25; })), felt, [0, 0.078, 0]);
+  add(cowboy, geo('cowboyBand', () => new THREE.CylinderGeometry(0.133, 0.136, 0.026, 12, 1, true)), dark, [0, 0.092, 0], null, [0.95, 1, 1.12]);
+  gem(cowboy, 'concho', 0.013, gold, [0.13, 0.092, -0.03]);
+  // Mohawk: short sides and a crest of fins in the suit colour, front to back.
+  const mohawk = option(headgear, 'mohawk', false);
+  hairOn(mohawk);
+  [0.7, 0.95, 1.15, 1.2, 1.1, 0.9, 0.7].forEach((height, k) => { const a = -0.9 + k / 3; add(mohawk, geo('spike', () => new THREE.ConeGeometry(0.03, 0.13, 4).translate(0, 0.065, 0)), suit, [0, 0.02 + Math.cos(a) * 0.13, Math.sin(a) * 0.128], [a + 0.12, 0, 0], [0.4, height, 1.4]); });
+  // Top hat, worn at an angle.
+  const tophat = option(headgear, 'tophat', false);
+  hairOn(tophat);
+  const topper = new THREE.Group();
+  topper.position.set(0.01, 0.082, 0); topper.rotation.set(0.05, 0, -0.13); tophat.add(topper);
+  add(topper, geo('topCrown', () => new THREE.CylinderGeometry(0.126, 0.116, 0.21, 12)), silk, [0, 0.11, 0], null, [1, 1, 1.1]);
+  add(topper, geo('topBand', () => new THREE.CylinderGeometry(0.119, 0.118, 0.036, 12, 1, true)), suit, [0, 0.026, 0], null, [1, 1, 1.1]);
+  add(topper, geo('topBrim', () => warp(new THREE.CylinderGeometry(0.19, 0.19, 0.01, 16), (p) => { const s = Math.max(0, Math.abs(p.x) - 0.12); p.y += s * s * 4; })), silk, [0, 0.004, 0], null, [1, 1, 1.12]);
+  // Viking helm: iron dome, banded, with a nose guard and horns.
+  const viking = option(headgear, 'viking', false);
+  add(viking, geo('vikingDome', () => new THREE.SphereGeometry(0.156, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2)), iron, [0, 0.045, 0], null, [1, 1.05, 1.08]);
+  add(viking, geo('vikingBrow', () => new THREE.CylinderGeometry(0.159, 0.159, 0.03, 12, 1, true)), metal, [0, 0.058, 0], null, [1, 1, 1.08]);
+  const vikingBand = () => geo('vikingBand', () => new THREE.TorusGeometry(0.157, 0.01, 4, 12, Math.PI));
+  add(viking, vikingBand(), metal, [0, 0.045, 0], null, [1, 1.05, 1.08]);
+  add(viking, vikingBand(), metal, [0, 0.045, 0], [0, Math.PI / 2, 0], [1.08, 1.05, 1]);
+  gem(viking, 'vikingKnob', 0.02, metal, [0, 0.21, 0]);
+  block(viking, 'vikingNose', [0.028, 0.09, 0.014], metal, [0, 0.012, -0.163], [-0.2, 0, 0]);
+  for (const side of [-1, 1]) {
+    add(viking, geo('vikingHorn', () => horn(0.1, 0.028, 2.0, 0.12).rotateX(-0.3)), bone, [side * 0.148, 0.1, 0.005], null, [side, 1, 1]);
+    add(viking, geo('vikingCuff', () => new THREE.CylinderGeometry(0.033, 0.033, 0.02, 8)), metal, [side * 0.152, 0.1, 0.005], [0, 0, Math.PI / 2]);
+  }
+  // Wizard hat: a floppy cone in three jointed pieces, the tip bent over, stars on the crown.
+  const wizard = option(headgear, 'wizard', false);
+  hairOn(wizard);
+  add(wizard, geo('wizBrim', () => warp(new THREE.CylinderGeometry(0.26, 0.26, 0.012, 20), (p) => { const s = Math.max(0, Math.hypot(p.x, p.z) - 0.14); p.y -= s * s * 1.6 + Math.sin(Math.atan2(p.z, p.x) * 3) * s * 0.25; })), suit, [0, 0.08, 0]);
+  const cone = new THREE.Group();
+  cone.position.y = 0.085; wizard.add(cone);
+  add(cone, geo('wizCone', () => new THREE.CylinderGeometry(0.085, 0.138, 0.17, 12).translate(0, 0.085, 0)), suit);
+  add(cone, geo('wizBand', () => new THREE.CylinderGeometry(0.135, 0.137, 0.025, 12, 1, true)), dark, [0, 0.016, 0]);
+  const wizMid = new THREE.Group();
+  wizMid.position.y = 0.17; wizMid.rotation.set(0.28, 0, 0.1); cone.add(wizMid);
+  add(wizMid, geo('wizKnee', () => new THREE.SphereGeometry(0.084, 12, 6)), suit);
+  add(wizMid, geo('wizCone2', () => new THREE.CylinderGeometry(0.046, 0.085, 0.13, 12).translate(0, 0.065, 0)), suit);
+  const wizTop = new THREE.Group();
+  wizTop.position.y = 0.13; wizTop.rotation.set(0.9, 0, 0.2); wizMid.add(wizTop);
+  add(wizTop, geo('wizKnee2', () => new THREE.SphereGeometry(0.045, 10, 5)), suit);
+  add(wizTop, geo('wizTip', () => new THREE.ConeGeometry(0.046, 0.12, 12).translate(0, 0.06, 0)), suit);
+  const starGeo = () => geo('star', () => outline([...Array(10)].map((_, k) => { const r = k % 2 ? 0.42 : 1, a = Math.PI / 2 + (k * Math.PI) / 5; return [Math.cos(a) * r, Math.sin(a) * r]; }), 0.25).scale(0.02, 0.02, 0.02));
+  for (const [a, y, roll, size] of [[0.35, 0.05, 0.2, 1], [-0.9, 0.11, -0.3, 0.8], [2.2, 0.07, 0.5, 0.9], [3.6, 0.12, 0.1, 0.75], [-2.4, 0.04, -0.4, 1]]) {
+    const r = 0.138 - (0.053 * y) / 0.17 + 0.002;
+    add(cone, starGeo(), starMat, [Math.sin(a) * r, y, -Math.cos(a) * r], [0, -a, roll], [size, size, 1]);
+  }
+  add(wizMid, starGeo(), starMat, [Math.sin(0.5) * 0.073, 0.05, -Math.cos(0.5) * 0.073], [0, -0.5, 0.3], [0.7, 0.7, 1]);
+  // Kabuto: lacquered bowl, layered neck guard (shikoro) with gold edges, turned-back flaps (fukigaeshi)
+  // and a gold crescent crest (maedate) round a red sun.
+  const kabuto = option(headgear, 'kabuto', false);
+  add(kabuto, geo('kabutoBowl', () => new THREE.SphereGeometry(0.168, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2)), lacquer, [0, 0.03, 0], null, [1, 0.95, 1.08]);
+  add(kabuto, geo('kabutoTehen', () => new THREE.TorusGeometry(0.022, 0.007, 4, 10)), gold, [0, 0.19, 0], [Math.PI / 2, 0, 0]);
+  block(kabuto, 'kabutoPeak', [0.22, 0.012, 0.07], lacquer, [0, 0.042, -0.19], [0.3, 0, 0]);
+  block(kabuto, 'kabutoPeakEdge', [0.22, 0.01, 0.01], gold, [0, 0.052, -0.224]);
+  for (let k = 0; k < 4; k += 1) {
+    const r = 0.17 + k * 0.013, y = 0.016 - k * 0.025;
+    add(kabuto, geo(`shikoro${k}`, () => new THREE.CylinderGeometry(r, r + 0.02, 0.03, 12, 1, true, -1.95, 3.9)), lacquer, [0, y, 0], null, [1, 1, 1.08]);
+    add(kabuto, geo(`shikoroEdge${k}`, () => new THREE.CylinderGeometry(r + 0.021, r + 0.022, 0.007, 12, 1, true, -1.95, 3.9)), gold, [0, y - 0.016, 0], null, [1, 1, 1.08]);
+  }
+  for (const side of [-1, 1]) {
+    block(kabuto, 'fukigaeshi', [0.012, 0.06, 0.09], lacquer, [side * 0.205, 0.004, -0.05], [0, side * 0.93, 0]);
+    block(kabuto, 'fukiTrim', [0.008, 0.07, 0.1], gold, [side * 0.205 - side * 0.0036, 0.004, -0.05 + 0.0048], [0, side * 0.93, 0]);
+    add(kabuto, geo('kabutoMon', () => new THREE.CylinderGeometry(0.016, 0.016, 0.006, 10)), gold, [side * 0.205 + side * 0.0048, 0.004, -0.05 - 0.0064], [0, side * 0.93, Math.PI / 2]);
+  }
+  add(kabuto, geo('kabutoCrest', () => warp(new THREE.TorusGeometry(0.1, 0.013, 4, 18, 3), (p) => { const a = Math.atan2(p.y, p.x), cx = Math.cos(a) * 0.1, cy = Math.sin(a) * 0.1, k = 1 - (0.8 * Math.abs(a - 1.5)) / 1.5; p.set(cx + (p.x - cx) * k, cy + (p.y - cy) * k, p.z * k); }).rotateZ(Math.PI * 1.5 - 1.5).translate(0, 0.1, 0)), gold, [0, 0.128, -0.152], [0.3, 0, 0], [1.1, 1.3, 0.4]);
+  block(kabuto, 'kabutoMount', [0.036, 0.04, 0.012], gold, [0, 0.12, -0.15], [0.3, 0, 0]);
+  add(kabuto, geo('kabutoSun', () => new THREE.CylinderGeometry(0.028, 0.028, 0.01, 12)), ruby, [0, 0.168, -0.14], [Math.PI / 2 + 0.3, 0, 0]);
+  // Space helmet: a glass bubble on a metal neck ring, with a blinking aerial.
+  const bubble = option(headgear, 'bubble', false);
+  hairOn(bubble);
+  const bubbleGlass = add(bubble, geo('bubble', () => new THREE.SphereGeometry(0.2, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.64)), glass, [0, 0.05, 0]);
+  add(bubble, geo('bubbleRing', () => new THREE.TorusGeometry(0.183, 0.02, 6, 20)), metal, [0, -0.035, 0], [Math.PI / 2, 0, 0]);
+  add(bubble, geo('bubbleSeal', () => new THREE.CylinderGeometry(0.19, 0.2, 0.03, 20, 1, true)), gear, [0, -0.06, 0]);
+  for (const side of [-1, 1]) block(bubble, 'bubbleLatch', [0.03, 0.022, 0.014], visorMat, [side * 0.09, -0.035, -0.176], [0, -side * 0.5, 0]);
+  block(bubble, 'bubbleMount', [0.03, 0.03, 0.03], gear, [-0.19, -0.02, 0.07]);
+  add(bubble, geo('bubbleAerial', () => new THREE.CylinderGeometry(0.004, 0.006, 0.17, 5).translate(0, 0.085, 0)), dark, [-0.19, -0.01, 0.07], [0, 0, 0.16]);
+  const beacon = gem(bubble, 'beacon', 0.013, ruby, [-0.217, 0.158, 0.07]);
+  // Dev halo: a ring of light over the head with pixels in orbit. Spins, bobs and pulses in animateCosmetics.
+  const devhalo = option(headgear, 'devhalo', false);
+  hairOn(devhalo);
+  const haloGlow = holo('#7dffe6', 0.45), haloHaze = holo('#00ffc6', 0.16);
+  const halo = new THREE.Group(), haloSpin = new THREE.Group(), haloOrbit = new THREE.Group();
+  halo.position.y = 0.25; halo.add(haloSpin, haloOrbit); devhalo.add(halo);
+  add(haloSpin, geo('haloRing', () => new THREE.TorusGeometry(0.125, 0.011, 6, 40)), haloMat, [0, 0, 0], [Math.PI / 2, 0, 0]);
+  for (let k = 0; k < 4; k += 1) { const a = (k * Math.PI) / 2; block(haloSpin, 'haloNode', [0.022, 0.022, 0.022], haloMat, [Math.cos(a) * 0.125, 0, Math.sin(a) * 0.125], [0.6, a, 0.6]); }
+  add(halo, geo('haloInner', () => new THREE.TorusGeometry(0.094, 0.004, 4, 32)), haloGlow, [0, 0, 0], [Math.PI / 2, 0, 0]);
+  add(halo, geo('haloDisc', () => new THREE.RingGeometry(0.095, 0.165, 40)), haloHaze, [0, 0, 0], [-Math.PI / 2, 0, 0]);
+  add(halo, geo('haloBloom', () => new THREE.TorusGeometry(0.125, 0.032, 8, 40)), haloHaze, [0, 0, 0], [Math.PI / 2, 0, 0]);
+  const haloBits = [0, 1, 2, 3, 4, 5].map((k) => block(haloOrbit, 'haloBit', [0.013, 0.013, 0.013], haloMat, [Math.cos((k * Math.PI) / 3) * 0.168, 0, Math.sin((k * Math.PI) / 3) * 0.168]));
   // Faces. The visor is a wide wrap-around band.
   const visorFace = option(faces, 'visor', true);
   add(visorFace, geo('visor', () => new THREE.CylinderGeometry(0.139, 0.132, 0.07, 9, 1, true, Math.PI - 1.1, 2.2)), visorMat, [0, 0.022, 0]).material.side = THREE.DoubleSide;
@@ -265,14 +502,76 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   block(respirator, 'respPlate', [0.11, 0.07, 0.05], dark, [0, -0.05, -0.12]);
   for (const side of [-1, 1]) add(respirator, geo('respFilter', () => new THREE.CylinderGeometry(0.028, 0.028, 0.03, 8)), visorMat, [side * 0.07, -0.06, -0.12], [0, side * 0.5, Math.PI / 2]);
   const skullMask = option(faces, 'skull', false);
-  add(skullMask, geo('skullFace', () => new THREE.SphereGeometry(0.131, 10, 6, Math.PI * 0.65, Math.PI * 0.7, Math.PI * 0.25, Math.PI * 0.55)), mat('#e9e4d6', { rough: 0.7 }), [0, 0, 0], null, [0.95, 1.08, 1.02]);
+  add(skullMask, geo('skullFace', () => new THREE.SphereGeometry(0.131, 10, 6, Math.PI * 1.15, Math.PI * 0.7, Math.PI * 0.25, Math.PI * 0.55)), mat('#e9e4d6', { rough: 0.7 }), [0, 0, 0], null, [0.95, 1.08, 1.02]);
   const socket = mat('#050506');
   for (const side of [-1, 1]) gem(skullMask, 'skullEye', 0.027, socket, [side * 0.045, 0.02, -0.118]);
   block(skullMask, 'skullTeeth', [0.07, 0.012, 0.01], socket, [0, -0.06, -0.126]);
   const cyber = option(faces, 'cyber', false);
-  add(cyber, geo('cyberPlate', () => new THREE.SphereGeometry(0.14, 10, 6, Math.PI * 0.6, Math.PI * 0.8, Math.PI * 0.2, Math.PI * 0.55)), mat('#10151b', { rough: 0.2, metal: 0.6 }), [0, 0, 0], null, [0.97, 1.08, 1.04]);
+  add(cyber, geo('cyberPlate', () => new THREE.SphereGeometry(0.14, 10, 6, Math.PI * 1.1, Math.PI * 0.8, Math.PI * 0.2, Math.PI * 0.55)), mat('#10151b', { rough: 0.2, metal: 0.6 }), [0, 0, 0], null, [0.97, 1.08, 1.04]);
   block(cyber, 'cyberSlit', [0.17, 0.018, 0.02], visorMat, [0, 0.025, -0.135]);
   block(cyber, 'cyberChin', [0.05, 0.01, 0.02], visorMat, [0, -0.07, -0.13]);
+  const bandit = option(faces, 'bandit', false);
+  add(bandit, geo('bandit', () => new THREE.SphereGeometry(0.137, 12, 5, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.33)), suit, [0, 0, 0], null, [0.97, 1.1, 1.06]);
+  add(bandit, geo('banditTip', () => new THREE.ConeGeometry(0.085, 0.11, 4).rotateY(Math.PI / 4)), suit, [0, -0.045, -0.155], [Math.PI + 0.35, 0, 0], [1, 1, 0.2]);
+  block(bandit, 'banditKnot', [0.045, 0.035, 0.03], suit, [0, -0.02, 0.15]);
+  for (const side of [-1, 1]) block(bandit, 'banditTail', [0.024, 0.08, 0.008], suit, [side * 0.016, -0.07, 0.158], [0.15, 0, side * 0.25]);
+  // Aviators: teardrop lenses (flat on top, sagging toward the nose) in gold rims.
+  const aviators = option(faces, 'aviators', false);
+  const teardrop = () => geo('aviatorLens', () => warp(new THREE.CylinderGeometry(0.03, 0.03, 0.005, 14).rotateX(Math.PI / 2), (p) => { if (p.y < 0) { p.y *= 1.45; p.x += p.y * 0.3; } else p.y *= 0.75; }));
+  for (const side of [-1, 1]) {
+    add(aviators, teardrop(), lens, [side * 0.049, 0.03, -0.133], [0, -side * 0.18, 0], [side, 1, 1]);
+    add(aviators, teardrop(), gold, [side * 0.049, 0.03, -0.1305], [0, -side * 0.18, 0], [side * 1.14, 1.12, 0.8]);
+    block(aviators, 'aviatorGlint', [0.024, 0.004, 0.002], visorMat, [side * 0.055, 0.041, -0.137], [0, -side * 0.18, side * 0.45]);
+    block(aviators, 'aviatorHinge', [0.04, 0.005, 0.005], gold, [side * 0.098, 0.047, -0.126]);
+    block(aviators, 'aviatorArm', [0.005, 0.005, 0.12], gold, [side * 0.117, 0.047, -0.065]);
+  }
+  for (const y of [0.044, 0.056]) block(aviators, 'aviatorBridge', [0.03, 0.004, 0.004], gold, [0, y, -0.137]);
+  // Monocle over the right eye, its chain looping back to behind the ear.
+  const monocle = option(faces, 'monocle', false);
+  add(monocle, geo('monocleRim', () => new THREE.TorusGeometry(0.03, 0.005, 5, 16)), gold, [0.047, 0.03, -0.122], [0, -0.22, 0]);
+  const monocleGlass = add(monocle, geo('monocleGlass', () => new THREE.CircleGeometry(0.029, 16)), glass, [0.047, 0.03, -0.122], [0, Math.PI - 0.22, 0]);
+  add(monocle, geo('monocleChain', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0.068, 0.009, -0.118], [0.088, -0.04, -0.112], [0.1, -0.085, -0.075], [0.112, -0.075, -0.035], [0.122, -0.03, -0.004]].map((p) => new THREE.Vector3(...p))), 16, 0.0022, 4)), gold);
+  // Full face masks share one shell (MASK); the jaw hides under them (see styleOperator).
+  const maskOn = (group, material) => add(group, geo('faceShell', () => new THREE.SphereGeometry(0.14, 12, 8, Math.PI * 1.18, Math.PI * 0.64, Math.PI * 0.2, Math.PI * 0.68)), material, [0, 0, 0], null, [0.95, 1.12, 1.05]);
+  const strapOn = (group, material) => { for (const [y, sx, sz] of [[0.065, 0.92, 0.98], [-0.03, 1.06, 1.13]]) add(group, geo('maskStrap', () => new THREE.CylinderGeometry(0.12, 0.12, 0.014, 12, 1, true, -2.1, 4.2)), material, [0, y, 0], null, [sx, 1, sz]); };
+  // Hockey mask: breathing holes and red chevrons.
+  const hockey = option(faces, 'hockey', false);
+  maskOn(hockey, white);
+  strapOn(hockey, dark);
+  for (const side of [-1, 1]) onMask(gem(hockey, 'hockeyEye', 0.024, socket, [0, 0, 0], [1.25, 0.8, 0.5]), side * 0.045, 0.03, -0.008);
+  for (const [x, y] of [[0, -0.04], [-0.022, -0.04], [0.022, -0.04], [0, -0.062], [-0.022, -0.062], [0.022, -0.062], [-0.012, -0.013], [0.012, -0.013], [-0.07, -0.035], [0.07, -0.035]]) onMask(gem(hockey, 'hockeyHole', 0.0065, socket, [0, 0, 0]), x, y, -0.003);
+  for (const [x, y] of [[0, 0.075], [-0.074, -0.003], [0.074, -0.003]]) onMask(add(hockey, geo('chevron', () => outline([[-1, 1], [0, -1], [1, 1], [0.55, 1], [0, -0.1], [-0.55, 1]], 0.2).scale(0.014, 0.012, 0.014)), red), x, y, 0.0005);
+  // Oni mask: angry brows, gold eyes, horns, a snarl with tusks.
+  const oni = option(faces, 'oni', false);
+  maskOn(oni, red);
+  strapOn(oni, dark);
+  onMask(gem(oni, 'oniNose', 0.024, red, [0, 0, 0], [1.3, 0.85, 0.9]), 0, 0.002, 0.008);
+  onMask(block(oni, 'oniMouth', [0.09, 0.026, 0.012], socket, [0, 0, 0]), 0, -0.042, -0.002);
+  onMask(block(oni, 'oniTeeth', [0.07, 0.007, 0.006], white, [0, 0, 0]), 0, -0.033, 0.002);
+  for (const side of [-1, 1]) {
+    onMask(block(oni, 'oniBrow', [0.06, 0.02, 0.022], dark, [0, 0, 0]), side * 0.046, 0.067, 0.004, side * 0.42);
+    onMask(gem(oni, 'oniEye', 0.02, gold, [0, 0, 0], [1.3, 0.7, 0.6]), side * 0.046, 0.03, -0.002);
+    onMask(gem(oni, 'oniCheek', 0.028, red, [0, 0, 0], [1, 0.75, 0.5]), side * 0.075, -0.012, 0);
+    onMask(add(oni, geo('oniHorn', () => new THREE.ConeGeometry(0.018, 0.075, 6).translate(0, 0.0375, 0)), bone), side * 0.052, 0.1, -0.008, -side * 0.35);
+    onMask(add(oni, geo('oniFang', () => new THREE.ConeGeometry(0.012, 0.046, 4).translate(0, 0.023, 0)), white), side * 0.036, -0.062, 0.007);
+  }
+  // Plague mask: dark leather, a long curved beak, round glass eyes.
+  const plague = option(faces, 'plague', false);
+  maskOn(plague, hide);
+  strapOn(plague, dark);
+  add(plague, geo('beak', () => warp(new THREE.ConeGeometry(0.048, 0.22, 8).rotateX(-Math.PI / 2).translate(0, 0, -0.11), (p) => { p.y -= p.z * p.z * 1.4; })), hide, [0, -0.028, -0.13], null, [0.85, 1, 1]);
+  add(plague, geo('beakBand', () => new THREE.TorusGeometry(0.044, 0.005, 4, 12)), gold, [0, -0.029, -0.158], null, [0.85, 1, 1]);
+  for (const side of [-1, 1]) {
+    onMask(add(plague, geo('plagueEye', () => new THREE.CylinderGeometry(0.027, 0.027, 0.018, 12).rotateX(Math.PI / 2)), visorMat), side * 0.05, 0.038, 0.004);
+    onMask(add(plague, geo('plagueRim', () => new THREE.TorusGeometry(0.029, 0.006, 5, 14)), gold), side * 0.05, 0.038, 0.012);
+  }
+  // Pixel mask (dev): a black mirror plate with an LED face that blinks and glitches (animateCosmetics).
+  const devmask = option(faces, 'devmask', false);
+  maskOn(devmask, mirror);
+  const pixelFace = { eyeRow: new THREE.Group(), mouthRow: new THREE.Group(), left: [], right: [], mouth: [], material: pixelMat, state: '' };
+  devmask.add(pixelFace.eyeRow, pixelFace.mouthRow);
+  for (const [list, row, count] of [[pixelFace.left, pixelFace.eyeRow, 4], [pixelFace.right, pixelFace.eyeRow, 4], [pixelFace.mouth, pixelFace.mouthRow, 5]]) for (let k = 0; k < count; k += 1) list.push(block(row, 'pixel', [0.012, 0.012, 0.004], pixelMat, [0, 0, 0]));
+  setPixelFace(pixelFace, 'open', 'smile');
   block(head, 'helmetLight', [0.05, 0.025, 0.02], teamMat, [0, 0.105, -0.183]);
   block(head, 'rearLight', [0.06, 0.025, 0.02], teamMat, [0, 0.06, 0.185]);
   spine.add(head);
@@ -295,15 +594,20 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   });
 
   root.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
-  antenna.castShadow = false;
+  // Thin, glassy and glowing parts cast no shadow.
+  for (const part of [antenna, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow]) part.traverse((mesh) => { mesh.castShadow = false; });
   root.userData = {
-    hips, spine, chest, head, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
+    hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
     guns: new Map(), held: null, skins: {}, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
-    phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0, materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold],
+    phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
+    materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror],
+    beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
   };
   return root;
 }
 
+// Faces that cover the chin: the jaw block would poke through them, so it hides.
+const CHIN_COVERED = new Set(['bandit', 'hockey', 'oni', 'plague', 'devmask']);
 // look: any of { color, accent, team, headgear, face, pack, pattern, skins }; missing keys are left alone.
 export function styleOperator(root, look) {
   const data = root.userData;
@@ -314,6 +618,7 @@ export function styleOperator(root, look) {
   const choose = (groups, id) => { if (!id || !groups[id]) return; for (const [key, group] of Object.entries(groups)) group.visible = key === id; };
   choose(data.headgear, look.headgear);
   choose(data.faces, look.face);
+  if (data.faces[look.face]) data.jaw.visible = !CHIN_COVERED.has(look.face);
   choose(data.packs, look.pack);
   if (look.pattern) applyPattern(data.suit, look.pattern);
   if (look.skins) data.skins = look.skins;
@@ -340,6 +645,60 @@ function heldGun(data, weapon) {
   entry.model.visible = true;
   data.held = entry;
   return entry;
+}
+
+// The pixel mask's LEDs sit on a 1.6 cm grid: four per eye, five for the mouth. Unused ones go dark.
+const PIXEL = 0.016;
+const EYES = { open: [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]], blink: [[-1, -0.5], [0, -0.5], [1, -0.5]], happy: [[-1, -0.5], [0, 0.5], [1, -0.5]] };
+const MOUTHS = { smile: [[-2, 0.5], [-1, -0.5], [0, -0.5], [1, -0.5], [2, 0.5]], flat: [[-2, 0], [-1, 0], [0, 0], [1, 0], [2, 0]] };
+function lightPixels(pixels, layout, x, y) { pixels.forEach((pixel, k) => { pixel.visible = k < layout.length; if (pixel.visible) onMask(pixel, x + layout[k][0] * PIXEL, y + layout[k][1] * PIXEL, 0.002); }); }
+function setPixelFace(face, eyes, mouth) {
+  lightPixels(face.left, EYES[eyes], -0.042, 0.042);
+  lightPixels(face.right, EYES[eyes], 0.042, 0.042);
+  lightPixels(face.mouth, MOUTHS[mouth], 0, -0.03);
+  face.state = eyes + mouth;
+}
+
+// The cosmetics that move, each only while it is worn. `idle` is the clock.
+function animateCosmetics(data, stride, sway) {
+  const t = data.idle, c = data.crouch, air = data.air;
+  if (data.headgear.bubble.visible) data.beacon.visible = t % 1.2 < 0.6;
+  if (data.headgear.devhalo.visible) {
+    const halo = data.halo;
+    halo.group.position.y = 0.25 + Math.sin(t * 1.7) * 0.012;
+    halo.group.rotation.set(Math.sin(t * 0.9) * 0.07, 0, Math.cos(t * 0.7) * 0.07);
+    halo.spin.rotation.y = t * 0.8;
+    halo.orbit.rotation.y = -t * 1.6;
+    halo.bits.forEach((bit, k) => { bit.position.y = Math.sin(t * 2.4 + k * 1.7) * 0.022; bit.rotation.set(t * 2 + k, t * 3 + k, 0); });
+    halo.material.emissiveIntensity = 2.6 + Math.sin(t * 3.1) * 0.9;
+    halo.glow.opacity = 0.35 + Math.sin(t * 3.1 + 1) * 0.2;
+    halo.haze.opacity = 0.16 + Math.sin(t * 3.1) * 0.06;
+  }
+  if (data.faces.devmask.visible) {
+    // Blinks every 3.1 s. Every 9.7 s it glitches (rows tear sideways, the LEDs stutter) then grins ^ ^ for a moment.
+    const face = data.pixelFace, beat = t % 9.7, glitch = beat < 0.16 || t % 4.3 < 0.06;
+    const eyes = beat >= 0.16 && beat < 1.5 ? 'happy' : t % 3.1 < 0.13 ? 'blink' : 'open', mouth = glitch ? 'flat' : 'smile';
+    if (face.state !== eyes + mouth) setPixelFace(face, eyes, mouth);
+    const jolt = glitch ? (Math.floor(t * 45) % 2 ? 0.016 : -0.011) : 0;
+    face.eyeRow.position.x = jolt; face.mouthRow.position.x = -jolt;
+    face.material.emissiveIntensity = glitch ? 0.8 + (Math.floor(t * 60) % 3) : 2.4 + Math.sin(t * 2) * 0.2;
+  }
+  // The flag strips swing about their left edges in a travelling wave, streaming back at a run.
+  if (data.packs.banner.visible) data.flag.forEach((strip, k) => { strip.rotation.y = Math.sin(t * 2.3 - k * 1.1) * (0.12 + stride * 0.1) - (k ? 0.05 : 0.08 + stride * 0.4 + air * 0.2); });
+  if (data.packs.cape.visible) {
+    // The top hangs plumb when the torso leans back; running, jumping and crouching drag it out behind.
+    const drag = stride * 0.6 + air * 0.4 + c * 0.35;
+    data.cape.forEach((part, k) => {
+      if (k) part.rotation.x = -drag * 0.18 + Math.sin(data.phase * 2 - k * 0.9) * 0.1 * stride + Math.sin(t * 1.3 - k * 0.8) * 0.03;
+      else part.rotation.set(-Math.max(0, data.spine.rotation.x) * 0.9 - 0.08 - drag * 0.55 + Math.sin(data.phase * 2) * 0.04 * stride, 0, Math.sin(data.phase) * 0.07 * stride + sway * 0.04);
+    });
+  }
+  if (data.packs.devwings.visible) {
+    // A slow breath, bigger in the air; running folds them back and down. The opacity shimmer runs root to tip.
+    const flap = Math.sin(t * 1.4) * (0.09 + air * 0.3), fold = Math.min(1, stride * 1.2 + c * 0.4);
+    data.wings.forEach(({ wing, hand, side }) => { wing.rotation.set(0, -side * (0.3 + fold * 0.55), side * (0.1 + flap - fold * 0.3)); hand.rotation.set(0, -fold * 0.5, -0.12 + flap * 0.8 - fold * 0.35); });
+    data.wingMats.forEach((material, k) => { material.opacity = 0.3 + Math.max(0, Math.sin(t * 2.6 - k * 1.3)) * 0.25 + Math.sin(t * 1.4) * 0.04; });
+  }
 }
 
 const target = new THREE.Vector3(), shoulder = new THREE.Vector3(), grip = new THREE.Vector3(), euler = new THREE.Euler();
@@ -411,6 +770,7 @@ export function animateOperator(root, pose) {
   data.head.rotation.y = Math.sin(data.phase) * 0.08 * stride + sway * 0.06;
   data.head.rotation.z = dead * 0.4 - Math.max(0, data.blade) * 0.16;
   if (data.packs.jetpack.visible) for (const flame of data.flames) flame.scale.y = 0.8 + Math.sin(data.idle * 31 + flame.position.x * 40) * 0.25 + air * 1.2;
+  animateCosmetics(data, stride, sway);
 
   // Hands: strong hand on the grip, support hand out along the fore-end (no further than the gun is long).
   euler.set(data.gun.rotation.x, data.gun.rotation.y, data.gun.rotation.z);

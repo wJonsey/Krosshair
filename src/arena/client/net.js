@@ -23,7 +23,8 @@ export const net = {
   identified: false,
   rtt: 0,
   offset: 0,
-  on(type, handler) { handlers.set(type, handler); },
+  // Several modules can listen for the same message (the royale HUD and the end screen both want match-end).
+  on(type, handler) { if (!handlers.has(type)) handlers.set(type, []); handlers.get(type).push(handler); },
   send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); },
   // Server clock, in seconds.
   time() { return performance.now() / 1000 + net.offset; },
@@ -101,7 +102,7 @@ function connect() {
       // Back to guest play: the callsign this browser used before logging in.
       if (!game.loginRequired) { game.name = tabStored('name', ''); if (game.name.trim().length >= 2) net.identify(); }
     }
-    handlers.get(message.type)?.(message);
+    handlers.get(message.type)?.forEach((handler) => handler(message));
   });
   socket.addEventListener('close', () => {
     net.connected = false;

@@ -62,12 +62,20 @@ export class Effects {
     const start = new THREE.Vector3(...from), end = new THREE.Vector3(...to);
     const length = start.distanceTo(end);
     if (length < 0.5) return;
-    const mesh = new THREE.Mesh(this.tracerGeometry, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
-    mesh.position.copy(start).lerp(end, 0.5);
-    mesh.scale.set(width, width, length);
-    mesh.lookAt(end);
-    this.scene.add(mesh);
-    this.tracers.push({ mesh, life: 0.11, max: 0.11 });
+    // Prism Rail, the Dev class tracer: a colour that walks the whole spectrum, a white-hot core, and a
+    // wider halo that hangs on a little longer.
+    const prism = color === 'devprism';
+    if (prism) color = new THREE.Color().setHSL((performance.now() / 900) % 1, 1, 0.6);
+    const beam = (tint, size, life, opacity = 0.95) => {
+      const mesh = new THREE.Mesh(this.tracerGeometry, new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
+      mesh.position.copy(start).lerp(end, 0.5);
+      mesh.scale.set(size, size, length);
+      mesh.lookAt(end);
+      this.scene.add(mesh);
+      this.tracers.push({ mesh, life, max: life, base: opacity });
+    };
+    beam(color, width, 0.11);
+    if (prism) { beam('#ffffff', width * 0.45, 0.11); beam(color, width * 3.2, 0.3, 0.35); }
   }
 
   // The long rifle leaves a lingering vapour trail that points back at the shooter.
@@ -169,7 +177,7 @@ export class Effects {
       shape(item);
       return true;
     });
-    this.tracers = fade(this.tracers, (item) => { item.mesh.material.opacity = item.life / item.max; });
+    this.tracers = fade(this.tracers, (item) => { item.mesh.material.opacity = (item.base ?? 1) * (item.life / item.max); });
     this.trails = fade(this.trails, (item) => { item.mesh.material.opacity = 0.22 * (item.life / item.max); const grow = 0.02 + (1 - item.life / item.max) * 0.05; item.mesh.scale.x = grow; item.mesh.scale.y = grow; });
     this.rings = this.rings.filter((item) => {
       item.life += dt;

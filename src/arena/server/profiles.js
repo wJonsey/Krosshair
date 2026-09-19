@@ -5,7 +5,7 @@ import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, DEFAULT_LOOK, WEAPONS, cosmeticUnlocked } from '../shared/constants.js';
-import { COINS, finishInfo } from '../shared/economy.js';
+import { COINS, devFinish, finishInfo } from '../shared/economy.js';
 
 const HISTORY_LIMIT = 25;
 const COIN_LOG_LIMIT = 30;
@@ -132,6 +132,14 @@ export class ProfileStore {
     return profile;
   }
 
+  // Dev class: set on every sign-in from the account (server/devs.js), so it can't be kept or copied.
+  setDev(token, dev) {
+    const profile = this.get(token);
+    if (Boolean(profile.dev) === Boolean(dev)) return;
+    if (dev) profile.dev = true; else delete profile.dev;
+    this.scheduleSave();
+  }
+
   // ---- coins. Guests have none: their profiles vanish, so nothing earned or sent could be kept.
   // True for any guest token, live or already gone: nothing about it may be saved or paid.
   unsaved(token) { return this.guests.has(ProfileStore.key(token)); }
@@ -202,7 +210,7 @@ export class ProfileStore {
     const profile = guest ? this.get(token) : this.wallet(token);
     const level = levelFromXp(profile.xp);
     return {
-      coins: guest ? 0 : profile.coins, owned: profile.owned || [], skins: profile.skins || {}, pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
+      coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], skins: profile.skins || {}, pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
@@ -239,10 +247,12 @@ export class ProfileStore {
     const level = levelFromXp(profile.xp);
     const owned = profile.owned || [];
     const clean = {};
-    for (const [key, kind] of Object.entries(LOOK_KINDS)) clean[key] = cosmeticUnlocked(kind, look[key], level, owned) ? look[key] : DEFAULT_LOOK[key];
+    const dev = Boolean(profile.dev);
+    for (const [key, kind] of Object.entries(LOOK_KINDS)) clean[key] = cosmeticUnlocked(kind, look[key], level, owned, dev) ? look[key] : DEFAULT_LOOK[key];
     clean.skins = {};
     if (look.skins && typeof look.skins === 'object') {
-      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && profile.skins?.[weapon]?.includes(finish)) clean.skins[weapon] = finish;
+      // Dev finishes go on any gun a developer likes; everything else has to be in the inventory.
+      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && (devFinish(finish) ? dev : profile.skins?.[weapon]?.includes(finish))) clean.skins[weapon] = finish;
     }
     return clean;
   }

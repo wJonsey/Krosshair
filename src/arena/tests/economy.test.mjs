@@ -8,6 +8,8 @@ import { ProfileStore } from '../server/profiles.js';
 import { AccountStore } from '../server/accounts.js';
 import { buyGear, buySkin, cashOutCrash, openCrate, playGame, refundCrashes, scrapSkin, sendCoins, startCrash, tradeUp } from '../server/economy.js';
 import { Room } from '../server/room.js';
+import { isDev } from '../server/devs.js';
+import { COSMETICS, DEFAULT_LOOK, cosmeticUnlocked } from '../shared/constants.js';
 import { COINS, CRASH, CRATES, EPIC_OR_BETTER, FINISHES, PLINKO, RARITY, crashAt, hiloMultiplier, SCRAP, SLOTS, crateFinishes, crateOdds, finishInfo, finishPrice, finishValue, killCoins, slotsMultiplier } from '../shared/economy.js';
 import { readFileSync } from 'node:fs';
 
@@ -284,13 +286,13 @@ test('skins: buying outright costs far more than a crate, and no crate pays back
   }
 });
 
-test('every finish has a painter, and exactly the Mythics are animated', () => {
+test('every finish has a painter, and exactly the Mythics and the Dev class are animated', () => {
   const source = readFileSync(new URL('../client/skins.js', import.meta.url), 'utf8');
   const art = source.slice(source.indexOf('const FINISH_ART = {'), source.indexOf('\n};', source.indexOf('const FINISH_ART = {')));
   const entries = Object.fromEntries(art.split(/\n  (?=[a-z]+: \{)/).slice(1).map((chunk) => [chunk.match(/^([a-z]+):/)[1], /shader: '/.test(chunk)]));
   for (const finish of FINISHES) {
     assert.ok(finish.id in entries, `${finish.id} has no painter`);
-    assert.equal(entries[finish.id], finish.rarity === 'mythic', `${finish.id} (${finish.rarity}) ${entries[finish.id] ? 'animates' : 'does not animate'}`);
+    assert.equal(entries[finish.id], finish.rarity === 'mythic' || finish.rarity === 'dev', `${finish.id} (${finish.rarity}) ${entries[finish.id] ? 'animates' : 'does not animate'}`);
   }
 });
 
@@ -351,4 +353,57 @@ test('crash: cash out before the crash to win, the round settles itself if nobod
   refundCrashes();
   assert.equal(profiles.coins(token), held);
   assert.ok(CRASH.max >= 100);
+});
+
+// ---- the Dev class
+test('only the developers\' Discord accounts are devs, never a lookalike name', () => {
+  assert.ok(isDev({ discordId: '794250832064938015', discordName: 'gking09' }));
+  assert.ok(isDev({ discordId: '123456789012', discordName: 'wjonsey' }));
+  assert.ok(isDev({ discordId: '123456789012', discordName: 'WJonsey' }));
+  assert.ok(!isDev({ discordId: '123456789012', discordName: 'wjonsey2' }));
+  assert.ok(!isDev({ username: 'Gking09', discordName: null }), 'a password account with the same name');
+  assert.ok(!isDev({ username: 'wjonsey' }));
+  assert.ok(!isDev(null));
+});
+
+test('dev items: devs wear them, nobody else can, and nothing sells, drops or trades them', async () => {
+  const { profiles } = await stores();
+  const dev = ProfileStore.newToken(), pilot = ProfileStore.newToken();
+  profiles.setDev(dev, true);
+  profiles.credit(pilot, 10 ** 6, 'test', 'top up');
+  const devLook = { ...look, title: 'Developer', headgear: 'devhalo', face: 'devmask', pack: 'devwings', pattern: 'devcircuit', charm: 'devcore', tracer: 'devprism', skins: { m44: 'devsource', p9: 'singularity', knife: 'overclock' } };
+  const worn = profiles.sanitizeCosmetics(dev, devLook);
+  for (const key of ['title', 'headgear', 'face', 'pack', 'pattern', 'charm', 'tracer']) assert.equal(worn[key], devLook[key], `dev lost ${key}`);
+  assert.deepEqual(worn.skins, devLook.skins);
+  const stripped = profiles.sanitizeCosmetics(pilot, devLook);
+  for (const key of ['title', 'headgear', 'face', 'pack', 'pattern', 'charm', 'tracer']) assert.equal(stripped[key], DEFAULT_LOOK[key], `a pilot kept ${key}`);
+  assert.deepEqual(stripped.skins, {});
+  assert.equal(profiles.view(dev).dev, true);
+  assert.equal(profiles.view(pilot).dev, false);
+  // Losing dev (a different account on that profile) takes it all away again.
+  profiles.setDev(dev, false);
+  assert.equal(profiles.sanitizeCosmetics(dev, devLook).headgear, DEFAULT_LOOK.headgear);
+  // Not in the shop, not in any crate, not out of a trade-up.
+  const devFinishes = FINISHES.filter((finish) => finish.rarity === 'dev');
+  assert.equal(devFinishes.length, 3);
+  for (const finish of devFinishes) assert.ok(buySkin(profiles, pilot, 'm44', finish.id).error);
+  for (const [kind, items] of Object.entries(COSMETICS)) for (const item of items.filter((entry) => entry.dev)) {
+    assert.ok(buyGear(profiles, pilot, kind, item.id).error, `${kind}:${item.id} was for sale`);
+    assert.ok(!cosmeticUnlocked(kind, item.id, 999, [`${kind}:${item.id}`]), `${kind}:${item.id} unlocked without dev`);
+  }
+  for (const crate of Object.values(CRATES)) assert.ok(!crateFinishes(crate).some((finish) => finish.rarity === 'dev'), `${crate.id} can drop a dev finish`);
+  for (let i = 0; i < 400; i += 1) { const { unboxed } = openCrate(profiles, pilot, 'field', 5); assert.ok(unboxed.drops.every((drop) => drop.rarity !== 'dev')); }
+});
+
+test('every crate has a model style, every charm a maker, every gear option a model', () => {
+  const crates = readFileSync(new URL('../client/cratebox.js', import.meta.url), 'utf8');
+  for (const id of Object.keys(CRATES)) assert.match(crates, new RegExp(`\\n  ${id}: \\{`), `${id} crate has no style`);
+  const charms = readFileSync(new URL('../client/charms.js', import.meta.url), 'utf8');
+  for (const item of COSMETICS.charm) if (item.id !== 'none') assert.match(charms, new RegExp(`\\n  ${item.id}: \\(`), `${item.id} charm has no maker`);
+  const operator = readFileSync(new URL('../client/operator.js', import.meta.url), 'utf8');
+  for (const [kind, map] of [['headgear', 'headgear'], ['face', 'faces']]) for (const item of COSMETICS[kind]) assert.ok(operator.includes(`option(${map}, '${item.id}'`), `${kind} ${item.id} has no model`);
+  for (const item of COSMETICS.pack) assert.ok(operator.includes(`packGroup('${item.id}')`), `pack ${item.id} has no model`);
+  const skins = readFileSync(new URL('../client/skins.js', import.meta.url), 'utf8');
+  const patterns = skins.slice(skins.indexOf('const PATTERN_ART = {'), skins.indexOf('\n};', skins.indexOf('const PATTERN_ART = {')));
+  for (const item of COSMETICS.pattern) if (item.id !== 'solid') assert.match(patterns, new RegExp(`\\n  ${item.id}: `), `${item.id} pattern has no painter`);
 });
