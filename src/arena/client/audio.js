@@ -331,6 +331,8 @@ const SOUNDS = {
   scope: (out, at) => { noise(out, at, { type: 'bandpass', freq: 1300, sweepTo: 2600, q: 0.7, attack: 0.03, decay: 0.09, gain: 0.07 }); click(out, at + 0.09, 1400, 0.05, 0.02); },
   swing: (out, at) => noise(out, at, { type: 'bandpass', freq: 700, sweepTo: 3600, q: 1.8, attack: 0.04, decay: 0.13, gain: 0.4 }),
   stab: (out, at) => { IMPACTS.flesh(out, at); modal(out, at, 3400, SMALL_PART, { gain: 0.05, decay: 0.08 }); },
+  // A gun charm tapping the receiver: a tiny bright ring.
+  charm: (out, at) => { click(out, at, 5200, 0.12, 0.004); modal(out, at, rnd(4300, 5600), SMALL_PART, { gain: 0.05, decay: 0.09 }); },
   // --- hit feedback
   hitmarker: (out, at) => { click(out, at, 3400, 0.32, 0.008); tone(out, at, { freq: 1850, attack: 0.001, decay: 0.03, gain: 0.12 }); },
   headshot: (out, at) => { click(out, at, 4600, 0.4, 0.008); modal(out, at, 2250, [[1, 1, 1], [1.62, 0.55, 0.8], [2.27, 0.35, 0.6]], { gain: 0.22, decay: 0.34 }); },
@@ -356,6 +358,11 @@ const SOUNDS = {
   ping: (out, at) => { bell(out, at, 1480, { decay: 0.22, gain: 0.1, ratio: 3, index: 1 }); bell(out, at + 0.09, 1976, { decay: 0.3, gain: 0.09, ratio: 3, index: 1 }); },
   marked: (out, at) => { for (const offset of [0, 0.1]) { click(out, at + offset, 3600, 0.12, 0.006); tone(out, at + offset, { wave: 'triangle', freq: 1400, attack: 0.001, decay: 0.05, gain: 0.09 }); } },
   xp: (out, at) => [784, 988, 1175, 1568].forEach((f, i) => bell(out, at + i * 0.065, f, { decay: 0.4, gain: 0.07, ratio: 2, index: 1 })),
+  // --- crates: a latch thrown, the lid going up with the air rushing out, the build-up before a good card turns, the dupe stamp
+  latch: (out, at) => { clack(out, at, 1500, 0.5); tone(out, at, { freq: 210, to: 120, attack: 0.002, decay: 0.05, gain: 0.2 }); modal(out, at + 0.012, 2600, SMALL_PART, { gain: 0.06, decay: 0.12 }); },
+  crateOpen: (out, at) => { noise(out, at, { type: 'bandpass', freq: 300, sweepTo: 2400, q: 0.9, attack: 0.05, decay: 0.45, gain: 0.35 }); tone(out, at, { wave: 'sawtooth', freq: 140, to: 95, attack: 0.02, decay: 0.3, gain: 0.05 }); tone(out, at + 0.42, { freq: 90, to: 48, attack: 0.003, decay: 0.18, gain: 0.45 }); noise(out, at + 0.42, { freq: 900, sweepTo: 200, attack: 0.002, decay: 0.12, gain: 0.3 }); bell(out, at + 0.1, 784, { decay: 0.9, gain: 0.06, ratio: 2, index: 1.4 }); },
+  riser: (out, at) => { noise(out, at, { type: 'bandpass', freq: 220, sweepTo: 5200, q: 2.2, attack: 1.6, decay: 0.25, gain: 0.16 }); tone(out, at, { wave: 'sawtooth', freq: 55, to: 220, attack: 1.5, decay: 0.3, gain: 0.07 }); tone(out, at, { freq: 330, to: 1320, attack: 1.6, decay: 0.2, gain: 0.04 }); },
+  stamp: (out, at) => { tone(out, at, { freq: 120, to: 45, attack: 0.002, decay: 0.16, gain: 0.6 }); noise(out, at, { freq: 1400, sweepTo: 260, attack: 0.001, decay: 0.09, gain: 0.5, drive: true }); noise(out, at + 0.02, { type: 'highpass', freq: 3000, attack: 0.002, decay: 0.05, gain: 0.12 }); },
   // --- round and match stingers: low brass-like swells and bells, through the hall
   roundStart: (out, at) => { for (const [f, d] of [[55, 0], [82.5, 7], [110, -6]]) tone(out, at, { wave: 'sawtooth', freq: f, to: f * 1.5, attack: 0.25, decay: 0.7, gain: 0.09, detune: d }); noise(out, at, { type: 'bandpass', freq: 300, sweepTo: 2600, q: 0.8, attack: 0.5, decay: 0.2, gain: 0.08 }); bell(out, at + 0.62, 659, { decay: 0.9, gain: 0.14, ratio: 2, index: 1.6 }); bell(out, at + 0.62, 988, { decay: 0.9, gain: 0.08, ratio: 2, index: 1.6 }); },
   roundWin: (out, at) => [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.32]].forEach(([f, d]) => { bell(out, at + d, f, { decay: 0.8, gain: 0.1, ratio: 2, index: 1.3 }); tone(out, at + d, { wave: 'triangle', freq: f / 2, attack: 0.01, decay: 0.5, gain: 0.06 }); }),
@@ -377,7 +384,7 @@ const SOUNDS = {
   thunder: (out, at) => { noise(out, at, { type: 'highpass', freq: 1200, attack: 0.002, decay: 0.18, gain: 0.5, drive: true }); noise(out, at + 0.04, { freq: 900, sweepTo: 90, attack: 0.03, decay: 1.2, gain: 0.9, drive: true }); for (let i = 0; i < 5; i += 1) noise(out, at + 0.5 + i * rnd(0.35, 0.6), { freq: rnd(90, 190), attack: 0.2, decay: rnd(0.8, 1.5), gain: 0.55 / (i + 1) }); },
 };
 
-const UI_SOUNDS = new Set(['ui', 'uiBack', 'ready', 'deny', 'buy', 'chat', 'xp', 'tick', 'tickFinal']);
+const UI_SOUNDS = new Set(['ui', 'uiBack', 'ready', 'deny', 'buy', 'chat', 'xp', 'tick', 'tickFinal', 'latch', 'crateOpen', 'riser', 'stamp', 'roundWin', 'matchWin']);
 export function play(name, options = {}) {
   if (!ensure() || ctx.state !== 'running') return;
   const make = SOUNDS[name];

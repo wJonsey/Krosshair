@@ -3,6 +3,8 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../shared/constants.js';
 import { skinMaterial } from './skins.js';
+import { buildCharm, updateCharm } from './charms.js';
+import { play } from './audio.js';
 
 const M = (color, rough = 0.4, metal = 0.5, emissive = null) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: emissive || '#000000', emissiveIntensity: emissive ? 1.3 : 0 });
 
@@ -311,31 +313,8 @@ export function buildWeapon(id, accent, finish = null) {
   return g;
 }
 
-// Gun charms: a trinket on a short chain, pivoting at the top so it can swing.
-function shapeGeometry(draw, depth = 0.004) {
-  const shape = new THREE.Shape(); draw(shape);
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
-  geometry.center();
-  return geometry;
-}
-export function buildCharm(id) {
-  if (!id || id === 'none') return null;
-  const group = new THREE.Group();
-  const chain = M('#9aa4ad', 0.3, 0.8);
-  part(group, tube(0.0012, 0.03, 5), chain, [0, -0.015, 0]);
-  const at = [0, -0.042, 0];
-  const gold = M('#e2b646', 0.25, 0.7, '#5a3c06');
-  if (id === 'tag') part(group, box(0.017, 0.026, 0.002), M('#b8c2cb', 0.3, 0.8), at);
-  else if (id === 'dice') part(group, box(0.014, 0.014, 0.014), M('#f2f2ee', 0.4, 0.05), at, [0.4, 0.6, 0.2]);
-  else if (id === 'bullet') { part(group, tube(0.004, 0.018, 8), gold, at); part(group, new THREE.ConeGeometry(0.004, 0.009, 8), M('#b56a3a', 0.35, 0.7), [0, -0.0285, 0], [Math.PI, 0, 0]); }
-  else if (id === 'skull') { part(group, new THREE.SphereGeometry(0.008, 10, 8), M('#ece6d6', 0.6, 0.05), at); part(group, box(0.008, 0.004, 0.006), M('#ece6d6', 0.6, 0.05), [0, -0.05, 0.002]); }
-  else if (id === 'star') part(group, shapeGeometry((sh) => { for (let k = 0; k < 10; k += 1) { const a = (k / 10) * Math.PI * 2 - Math.PI / 2, r = k % 2 ? 0.0045 : 0.01; sh[k ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } }), gold, at);
-  else if (id === 'coin') part(group, tube(0.009, 0.0025, 20), gold, at, [Math.PI / 2, 0, 0]);
-  else if (id === 'heart') part(group, shapeGeometry((sh) => { sh.moveTo(0, -0.008); sh.bezierCurveTo(-0.012, 0.0, -0.008, 0.009, 0, 0.004); sh.bezierCurveTo(0.008, 0.009, 0.012, 0.0, 0, -0.008); }), M('#ff3a5c', 0.3, 0.2, '#6a0a1a'), at);
-  else if (id === 'diamond') part(group, new THREE.OctahedronGeometry(0.009), M('#8fe8ff', 0.1, 0.3, '#3fb8ff'), at);
-  group.userData.charm = id;
-  return group;
-}
+// Gun charms live in charms.js; re-exported here because the shop builds them alongside the guns.
+export { buildCharm };
 
 export class ViewModel {
   constructor() {
@@ -361,7 +340,7 @@ export class ViewModel {
     this.current = null;
     this.currentId = null;
     this.accent = '#6ce6d1'; this.suit = '#ec6a9e'; this.skins = {}; this.charm = 'none';
-    this.charmSwing = { x: 0, z: 0, vx: 0, vz: 0 };
+    this.charmGravity = new THREE.Vector3(0, -1, 0); this.charmJolt = new THREE.Vector3();
     this.kick = 0; this.kickRot = 0; this.swayX = 0; this.swayY = 0; this.bob = 0; this.equip = 1; this.flashTime = 0;
     this.reloadTime = 0; this.reloadDuration = 0; this.cycleTime = -1; this.cycleDuration = 0; this.slash = -1; this.landDip = 0;
     this.slashKind = 0; this.slashCount = 0; this.lastSlashAt = 0;
@@ -381,7 +360,7 @@ export class ViewModel {
     if (!this.models.has(id)) { const model = buildWeapon(id, this.accent, this.skins[id]); model.userData.sleeve.color.set(this.suit);
       const charm = WEAPONS[id]?.melee ? null : buildCharm(this.charm);
       // Hung under the left side, a third of the way to the muzzle: the part of the gun the camera sees at the hip.
-      if (charm) { const reach = Math.min(...model.children.filter((c) => !c.userData.arm && c.isMesh).map((c) => c.position.z)); charm.position.set(-0.042, -0.028, Math.max(reach * 0.45, -0.32)); charm.scale.setScalar(2); charm.traverse((mesh) => { mesh.frustumCulled = false; }); model.add(charm); model.userData.charm = charm; } model.visible = false; this.holder.add(model); this.models.set(id, model); }
+      if (charm) { const reach = Math.min(...model.children.filter((c) => !c.userData.arm && c.isMesh).map((c) => c.position.z)); charm.position.set(-0.042, -0.028, Math.max(reach * 0.45, -0.32)); charm.scale.setScalar(1.7); charm.traverse((mesh) => { mesh.frustumCulled = false; }); model.add(charm); model.userData.charm = charm; } model.visible = false; this.holder.add(model); this.models.set(id, model); }
     if (this.current) this.current.visible = false;
     this.current = this.models.get(id);
     this.current.visible = true;
@@ -444,15 +423,6 @@ export class ViewModel {
     const x = THREE.MathUtils.lerp(data.hip[0], data.ads[0], ads) + bx + this.swayX * steady;
     const y = THREE.MathUtils.lerp(data.hip[1], data.ads[1], ads) + by + this.swayY * steady + idle - (1 - ease) * 0.35 - this.landDip * 0.05 - (state.crouch ? 0.01 : 0) * (1 - ads);
     const z = THREE.MathUtils.lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085 * steady;
-    // The charm hangs on a damped spring driven by sway, bob and recoil.
-    if (data.charm) {
-      const swing = this.charmSwing, k = Math.min(dt, 0.05);
-      const driveZ = -this.swayX * 26 + bx * 40, driveX = this.swayY * 22 - this.kick * 0.9 + by * 30;
-      swing.vz += ((driveZ - swing.z) * 90 - swing.vz * 5) * k; swing.z += swing.vz * k;
-      swing.vx += ((driveX - swing.x) * 90 - swing.vx * 5) * k; swing.x += swing.vx * k;
-      data.charm.rotation.z = THREE.MathUtils.clamp(swing.z, -1.2, 1.2);
-      data.charm.rotation.x = THREE.MathUtils.clamp(swing.x, -1.2, 1.2);
-    }
     model.position.set(x, y, z);
     model.rotation.set((this.kickRot * 0.13 + this.swayY * 1.5) * steady + (1 - ease) * 0.9, -0.035 * (1 - ads) + this.swayX * 2 * steady, -this.swayX * 1.4 * steady);
 
@@ -516,6 +486,15 @@ export class ViewModel {
         model.rotation.y += arc * 1.1; model.rotation.z += arc * 0.6;
       }
       if (k >= 1) this.slash = -1;
+    }
+
+    // The charm last, once the gun is where this frame's recoil, reload, bolt work and sway have put it.
+    if (data.charm) {
+      const pitch = state.pitch || 0;
+      this.charmGravity.set(0, -Math.cos(pitch), Math.sin(pitch));
+      // A fast turn of the view leaves the charm behind for a moment.
+      this.charmJolt.set(THREE.MathUtils.clamp(-state.lookX * 1.1, -45, 45), THREE.MathUtils.clamp(state.lookY * 0.8, -35, 35), 0);
+      updateCharm(data.charm, dt, { gravity: this.charmGravity, jolt: this.charmJolt, onClink: (strength) => { if (!this.hidden) play('charm', { volume: 0.25 + strength * 0.6 }); } });
     }
 
     const hide = this.hidden || (data.adsHide && ads > 0.7);

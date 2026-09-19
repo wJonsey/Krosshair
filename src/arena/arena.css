@@ -1227,3 +1227,82 @@ button.cash-out .coins { color: var(--void); }
   .wallet-tiles { grid-template-columns: 1fr; }
   .bet-row { grid-template-columns: 1fr 60px 60px; } .bet-row small { display: none; }
 }
+
+/* ---------- crates: 3D crate on the stage, thumbnails from the real models ---------- */
+.skin-stage.crate-stage { height: 250px; margin-bottom: 10px; background: radial-gradient(ellipse at 50% 88%, rgba(230, 237, 241, .1), transparent 60%); transition: background .4s; }
+.skin-stage.crate-stage.opening { background: radial-gradient(ellipse at 50% 70%, color-mix(in srgb, var(--signal) 24%, transparent), transparent 65%); }
+.crate-thumb { display: block; width: 84px; height: 63px; margin: -6px 0 2px -8px; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .55)); transition: transform .25s var(--ease); }
+.crate-card:hover .crate-thumb, .crate-card.active .crate-thumb { transform: translateY(-3px) scale(1.06); }
+.daily-crate .crate-thumb { margin: -8px 4px -8px -6px; }
+.charm-thumb { display: block; width: 96px; height: 72px; margin: -6px auto 2px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+
+/* ---------- the reveal ----------
+   A face-down card in the drop's colour holds for --tease seconds (longer for better drops), shaking harder
+   as it goes, then turns over. Every delay is `something - var(--since)`, so a redraw never restarts it. */
+.reveal { perspective: 1300px; animation: none; --at: calc(var(--tease) - var(--since)); --shake: 0px; }
+.reveal.rarity-rare { --shake: 1px; } .reveal.rarity-epic { --shake: 2px; } .reveal.rarity-legendary { --shake: 3.5px; } .reveal.rarity-mythic { --shake: 5px; }
+.reveal-flip { position: relative; z-index: 1; height: 240px; transform-style: preserve-3d; animation: reveal-flip .75s var(--ease) both; animation-delay: var(--at); }
+.reveal-front, .reveal-back { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.reveal-back { transform: rotateY(180deg); display: grid; place-items: center; align-content: center; gap: 10px; border: 1px solid var(--rarity); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rarity) 16%, #0a0e12) 0 14px, color-mix(in srgb, var(--rarity) 7%, #0a0e12) 14px 28px); box-shadow: inset 0 0 60px color-mix(in srgb, var(--rarity) 35%, transparent), 0 0 30px color-mix(in srgb, var(--rarity) 30%, transparent); animation: tease-shake .11s linear infinite, tease-glow var(--tease) ease-in both; animation-delay: 0s, calc(0s - var(--since)); }
+.reveal-back b { color: var(--rarity); font: 500 12px var(--mono); letter-spacing: .3em; text-transform: uppercase; }
+.reveal-back span { color: var(--rarity); font: 400 84px/1 var(--display); text-shadow: 0 0 30px var(--rarity); }
+.reveal.rarity-mythic .reveal-back { animation: tease-shake .09s linear infinite, tease-glow var(--tease) ease-in both, hue-cycle 1.2s linear infinite; }
+.reveal .reveal-info { opacity: 0; animation: reveal-info .5s var(--ease) both; animation-delay: calc(var(--at) + .35s); }
+.reveal.rarity-mythic .reveal-info h3 { animation: glitch-in .6s steps(2, end) both; animation-delay: calc(var(--at) + .35s); }
+.reveal .reveal-burst { opacity: 0; animation: burst 1.2s var(--ease) both; animation-delay: var(--at); }
+.reveal.rarity-legendary .reveal-burst, .reveal.rarity-mythic .reveal-burst { animation: burst 1.2s var(--ease) both, pulse 2.4s ease-in-out infinite; animation-delay: var(--at), calc(var(--at) + 1.2s); }
+.reveal-dim { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+.reveal.rarity-legendary .reveal-dim, .reveal.rarity-mythic .reveal-dim { animation: reveal-dim calc(var(--tease) + .5s) ease both; animation-delay: calc(0s - var(--since)); }
+.reveal-rays { position: absolute; left: 35%; top: 45%; width: 900px; height: 900px; margin: -450px; opacity: 0; pointer-events: none; background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rarity) 38%, transparent) 0 7deg, transparent 7deg 20deg); -webkit-mask: radial-gradient(circle, #000 8%, transparent 58%); mask: radial-gradient(circle, #000 8%, transparent 58%); }
+.reveal.rarity-epic .reveal-rays { animation: rays-in .8s ease both, rays-turn 26s linear infinite; animation-delay: var(--at), 0s; --rays: .35; }
+.reveal.rarity-legendary .reveal-rays, .reveal.rarity-mythic .reveal-rays { animation: rays-build var(--tease) ease-in both, rays-turn 18s linear infinite; animation-delay: calc(0s - var(--since)), 0s; --rays: .8; }
+.reveal.rarity-mythic .reveal-rays { background: repeating-conic-gradient(from 0deg, rgba(255, 79, 163, .5) 0 6deg, transparent 6deg 15deg, rgba(90, 184, 255, .5) 15deg 21deg, transparent 21deg 30deg, rgba(90, 255, 176, .45) 30deg 36deg, transparent 36deg 45deg); }
+.reveal-ring { position: absolute; left: 35%; top: 45%; width: 80px; height: 80px; margin: -40px; border: 3px solid var(--rarity); border-radius: 50%; opacity: 0; pointer-events: none; animation: ring-out .9s var(--ease) both; animation-delay: var(--at); }
+.reveal-ring.second { animation-delay: calc(var(--at) + .18s); border-width: 1px; }
+.reveal.rarity-common .reveal-ring.second, .reveal.rarity-common .reveal-rays { display: none; }
+.reveal-sparks { position: absolute; left: 35%; top: 45%; width: 0; height: 0; z-index: 2; pointer-events: none; }
+.reveal-sparks i { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; background: var(--rarity); box-shadow: 0 0 10px var(--rarity); opacity: 0; animation: spark-fly 1s cubic-bezier(.1, .7, .3, 1) both; animation-delay: calc(var(--d) - var(--since)); }
+.reveal.rarity-mythic .reveal-sparks i:nth-child(3n) { background: #5ab8ff; box-shadow: 0 0 10px #5ab8ff; } .reveal.rarity-mythic .reveal-sparks i:nth-child(3n + 1) { background: #5affb0; box-shadow: 0 0 10px #5affb0; }
+.reveal .reveal-card { animation: card-in .4s var(--ease) both; animation-delay: calc(var(--d) - var(--since)); }
+.reveal-card.is-dupe img { filter: grayscale(.7) brightness(.7); } .reveal-card.is-dupe small { color: var(--signal); }
+/* Duplicate: slammed on like an ink stamp once the card has turned, and the skin greys out under it. */
+.dupe-stamp { position: absolute; left: 50%; top: 50%; z-index: 3; padding: 8px 18px; border: 4px solid var(--signal); color: var(--signal); background: rgba(10, 14, 18, .55); font: 400 30px/1 var(--display); font-style: normal; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 0 18px rgba(255, 181, 71, .5); opacity: 0; animation: stamp-in .42s cubic-bezier(.2, 1.4, .4, 1) both; animation-delay: calc(var(--at) + .75s); }
+.reveal.is-dupe .skin-stage { animation: dupe-grey .4s ease both; animation-delay: calc(var(--at) + .78s); }
+.dupe-line { margin: 12px 0 0; color: var(--signal); font: 500 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+@keyframes reveal-flip { 0% { transform: rotateY(180deg) scale(.88); } 62% { transform: rotateY(-9deg) scale(1.05); } 100% { transform: rotateY(0) scale(1); } }
+@keyframes tease-shake { 0% { translate: 0 0; } 25% { translate: var(--shake) calc(var(--shake) * -.6); } 50% { translate: calc(var(--shake) * -1) var(--shake); } 75% { translate: calc(var(--shake) * .6) calc(var(--shake) * -1); } 100% { translate: 0 0; } }
+@keyframes tease-glow { from { filter: brightness(.55); } 80% { filter: brightness(1.15); } to { filter: brightness(2.2); } }
+@keyframes hue-cycle { from { filter: hue-rotate(0deg) brightness(1.3); } to { filter: hue-rotate(360deg) brightness(1.3); } }
+@keyframes reveal-info { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: none; } }
+@keyframes reveal-dim { 0% { opacity: 0; } 25% { opacity: .62; } 80% { opacity: .62; } 100% { opacity: 0; } }
+@keyframes rays-in { from { opacity: 0; } to { opacity: var(--rays); } }
+@keyframes rays-build { from { opacity: 0; scale: .5; } 80% { opacity: calc(var(--rays) * .6); scale: .9; } to { opacity: var(--rays); scale: 1; } }
+@keyframes rays-turn { to { rotate: 360deg; } }
+@keyframes ring-out { 0% { opacity: .95; scale: .4; } 100% { opacity: 0; scale: 9; } }
+@keyframes spark-fly { 0% { opacity: 1; transform: translate(0, 0) scale(1.4); } 100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 60px)) scale(.2); } }
+@keyframes glitch-in { 0% { opacity: 0; text-shadow: 6px 0 #ff4fa3, -6px 0 #5ab8ff; transform: translateX(-8px) skewX(18deg); } 40% { opacity: 1; text-shadow: -4px 0 #ff4fa3, 4px 0 #5ab8ff; transform: translateX(5px) skewX(-10deg); } 100% { opacity: 1; text-shadow: none; transform: none; } }
+@keyframes stamp-in { 0% { opacity: 0; transform: translate(-50%, -50%) rotate(-12deg) scale(3.4); } 70% { opacity: 1; transform: translate(-50%, -50%) rotate(-12deg) scale(.94); } 100% { opacity: 1; transform: translate(-50%, -50%) rotate(-12deg) scale(1); } }
+@keyframes dupe-grey { to { filter: grayscale(.85) brightness(.6); } }
+
+/* ---- menu layout: grouped pages, account chip, footer ---- */
+.group-tabs { display: inline-flex; margin-bottom: 22px; }
+.group-tabs .badge { display: inline-grid; place-items: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; background: var(--ally); color: var(--void); font: 500 9px/1 var(--mono); font-style: normal; }
+.page-wide > .group-tabs { display: flex; width: max-content; }
+.menu-tools .pilot-chip { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px !important; border: 1px solid var(--hairline-strong) !important; background: rgba(230, 237, 241, .04) !important; color: var(--frost) !important; }
+.menu-tools .pilot-chip b { max-width: 120px; overflow: hidden; text-overflow: ellipsis; font: 500 11px var(--body); letter-spacing: .02em; text-transform: none; }
+.menu-tools .pilot-chip .avatar { border-radius: 50%; }
+.menu-tools .pilot-chip:hover, .menu-tools .pilot-chip.active { border-color: var(--signal) !important; }
+.menu-tools .gear-button { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0 !important; }
+.menu-tools .gear-button svg { transition: transform .5s var(--ease); }
+.menu-tools .gear-button:hover svg { transform: rotate(60deg); }
+.menu-foot { display: flex; align-items: center; justify-content: flex-start; gap: 20px; padding: 14px clamp(16px, 3vw, 48px); border-top: 1px solid var(--hairline); background: rgba(10, 14, 18, .6); }
+.menu-foot nav { display: flex; gap: 4px; }
+.menu-foot nav button { padding: 8px 12px !important; border: 0 !important; background: transparent !important; color: var(--haze) !important; font: 500 9px/1 var(--mono) !important; letter-spacing: .16em !important; }
+.menu-foot nav button:hover, .menu-foot nav button.active { color: var(--frost) !important; }
+.account-panel { margin: 0 0 22px; padding: 16px 20px; }
+.account-panel .account-row { margin: 0; padding: 0; border: 0; }
+.feedback-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); gap: clamp(20px, 3vw, 48px); align-items: start; }
+@media (max-width: 1020px) { .feedback-grid { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .menu-tools .pilot-chip b { display: none; } .menu-tools .pilot-chip { padding: 5px !important; } }
+.room-make { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+.room-make .panel { margin: 0; height: 100%; }

@@ -10,13 +10,27 @@ import { net } from './net.js';
 import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
 import { buildCharm, buildWeapon } from './viewmodel.js';
+import { updateCharm } from './charms.js';
+import { CRATE_OPEN_TIME, buildCrate, poseCrate } from './cratebox.js';
 import { animateOperator, buildOperator, lookOf, styleOperator } from './characters.js';
 import { skinArt } from './weaponart.js';
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 export const COIN = '<svg class="coin-icon" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><polygon points="10,1 18,5.5 18,14.5 10,19 2,14.5 2,5.5" fill="#ffb547"/><polygon points="10,4 15.4,7 15.4,13 10,16 4.6,13 4.6,7" fill="none" stroke="#7a4a00" stroke-width="1.2"/><path d="M8.3 6.8v6.4M8.3 10l3.6-3.2M9.6 9l2.5 4.2" stroke="#7a4a00" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>';
 export const coins = (n) => `<span class="coins">${COIN}${Number(n).toLocaleString('en')}</span>`;
-const TABS = [['crates', 'Crates'], ['skins', 'Skins'], ['gear', 'Gear'], ['charms', 'Charms'], ['inventory', 'Inventory'], ['games', 'Games'], ['wallet', 'Wallet']];
+// One module, four menu pages. Each page shows its own tabs and remembers the last one opened.
+const SECTIONS = {
+  locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
+  shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['crates', 'Crates'], ['skins', 'Skins']], balance: true },
+  games: { eyebrow: 'Games', title: 'Double or <em>nothing.</em>', tabs: [['games', 'Games']], balance: true },
+  wallet: { eyebrow: 'Profile', title: 'Your <em>coins.</em>', tabs: [['wallet', 'Wallet']], balance: true },
+};
+export const SHOP_PAGES = Object.keys(SECTIONS);
+const sectionOf = (id) => SHOP_PAGES.find((page) => SECTIONS[page].tabs.some(([tabId]) => tabId === id));
+const lastTab = {};
+// Seconds the face-down card holds before it turns over, and what plays when it does.
+const TEASE = { common: 0.45, rare: 0.7, epic: 1.05, legendary: 1.7, mythic: 2.4 };
+const REVEAL_SOUND = { common: 'buy', rare: 'ready', epic: 'xp', legendary: 'roundWin', mythic: 'matchWin' };
 const REEL_ITEM = 128, REEL_LENGTH = 34, REEL_WIN = 29, CRATE_SPIN = 4.6;
 const SLOT_ROW = 64, SLOT_TIMES = [1.1, 1.5, 1.9];
 const now = () => performance.now() / 1000;
@@ -56,6 +70,7 @@ function redraw() { if (ctx?.onShop()) ctx.rerender(); }
 const RARITY_RANK = Object.fromEntries(Object.keys(RARITY).map((id, index) => [id, index]));
 // The reel has landed (or was skipped): show the reveal and let the coin counter catch up.
 let landTimer = null;
+let openTimer = null;
 function landAfter(seconds) {
   clearTimeout(landTimer);
   landTimer = setTimeout(land, seconds * 1000);
@@ -66,7 +81,11 @@ function land() {
   reveal.landed = true; reveal.at = now();
   if (held) { game.profile = held; held = null; }
   const top = reveal.drops[reveal.index];
-  play(RARITY_RANK[top.rarity] >= RARITY_RANK.legendary ? 'xp' : top.rarity === 'epic' ? 'ready' : 'buy');
+  // The better the drop, the longer the card makes you wait.
+  const tease = TEASE[top.rarity] || 0.6, stamp = reveal.at;
+  if (tease > 1.5) play('riser');
+  setTimeout(() => { if (reveal?.at === stamp) play(REVEAL_SOUND[top.rarity] || 'buy'); }, tease * 1000);
+  if (top.duplicate) setTimeout(() => { if (reveal?.at === stamp) play('stamp'); }, (tease + 0.75) * 1000);
   ctx.refreshCoins();
   redraw();
 }
@@ -84,10 +103,14 @@ net.on('coins-result', (message) => {
     const best = got.reduce((top, drop) => (RARITY_RANK[drop.rarity] > RARITY_RANK[top.rarity] ? drop : top), got[0]);
     const pool = crateFinishes(CRATES[message.unboxed.crate]);
     const strip = Array.from({ length: REEL_LENGTH }, (_, i) => (i === REEL_WIN ? best : { weapon: skinnable[Math.floor(Math.random() * skinnable.length)].id, finish: pool[Math.floor(Math.random() * pool.length)].id }));
-    crate = { strip, at: now(), offset: Math.random() * 80 - 40 };
+    // The crate is opened first (shake, latches, lid), then the reel runs.
+    crate = { id: message.unboxed.crate, strip, at: now(), offset: Math.random() * 80 - 40 };
+    clearTimeout(openTimer);
+    openTimer = setTimeout(redraw, CRATE_OPEN_TIME * 1000);
+    for (const [sound, at] of [['latch', 0.36], ['latch', 0.51], ['crateOpen', 0.66]]) setTimeout(() => { if (crate && !reveal?.landed) play(sound); }, at * 1000);
     reveal = { drops: got, index: got.indexOf(best), source: 'crate', crateId: message.unboxed.crate, count: got.length, free: message.unboxed.free, landed: false };
     held = message.profile;
-    landAfter(CRATE_SPIN);
+    landAfter(CRATE_OPEN_TIME + CRATE_SPIN);
     redraw();
   } else if (message.crashStarted) {
     busy = false;
@@ -103,7 +126,7 @@ net.on('coins-result', (message) => {
     trade = []; tradeMode = false;
     reveal = { drops: [message.traded], index: 0, source: 'trade', landed: true, at: now() };
     crate = null;
-    tab = 'crates';
+    tab = 'crates'; lastTab.shop = 'crates'; ctx.goto('shop');
     play(RARITY_RANK[message.traded.rarity] >= RARITY_RANK.legendary ? 'xp' : 'buy');
     ctx.refreshCoins();
     redraw();
@@ -185,6 +208,25 @@ function equip(weapon, finish) {
 // One renderer for the shop's turntable. The page redraws often, so the canvas lives outside it and is
 // moved into #skin-stage after each draw. Shader finishes animate here just as they do in hand.
 let stage = null;
+const thumbs = new Map();
+function makeThumbs() {
+  if (thumbs.size) return;
+  const canvas = document.createElement('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setSize(168, 126, false);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight('#e6eef5', '#1b2127', 1.9));
+  const key = new THREE.DirectionalLight('#ffffff', 2.6); key.position.set(2, 4, 3); scene.add(key);
+  const camera = new THREE.PerspectiveCamera(24, 168 / 126, 0.01, 30);
+  const shoot = (name, model) => { scene.add(model); renderer.render(scene, camera); thumbs.set(name, canvas.toDataURL('image/png')); scene.remove(model); model.traverse((mesh) => mesh.geometry?.dispose()); };
+  camera.position.set(1.7, 1.25, 3.0); camera.lookAt(0, 0.3, 0);
+  for (const c of Object.values(CRATES)) { const model = buildCrate(c); poseCrate(model, null, 0); model.rotation.y = -0.2; shoot(`crate:${c.id}`, model); }
+  camera.position.set(0.015, -0.03, 0.125); camera.lookAt(0, -0.032, 0);
+  for (const item of COSMETICS.charm) { const model = buildCharm(item.id); if (model) { model.rotation.y = 0.5; shoot(`charm:${item.id}`, model); } }
+  renderer.dispose(); renderer.forceContextLoss?.();
+}
+const thumb = (name) => { try { makeThumbs(); } catch { /* no WebGL to spare: the CSS icons stay */ } return thumbs.get(name) || ''; };
+
 function ensureStage() {
   if (stage) return stage;
   const canvas = document.createElement('canvas');
@@ -206,7 +248,16 @@ function showOnStage(subject) {
   if (s.key === key) return;
   s.key = key;
   for (const child of [...s.pivot.children]) { s.pivot.remove(child); child.traverse((mesh) => mesh.geometry?.dispose()); }
-  s.charm = null; s.operator = null;
+  s.charm = null; s.operator = null; s.crate = null;
+  if (subject.kind === 'crate') {
+    const model = buildCrate(CRATES[subject.id] || CRATES.field);
+    model.position.y = -0.34;
+    s.pivot.add(model);
+    s.crate = model;
+    s.camera.position.set(0, 1.05, 4.6);
+    s.camera.lookAt(0, 0.12, 0);
+    return;
+  }
   if (subject.kind === 'operator') {
     const model = buildOperator(subject.look.color, subject.look.accent);
     styleOperator(model, { ...lookOf(subject.look), team: 'friend' });
@@ -238,17 +289,26 @@ function spin() {
   if (s.operator) {
     s.pivot.rotation.set(0, Math.PI + Math.sin(t * 0.4) * 0.9, 0);
     animateOperator(s.operator, { speed: 0, crouch: false, pitch: Math.sin(t / 1.7) * 0.08, weapon: 'm44', dt: 1 / 60 });
+  } else if (s.crate) {
+    // Waiting: a slow turn. Opening: it swings round to face you and goes off.
+    const open = crate && !reveal?.landed ? now() - crate.at : null;
+    const facing = open === null ? Math.sin(t * 0.5) * 0.5 - 0.35 : -0.35 * Math.max(0, 1 - open / 0.3);
+    s.pivot.rotation.set(0.12, s.pivot.rotation.y + (facing - s.pivot.rotation.y) * 0.12, 0);
+    poseCrate(s.crate, open, t);
   } else {
-    s.pivot.rotation.y = Math.sin(t * 0.45) * 0.65 - 0.15;
-    s.pivot.rotation.x = Math.sin(t * 0.3) * 0.06;
+    // On the Charms tab the gun is given a shake every few seconds so you see the charm move.
+    const shake = s.charm ? Math.max(0, Math.sin(t * 1.1)) ** 6 * Math.sin(t * 17) * 0.09 : 0;
+    s.pivot.rotation.y = Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
+    s.pivot.rotation.x = Math.sin(t * 0.3) * 0.06 + shake * 0.6;
   }
-  // A charm swings as the gun turns.
-  if (s.charm) { s.charm.rotation.z = Math.sin(t * 2.4) * 0.5 + Math.cos(t * 0.45) * 0.3; s.charm.rotation.x = Math.sin(t * 1.7) * 0.3; }
+  if (s.charm) updateCharm(s.charm, Math.min(0.05, t - (s.lastT || t)) || 1 / 60);
+  s.lastT = t;
   s.renderer.render(s.scene, s.camera);
   requestAnimationFrame(spin);
 }
 function stageSubject() {
   if (tab === 'crates' && reveal?.landed) { const drop = reveal.drops[reveal.index]; return { kind: 'gun', weapon: drop.weapon, finish: drop.finish }; }
+  if (tab === 'crates') return { kind: 'crate', id: crate?.id || crateId };
   if (tab === 'inventory' && inventoryPick) return { kind: 'gun', ...inventoryPick };
   if (tab === 'gear') return { kind: 'operator', look: tryLook() };
   if (tab === 'charms') return { kind: 'gun', weapon: charmWeapon, finish: game.look.skins?.[charmWeapon] || null, charm: charmTry ?? game.look.charm };
@@ -304,7 +364,7 @@ function weaponButton(weapon) {
 // ------------------------------------------------------------------ crates
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const dropName = (drop) => `${finishInfo(drop.finish).name} · ${WEAPONS[drop.weapon].name}`;
-function crateBox(c) { return `<i class="crate-box" style="--crate:${c.color}"><b></b></i>`; }
+function crateBox(c) { const image = thumb(`crate:${c.id}`); return image ? `<img class="crate-thumb" src="${image}" alt="" />` : `<i class="crate-box" style="--crate:${c.color}"><b></b></i>`; }
 function cratesHtml() {
   const profile = game.profile;
   const chosen = CRATES[crateId];
@@ -322,20 +382,35 @@ function cratesHtml() {
     const shown = reveal.drops[reveal.index], info = finishInfo(shown.finish), rarity = RARITY[shown.rarity];
     const equipped = game.look.skins?.[shown.weapon] === shown.finish;
     const again = reveal.source === 'crate' && !reveal.free ? `<button type="button" data-open-crate="${reveal.crateId}" data-count="${reveal.count}" ${busy ? 'disabled' : ''}>Open again ${coins(CRATES[reveal.crateId].cost * reveal.count)}</button>` : '';
-    stageHtml = `<div class="reveal rarity-${shown.rarity}" style="--rarity:${rarity.color}"><i class="reveal-burst"></i>
-      <div id="skin-stage" class="skin-stage"></div>
-      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>${WEAPONS[shown.weapon].name} · ${rarity.name}${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
-        ${shown.duplicate ? `<p class="muted">Duplicate. ${coins(shown.refund)} back.</p>` : equipped ? '<p class="good">Equipped.</p>' : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`}</div>
-      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}" style="--rarity:${RARITY[drop.rarity].color};animation-delay:${i * 0.12}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${WEAPONS[drop.weapon].short}${drop.duplicate ? ' · dupe' : ''}</small></button>`).join('')}</div>` : ''}
+    // The page redraws whenever anything changes, so every animation here starts from `--since`: how long
+    // ago the card landed. A redraw mid-reveal picks the sequence up where it was instead of replaying it.
+    // Looking at another card from an ×5 skips the build-up (reveal.peek) and shows it straight away.
+    const tease = reveal.peek ? 0 : TEASE[shown.rarity] || 0.6;
+    const since = reveal.peek ? 99 : now() - reveal.at;
+    const rank = RARITY_RANK[shown.rarity];
+    const sparks = Array.from({ length: [0, 8, 14, 22, 32][rank] || 0 }, (_, k) => { const a = (k / ([0, 8, 14, 22, 32][rank])) * Math.PI * 2 + (k % 3) * 0.2, reach = 120 + ((k * 53) % 140); return `<i style="--x:${Math.round(Math.cos(a) * reach)}px;--y:${Math.round(Math.sin(a) * reach)}px;--d:${(tease + ((k * 37) % 25) / 100).toFixed(2)}s"></i>`; }).join('');
+    const status = shown.duplicate
+      ? `<p class="dupe-line">Duplicate · ${coins(shown.refund)} back</p>`
+      : equipped ? '<p class="good">Equipped.</p>' : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`;
+    stageHtml = `<div class="reveal rarity-${shown.rarity}${shown.duplicate ? ' is-dupe' : ''}" style="--rarity:${rarity.color};--since:${since.toFixed(2)}s;--tease:${tease}s">
+      <i class="reveal-dim"></i><i class="reveal-rays"></i><i class="reveal-burst"></i><i class="reveal-ring"></i><i class="reveal-ring second"></i>
+      <div class="reveal-sparks">${sparks}</div>
+      <div class="reveal-flip"><div class="reveal-back"><b>${rarity.name}</b><span>?</span></div>
+        <div class="reveal-front"><div id="skin-stage" class="skin-stage"></div>${shown.duplicate ? '<em class="dupe-stamp">Duplicate</em>' : ''}</div></div>
+      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>${WEAPONS[shown.weapon].name}${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
+        ${status}</div>
+      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${WEAPONS[drop.weapon].short}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
       <div class="button-row">${again}<button type="button" class="ghost-button" data-close-reveal="1">Done</button></div></div>`;
   } else {
+    const opening = Boolean(crate) && now() - crate.at < CRATE_OPEN_TIME;
     let reel = '<div class="reel-idle">Random finish. Random gun.</div>';
-    if (crate) {
-      const elapsed = Math.min(CRATE_SPIN, now() - crate.at);
+    if (crate && !opening) {
+      const elapsed = Math.min(CRATE_SPIN, now() - crate.at - CRATE_OPEN_TIME);
       const end = -(REEL_WIN * REEL_ITEM + REEL_ITEM / 2 + crate.offset);
       reel = `<div class="reel-strip" style="--end:${end}px;animation-delay:-${elapsed}s;animation-duration:${CRATE_SPIN}s">${crate.strip.map((item) => { const info = finishInfo(item.finish); return `<div class="reel-item rarity-${info.rarity}" style="--rarity:${RARITY[info.rarity].color}"><img src="${finishSwatch(item.finish)}" alt="" /><small>${WEAPONS[item.weapon].short}</small></div>`; }).join('')}</div><i class="reel-mark"></i><small class="reel-skip">Click to skip</small>`;
-    }
-    stageHtml = `${spinning ? '<button type="button" class="reel spinning" data-skip="1" aria-label="Skip">' : '<div class="reel">'}${reel}${spinning ? '</button>' : '</div>'}
+    } else if (opening) reel = '<div class="reel-idle">Opening</div>';
+    stageHtml = `<div id="skin-stage" class="skin-stage crate-stage${opening ? ' opening' : ''}"></div>
+      ${spinning ? '<button type="button" class="reel spinning" data-skip="1" aria-label="Skip">' : '<div class="reel">'}${reel}${spinning ? '</button>' : '</div>'}
       <div class="button-row"><button type="button" data-open-crate="${chosen.id}" data-count="1" ${busy || spinning ? 'disabled' : ''}>Open ${coins(chosen.cost)}</button><button type="button" class="secondary-button" data-open-crate="${chosen.id}" data-count="5" ${busy || spinning ? 'disabled' : ''}>Open ×5 ${coins(chosen.cost * 5)}</button>${pity ? `<span class="muted">${pity}</span>` : ''}</div>`;
   }
   const contents = Object.keys(RARITY).map((rarity) => { const list = crateFinishes(chosen).filter((finish) => finish.rarity === rarity); return list.length ? `<div class="contents-row" style="--rarity:${RARITY[rarity].color}"><small>${RARITY[rarity].name}</small><div>${list.map((finish) => `<img src="${finishSwatch(finish.id)}" alt="${finish.name}" title="${finish.name}" />`).join('')}</div></div>` : ''; }).join('');
@@ -358,7 +433,7 @@ function ownedSkins() {
 const skinKey = (item) => `${item.weapon}:${item.finish}`;
 function inventoryHtml() {
   const items = ownedSkins();
-  if (!items.length) return '<div class="panel"><p class="muted">No skins yet. Open a crate or buy one.</p></div>';
+  if (!items.length) return '<div class="panel"><p class="muted">No skins yet.</p><div class="link-row"><button type="button" class="ghost-button" data-page="shop">Open a crate →</button></div></div>';
   const pick = inventoryPick && items.find((item) => skinKey(item) === skinKey(inventoryPick)) || items[0];
   inventoryPick = { weapon: pick.weapon, finish: pick.finish };
   const info = finishInfo(pick.finish), rarity = RARITY[pick.rarity];
@@ -430,11 +505,11 @@ function charmsHtml() {
   const showing = charmTry ?? game.look.charm;
   const cards = COSMETICS.charm.map((item) => {
     const state = gearStatus('charm', item);
-    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}"><button type="button" class="gear-look" data-charm-try="${item.id}"><i class="charm-icon charm-${item.id}"></i><b>${escapeHtml(item.name)}</b><small>${item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
+    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
   }).join('');
   const item = COSMETICS.charm.find((entry) => entry.id === showing);
   return `<div class="shop-charms">
-    <div class="panel skin-preview"><div id="skin-stage" class="skin-stage"></div><div><small>Gun charm</small><h3>${escapeHtml(item?.name || 'None')}</h3><span>Hangs off your gun and swings as you move.</span>
+    <div class="panel skin-preview"><div id="skin-stage" class="skin-stage"></div><div><small>Gun charm</small><h3>${escapeHtml(item?.name || 'None')}</h3><span>On a chain. Moves with recoil, reloads and every step.</span>
       <div class="segmented charm-guns">${CHARM_GUNS.map((id) => `<button type="button" data-charm-gun="${id}" class="${charmWeapon === id ? 'active' : ''}">${WEAPONS[id].short}</button>`).join('')}</div></div></div>
     <div class="gear-grid">${cards}</div></div>`;
 }
@@ -599,14 +674,23 @@ const avatarHtml = (who, size) => (who.avatar ? `<img class="avatar" src="${esca
 function earnHtml() {
   return '<ul class="earn-list"><li><b>Win</b> 12 · vs bots 3</li><li><b>Top kills</b> 8</li><li><b>Player kill</b> 2, more for higher levels</li><li><b>Bot kill</b> 0.4</li><li><b>Contract</b> 5</li></ul>';
 }
-export function shopPageHtml() {
-  if (!loggedIn()) return `<section class="page-wide shop-page"><p class="eyebrow">Shop</p><h1 class="page-title">Spend your <em>coins.</em></h1><div class="panel shop-locked"><p>Coins need a Discord login.</p><a class="discord-button" href="/auth/discord">Log in with Discord</a></div></section>`;
+function openTab(id) {
+  tab = id; armed = null; tryOn = null; charmTry = null;
+  if (tab === 'crates' && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
+  if (tab === 'wallet') net.send({ type: 'friends', action: 'list' });
+  if (tab === 'games' && (crashGame?.phase === 'running' || running(plinko))) setTimeout(startGameFrame, 0);
+}
+export function shopPageHtml(page = 'shop', lead = '') {
+  const section = SECTIONS[page];
+  if (!loggedIn()) return `<section class="page-wide shop-page">${lead}<p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1><div class="panel shop-locked"><p>Needs a Discord login.</p><a class="discord-button" href="/auth/discord">Log in with Discord</a></div></section>`;
+  if (sectionOf(tab) !== page) openTab(lastTab[page] || section.tabs[0][0]);
+  lastTab[page] = tab;
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
   if (tab === 'crates' && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
   const body = tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
-  return `<section class="page-wide shop-page"><div class="shop-head"><div><p class="eyebrow">Shop</p><h1 class="page-title">Spend your <em>coins.</em></h1></div>
-      <div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div></div>
-    <div class="segmented shop-tabs" role="tablist">${TABS.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>
+  return `<section class="page-wide shop-page">${lead}<div class="shop-head"><div><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>
+      ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
+    ${section.tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${section.tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : ''}
     ${body}</section>`;
 }
 // What typed input looks like before a redraw, put back after it.
@@ -614,14 +698,7 @@ export function keepShopInput() { return { to: document.querySelector('#send-to'
 
 export function onShopClick(button) {
   const d = button.dataset;
-  if (d.shopTab) {
-    tab = d.shopTab; armed = null; tryOn = null; charmTry = null;
-    if (tab === 'crates') net.send({ type: 'drops' });
-    if (tab === 'wallet') net.send({ type: 'friends', action: 'list' });
-    if (tab === 'games' && (crashGame?.phase === 'running' || running(plinko))) setTimeout(startGameFrame, 0);
-    play('ui');
-    return true;
-  }
+  if (d.shopTab) { openTab(d.shopTab); play('ui'); return true; }
   // Gear and charms: try on, equip, buy (twice to confirm).
   if (d.gearKind && !d.gear) { gearKind = d.gearKind; tryOn = null; armed = null; play('ui'); return true; }
   if (d.try) { tryOn = d.try === game.look[lookKey(gearKind)] ? null : d.try; play('ui'); return true; }
@@ -693,7 +770,7 @@ export function onShopClick(button) {
   }
   if (d.daily) { crateId = DAILY_CRATE.crate; crate = null; reveal = null; request({ type: 'shop', action: 'crate', crate: DAILY_CRATE.crate, count: 1, free: true }); play('ready'); return true; }
   if (d.skip) { land(); return true; }
-  if (d.reveal !== undefined && reveal) { reveal.index = Number(d.reveal); play('ui'); return true; }
+  if (d.reveal !== undefined && reveal) { reveal.index = Number(d.reveal); reveal.peek = true; play('ui'); return true; }
   if (d.equipDrop !== undefined && reveal) { const drop = reveal.drops[Number(d.equipDrop)]; equip(drop.weapon, drop.finish); play('ready'); return true; }
   if (d.closeReveal) { reveal = null; crate = null; play('uiBack'); return true; }
   if (d.inv) {

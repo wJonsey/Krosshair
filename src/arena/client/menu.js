@@ -10,7 +10,7 @@ import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind 
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
-import { COIN, coins, initShop, keepShopInput, mountShop, onShopClick, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
+import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
 import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
@@ -48,6 +48,7 @@ let prefsTimer = null;
 
 let pendingPlay = null;
 const DISCORD_MARK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.6 5.2A17 17 0 0 0 15.4 4l-.5 1a15.700 15.700 0 0 0-5.800 0L8.600 4a17 17 0 0 0-4.200 1.200C1.700 9.200 1 13.100 1.300 17a17.100 17.100 0 0 0 5.200 2.600l1.100-1.800a11 11 0 0 1-1.700-.8l.4-.3a12.200 12.200 0 0 0 11.400 0l.4.3c-.5.300-1.100.600-1.700.8l1.100 1.800a17 17 0 0 0 5.200-2.600c.4-4.500-.7-8.400-3.100-11.800ZM8.700 14.600c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Zm6.600 0c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Z"/></svg>';
+const GEAR_MARK = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.400 1a7.500 7.500 0 0 0-1.700-1L15 3.500h-4l-.4 2.500a7.500 7.500 0 0 0-1.700 1l-2.400-1-2 3.400L6.600 11a7.600 7.600 0 0 0 0 2l-2 1.600 2 3.400 2.400-1c.5.4 1.100.7 1.700 1l.4 2.500h4l.4-2.500c.6-.3 1.200-.6 1.700-1l2.400 1 2-3.400-2-1.600ZM13 15.500a3.500 3.500 0 1 1 0-7 3.500 3.500 0 0 1 0 7Z"/></svg>';
 const TIKTOK_MARK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07Z"/></svg>';
 const socialHtml = () => `<a class="social-link discord" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer" title="Krosshair on Discord" aria-label="Krosshair on Discord">${DISCORD_MARK}</a><a class="social-link tiktok" href="${TIKTOK_URL}" target="_blank" rel="noopener noreferrer" title="Krosshair on TikTok" aria-label="Krosshair on TikTok">${TIKTOK_MARK}</a>`;
 function accountRowHtml() {
@@ -215,9 +216,26 @@ function pilotHtml() {
 }
 
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
-const HOME_PAGES = [['play', 'Play'], ['operator', 'Operator'], ['shop', 'Shop'], ['career', 'Career'], ['leaderboard', 'Leaderboard'], ['rooms', 'Rooms']];
+// Top-level entries own a group of pages: the first is where the nav button goes, the rest are its tabs.
+const NAV = [
+  ['Play', [['play', 'Matchmaking'], ['rooms', 'Rooms']]],
+  ['Locker', [['locker', 'Locker']]],
+  ['Shop', [['shop', 'Shop']]],
+  ['Games', [['games', 'Games']]],
+  ['Profile', [['career', 'Career'], ['wallet', 'Wallet']]],
+  ['Leaderboard', [['leaderboard', 'Leaderboard']]],
+];
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
-const pageFromHash = () => ([...HOME_PAGES, ...TOOL_PAGES].some(([id]) => id === location.hash.slice(1)) ? location.hash.slice(1) : 'play');
+const PAGE_ALIAS = { operator: 'locker' }; // old links
+const ALL_PAGES = [...NAV.flatMap(([, pages]) => pages), ...TOOL_PAGES].map(([id]) => id);
+const pageFromHash = () => { const id = PAGE_ALIAS[location.hash.slice(1)] || location.hash.slice(1); return ALL_PAGES.includes(id) ? id : 'play'; };
+const groupOf = (page) => NAV.find(([, pages]) => pages.some(([id]) => id === page));
+// Tabs for a group with more than one page, drawn above the page title.
+function groupTabsHtml(page) {
+  const pages = groupOf(page)?.[1] || [];
+  if (pages.length < 2) return '';
+  return `<div class="segmented group-tabs" role="tablist">${pages.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" class="${id === page ? 'active' : ''}" aria-selected="${id === page}">${label}${id === 'rooms' && game.publicRooms.length ? ` <i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</div>`;
+}
 let homePage = pageFromHash();
 let pageEntering = true;
 let roomDraft = { code: null, isPublic: false };
@@ -288,6 +306,7 @@ function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
   return `
     <section class="page-main">
+      ${groupTabsHtml('play')}
       <p class="eyebrow">Tactical sniper duels · one life</p>
       <h1 class="page-title">Pick your <em>fight.</em></h1>
       <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
@@ -299,8 +318,8 @@ function playPageHtml() {
       </div>
     </section>
     <aside class="page-side">
-      <div class="panel pilot"><p class="eyebrow">Pilot</p>${authHtml()}<div class="pilot-body">${pilotHtml()}</div>
-        <div class="link-row"><button type="button" class="ghost-button" data-page="operator">Customise operator</button><button type="button" class="ghost-button" data-page="career">Full career →</button></div>
+      <div class="panel pilot"><p class="eyebrow">Pilot</p>${game.username ? '' : authHtml()}<div class="pilot-body">${pilotHtml()}</div>
+        <div class="link-row"><button type="button" class="ghost-button" data-page="locker">Locker</button><button type="button" class="ghost-button" data-page="career">Profile →</button></div>
       </div>
     </aside>
     <aside class="page-side page-third">
@@ -352,11 +371,12 @@ function roomsPageHtml() {
   const rooms = game.publicRooms.length ? game.publicRooms.map((room) => `<button type="button" class="room-row" data-join="${escapeHtml(room.name)}"><b>${escapeHtml(room.name)}</b><span>${room.wager ? `${room.wager.size}V${room.wager.size} ${coins(room.wager.stake)}` : room.queue.toUpperCase()}</span><span>${room.players + room.bots}/${room.max}</span><small>${room.phase === 'lobby' ? 'IN LOBBY' : `LIVE ${room.scores.A}–${room.scores.B}`}</small></button>`).join('') : '<p class="muted">No public rooms. Start one.</p>';
   return `
     <section class="page-main">
+      ${groupTabsHtml('rooms')}
       <p class="eyebrow">Rooms</p>
-      <h1 class="page-title">Bring your <em>own rivals.</em></h1>
-      <div class="panel private"><p class="eyebrow">Private room</p><div class="room-row-input"><input id="room-input" maxlength="24" placeholder="room-code" value="${escapeHtml(roomDraft.code ?? inviteRoom)}" /><button type="button" id="join-room">Create / join <span>↗</span></button></div><label class="check"><input type="checkbox" id="room-public" ${roomDraft.isPublic ? 'checked' : ''} /> List publicly</label>
+      <h1 class="page-title">Your <em>rules.</em></h1>
+      <div class="room-make"><div class="panel private"><p class="eyebrow">Private room</p><div class="room-row-input"><input id="room-input" maxlength="24" placeholder="room-code" value="${escapeHtml(roomDraft.code ?? inviteRoom)}" /><button type="button" id="join-room">Create / join <span>↗</span></button></div><label class="check"><input type="checkbox" id="room-public" ${roomDraft.isPublic ? 'checked' : ''} /> List publicly</label>
         <small class="muted">New code, new room. You host.</small></div>
-      ${wagerPanelHtml()}
+      ${wagerPanelHtml()}</div>
     </section>
     <aside class="page-side"><div class="panel"><p class="eyebrow">Live rooms <small>${game.publicRooms.length}</small></p><div id="room-list">${rooms}</div></div></aside>`;
 }
@@ -371,15 +391,17 @@ export function renderHome() {
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') listening = null;
-  const pageHtml = homePage === 'shop' ? shopPageHtml() : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'operator' ? operatorPageHtml(level) : homePage === 'career' ? `<section class="page-wide"><p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1><div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
-        <nav class="menu-nav" aria-label="Menu">${HOME_PAGES.map(([id, label], index) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${id === 'rooms' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</nav>
-        <div class="menu-tools">${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="shop" title="Coins">${coins(game.profile.coins)}</button>` : ''}<div class="socials">${socialHtml()}</div><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="ghost-button${id === homePage ? ' active' : ''}" ${id === homePage ? 'aria-current="page"' : ''}>${label}</button>`).join('')}</div>
+        <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
+        <div class="menu-tools"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
+      <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}</nav></footer>
     </div>`;
   pageEntering = false;
   if (keep.name !== undefined && $('#name-input')) $('#name-input').value = keep.name;
@@ -419,10 +441,10 @@ function chooseGear(kind, id, key = kind) {
 const LOOK_KEY = { suit: 'color', visor: 'accent' };
 function refreshCoins() { const chip = $('.coin-chip'); if (chip && game.profile) chip.innerHTML = coins(game.profile.coins); }
 initShop({
-  rerender: () => renderHome(), onShop: () => game.screen === 'home' && homePage === 'shop', toast, saveLook, refreshCoins,
+  rerender: () => renderHome(), onShop: () => game.screen === 'home' && SHOP_PAGES.includes(homePage), goto: (page) => { if (game.screen === 'home') setHomePage(page); }, toast, saveLook, refreshCoins,
   onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind].find((item) => item.id === id).name} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
 });
-home.addEventListener('input', (event) => { if (homePage !== 'shop') return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
+home.addEventListener('input', (event) => { if (!SHOP_PAGES.includes(homePage)) return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
 
@@ -448,7 +470,7 @@ home.addEventListener('click', (event) => {
   if (!target) return;
   if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
   if (onSettingsClick(event)) return;
-  if (homePage === 'shop' && onShopClick(target)) { renderHome(); return; }
+  if (SHOP_PAGES.includes(homePage) && onShopClick(target)) { renderHome(); return; }
   if (target.dataset.gear) { chooseGear(target.dataset.gearKind, target.dataset.gear, target.dataset.lookKey); return; }
   if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
   if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }
@@ -698,9 +720,14 @@ function settingsBodyHtml(tab) {
   return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Sensitivity</p>${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, 'x2')}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, 'x2', s.scopeSensitivity, 'While aiming.')}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, 'x1')}</div>
     <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}</div></div>`;
 }
+// The same rail sits on Settings, Controls and Feedback. In a match (the overlay) Feedback is left out.
+function settingsNavButtons(tab) {
+  const overlay = settingsOverlayOpen() || game.screen !== 'home';
+  return `${SETTINGS_TABS.map(([id, label]) => `<button type="button" data-settings-tab="${id}" class="${id === tab ? 'active' : ''}">${label}</button>`).join('')}${overlay ? '' : `<button type="button" data-page="feedback" class="${tab === 'feedback' ? 'active' : ''}">Feedback</button>`}`;
+}
 function settingsShellHtml(tab) {
   const resets = { binds: ['reset-binds', 'Reset key binds'], crosshair: ['reset-crosshair', 'Reset crosshair'] }[tab] || ['reset-settings', 'Reset settings'];
-  return `<div class="settings-shell"><nav class="settings-tabs" aria-label="Settings sections">${SETTINGS_TABS.map(([id, label]) => `<button type="button" data-settings-tab="${id}" class="${id === tab ? 'active' : ''}">${label}</button>`).join('')}</nav>
+  return `<div class="settings-shell"><nav class="settings-tabs" aria-label="Settings sections">${settingsNavButtons(tab)}</nav>
     <div class="settings-body">${settingsBodyHtml(tab)}</div>
     <div class="button-row"><button type="button" id="${resets[0]}" class="ghost-button">${resets[1]}</button><span class="muted">Saves automatically.</span></div></div>`;
 }
@@ -821,8 +848,10 @@ function feedbackSentHtml() {
   return sent.length ? `<section class="feedback-sent"><h3>Sent from this browser</h3>${sent.slice(0, 5).map((r) => `<div><span class="kind ${r.kind}">${r.kind === 'bug' ? 'Bug' : 'Idea'}</span><b>${escapeHtml(r.title)}</b><small>${escapeHtml(r.ref)} · ${new Date(r.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</small></div>`).join('')}</section>` : '';
 }
 function feedbackPageHtml() {
-  return `<section class="page-main feedback-page"><p class="eyebrow">Feedback</p><h1 class="page-title">Tell us what <em>broke.</em></h1><div class="panel">${feedbackFormHtml()}</div></section>
-    <aside class="page-side"><div class="panel"><p class="eyebrow">Tips</p><ul class="feature-list plain"><li>One report per problem.</li><li>Name the arena, mode and weapon.</li></ul></div>${feedbackSentHtml() ? `<div class="panel">${feedbackSentHtml()}</div>` : ''}</aside>`;
+  return `<section class="page-wide settings-page"><p class="eyebrow">Feedback</p><h1 class="page-title">Tell us what <em>broke.</em></h1>
+    <nav class="settings-tabs" aria-label="Settings sections">${settingsNavButtons('feedback')}</nav>
+    <div class="feedback-grid"><div class="panel feedback-page">${feedbackFormHtml()}</div>
+      <aside class="page-side"><div class="panel"><p class="eyebrow">Tips</p><ul class="feature-list plain"><li>One report per problem.</li><li>Name the arena, mode and weapon.</li></ul></div>${feedbackSentHtml() ? `<div class="panel">${feedbackSentHtml()}</div>` : ''}</aside></div></section>`;
 }
 // What is typed survives re-renders (the menu redraws whenever the profile or room list changes) and type switches.
 function readFeedbackDraft() { const form = $('#feedback-form'); return form ? { title: form.title.value, details: form.details.value, device: form.device.checked, status: $('#feedback-status')?.outerHTML, focus: document.activeElement?.name } : null; }

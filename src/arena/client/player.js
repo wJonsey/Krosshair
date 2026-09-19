@@ -505,7 +505,7 @@ export class LocalPlayer {
     const eased = this.scopeAmount * this.scopeAmount * (3 - 2 * this.scopeAmount);
     const fov = THREE.MathUtils.lerp(baseFov, Math.min(baseFov, zoomFov), eased);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
-    this.viewmodel.update(dt, { speed: this.speed, onGround: body.onGround, scoped: eased, lookX: this.lookX, lookY: this.lookY, crouch: this.crouching });
+    this.viewmodel.update(dt, { speed: this.speed, onGround: body.onGround, scoped: eased, lookX: this.lookX, lookY: this.lookY, crouch: this.crouching, pitch: this.pitch });
   }
 
   updateDrone(dt, pad) {

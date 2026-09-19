@@ -420,13 +420,17 @@ export const COSMETICS = {
     { id: 'splinter', name: 'Splinter', price: 900 }, { id: 'tiger', name: 'Tiger stripe', price: 1100 },
     { id: 'hex', name: 'Hex', price: 1500 },
   ],
-  // Hangs off the side of your gun in first person and swings as you move.
+  // Hangs off the side of your gun on a chain. It swings with recoil, reloads and every move you make.
+  // The models are in client/charms.js: every id here needs a maker there.
   charm: [
-    { id: 'none', name: 'None', level: 1 }, { id: 'tag', name: 'Dog tag', level: 3 },
-    { id: 'dice', name: 'Lucky dice', price: 500 }, { id: 'bullet', name: 'Bullet', price: 500 },
-    { id: 'skull', name: 'Skull', price: 900 }, { id: 'star', name: 'Star', price: 900 },
-    { id: 'coin', name: 'Krosshair coin', price: 1500 }, { id: 'heart', name: 'Heart', price: 1500 },
-    { id: 'diamond', name: 'Diamond', price: 4000 },
+    { id: 'none', name: 'None', level: 1 }, { id: 'tag', name: 'Dog tag', level: 3 }, { id: 'bullet', name: 'Bullet', level: 6 }, { id: 'clover', name: 'Clover', level: 12 },
+    { id: 'dice', name: 'Lucky dice', price: 500 }, { id: 'key', name: 'Spare key', price: 500 }, { id: 'feather', name: 'Feather', price: 500 }, { id: 'cherry', name: 'Cherries', price: 600 },
+    { id: 'star', name: 'Star', price: 900 }, { id: 'skull', name: 'Skull', price: 900 }, { id: 'horseshoe', name: 'Horseshoe', price: 900 }, { id: 'mushroom', name: 'Mushroom', price: 900 },
+    { id: 'anchor', name: 'Anchor', price: 1200 }, { id: 'padlock', name: 'Padlock', price: 1200 }, { id: 'eightball', name: '8 ball', price: 1200 }, { id: 'duck', name: 'Rubber duck', price: 1500 },
+    { id: 'coin', name: 'Krosshair coin', price: 1500 }, { id: 'heart', name: 'Heart', price: 1500 }, { id: 'grenade', name: 'Grenade', price: 1800 }, { id: 'ghost', name: 'Ghost', price: 1800 },
+    { id: 'moon', name: 'Crescent', price: 2200 }, { id: 'bolt', name: 'Lightning', price: 2200 }, { id: 'shuriken', name: 'Shuriken', price: 2500 }, { id: 'reticle', name: 'Krosshair', price: 2500 },
+    { id: 'flame', name: 'Flame', price: 3000 }, { id: 'd20', name: 'D20', price: 3000 }, { id: 'planet', name: 'Ringed planet', price: 3500 }, { id: 'diamond', name: 'Diamond', price: 4000 },
+    { id: 'ufo', name: 'UFO', price: 5000 }, { id: 'crown', name: 'Crown', price: 6000 },
   ],
 };
 export const DEFAULT_LOOK = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {} };
