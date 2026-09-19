@@ -160,7 +160,8 @@ export function renderPreview() {
 function refreshPreviewLook() { if (preview) styleOperator(preview.model, lookOf(game.look)); }
 
 // A pilot's title. The developers' title gets the Dev class look everywhere it shows.
-const titleHtml = (title) => (title === 'Developer' ? '<span class="dev-title">Developer</span>' : escapeHtml(title || ''));
+const DEV_TITLES = new Set(COSMETICS.title.filter((item) => item.dev).map((item) => item.id));
+const titleHtml = (title) => (DEV_TITLES.has(title) ? `<span class="dev-title">${escapeHtml(title)}</span>` : escapeHtml(title || ''));
 
 // ------------------------------------------------------------------ home
 // Colour swatches: level ones show the level they need, coin ones show a coin until bought.

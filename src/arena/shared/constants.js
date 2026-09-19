@@ -372,6 +372,7 @@ export const COSMETICS = {
     { id: '#b8a4e3', name: 'Lavender', price: 450 }, { id: '#d9a21f', name: 'Mustard', price: 450 },
     { id: '#7cc4ff', name: 'Sky', price: 500 }, { id: '#ff6a2a', name: 'Tangerine', price: 600 },
     { id: '#bfe8ff', name: 'Ice', price: 700 }, { id: '#e0a48f', name: 'Rose Gold', price: 900 },
+    { id: '#04150f', name: 'Dev Void', dev: true },
   ],
   visor: [
     { id: '#6ce6d1', name: 'Mint', level: 1 }, { id: '#ff7148', name: 'Orange', level: 1 },
@@ -384,6 +385,7 @@ export const COSMETICS = {
     { id: '#ffd1a3', name: 'Peach', price: 450 }, { id: '#b0ff3a', name: 'Lime', price: 500 },
     { id: '#ff3a8a', name: 'Rose', price: 500 }, { id: '#40ffff', name: 'Cyan', price: 500 },
     { id: '#7a5cff', name: 'Indigo', price: 600 }, { id: '#e8e8e8', name: 'Chrome', price: 700 },
+    { id: '#7cffe8', name: 'Dev Glow', dev: true },
   ],
   tracer: [
     { id: '#ffc857', name: 'Brass', level: 1 }, { id: '#6ce6d1', name: 'Mint', level: 2 },
@@ -414,7 +416,7 @@ export const COSMETICS = {
     { id: 'No Scope', name: 'No Scope', price: 1800 }, { id: 'Unboxer', name: 'Unboxer', price: 2200 },
     { id: 'Clutch King', name: 'Clutch King', price: 2500 }, { id: 'Coin Goblin', name: 'Coin Goblin', price: 3000 },
     { id: 'Warlord', name: 'Warlord', price: 5000 }, { id: 'Big Spender', name: 'Big Spender', price: 10000 },
-    { id: 'Developer', name: 'Developer', dev: true },
+    { id: 'Developer', name: 'Developer', dev: true }, { id: 'Founder', name: 'Founder', dev: true },
   ],
   headgear: [
     { id: 'helmet', name: 'Combat helmet', level: 1 }, { id: 'cap', name: 'Field cap', level: 1 },

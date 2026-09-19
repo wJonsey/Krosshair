@@ -15,6 +15,7 @@ import { Hud, roundIntroVoice } from './hud.js';
 import { announce, meter, musicState, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setMusicScene, setWorldAudio, refreshMusic, setVolume, stopAllLoops, unlockAudio } from './audio.js';
 import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
+import { initDevTools } from './devtools.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
 
 // Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
@@ -424,6 +425,7 @@ function countFrame(rawDt) {
 let firstFrame = false;
 let lastFrameAt = 0;
 const royale = initRoyale({ arena, hud, player });
+const devtools = initDevTools({ player, operators, camera });
 function frame(now = 0) {
   requestAnimationFrame(frame);
   // Frame cap: skip this tick if the previous frame was drawn too recently (small tolerance so 60 on a 60 Hz screen is not halved).
@@ -452,6 +454,7 @@ function frame(now = 0) {
   effects.update(dt);
   arena.update(dt, camera);
   royale.update(dt);
+  devtools.update(dt);
   camera.updateMatrixWorld();
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));

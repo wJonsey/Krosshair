@@ -7,6 +7,7 @@ import {
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
+import { DEV_ACTION_IDS, DEV_SERVER_TOOLS, DEV_SPEED } from '../shared/devtools.js';
 import { getMap, zoneAt } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
@@ -97,7 +98,7 @@ export class Room {
   connectedHumans() { return this.humans().filter((player) => player.connected); }
   team(team) { return [...this.players.values()].filter((player) => player.team === team && !player.dummy); }
   aliveOn(team) { return this.team(team).filter((player) => player.alive); }
-  enemiesOf(player) { return [...this.players.values()].filter((other) => other.team !== player.team && other.alive); }
+  enemiesOf(player) { return [...this.players.values()].filter((other) => other.team !== player.team && other.alive && !other.devTools?.ghost); }
   get live() { return this.phase === 'live' || this.phase === 'overtime' || this.phase === 'range'; }
 
   info() {
@@ -139,7 +140,7 @@ export class Room {
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,
       nextFire: 0, equipUntil: 0, reloadEnd: 0, reloadSlot: null, scopedSince: 0, spread: { primary: new SpreadTracker(), sidearm: new SpreadTracker() },
       stimUntil: 0, stimUsed: false, ghostUntil: 0, drone: null, damageFrom: new Map(), diedThisRound: false, lastFireAt: 0,
-      disconnectedAt: 0, pendingJoin: false, shotSeq: 0, ...base,
+      disconnectedAt: 0, pendingJoin: false, shotSeq: 0, dev: false, devTools: {}, ...base,
     };
     this.refillAmmo(player);
     return player;
@@ -174,6 +175,7 @@ export class Room {
     const player = this.newPlayer({
       name: hello.name, token: hello.token, session: hello.session, socket, ...look,
       level: levelFromXp(profile.xp), rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
+      dev: Boolean(profile.dev),
     });
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
     const replaceable = midMatch && [...this.players.values()].some((p) => p.bot && !p.dummy) && this.queue !== 'custom';
@@ -642,6 +644,7 @@ export class Room {
       if (player.drone) flags |= FLAG.piloting;
       player.history.push({ t, x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch, flags, weapon: player.weapons[player.active] || 'knife' });
       if (player.history.length > 110) player.history.shift();
+      if (player.devTools?.ghost) continue;
       rows.push([player.id, round2(player.x), round2(player.y), round2(player.z), round3(player.yaw), round3(player.pitch), flags, player.weapons[player.active] || 'knife', player.dummy ? 1 : 0]);
     }
     if (!this.connectedHumans().length) return;
@@ -698,8 +701,39 @@ export class Room {
       case 'map-vote': return castMapVote(this, player, message.id);
       case 'rematch': if (this.phase === 'matchEnd') { this.rematch.add(player.id); this.pushRoom(); } return;
       case 'respawn': if (this.mode === 'range' && !player.alive) this.spawn(player); return;
+      case 'dev': return this.onDevTool(player, message);
       default:
     }
+  }
+
+  // Dev tools. Checked against the account every single time, so nobody else and no bot can hold one.
+  onDevTool(player, message) {
+    if (!player.dev || player.bot) { player.devTools = {}; return; }
+    const action = String(message.action || '');
+    if (DEV_ACTION_IDS.includes(action)) {
+      if (!player.alive) return;
+      if (action === 'heal') { player.hp = 100; player.armor = 100; player.helmet = true; }
+      if (action === 'refill') this.refillAmmo(player);
+      if (action === 'teleport') {
+        const spot = message.to;
+        if (!Array.isArray(spot) || spot.length !== 3 || !spot.every(Number.isFinite)) return;
+        const { bounds } = this.map;
+        player.x = clamp(spot[0], bounds.minX, bounds.maxX);
+        player.y = clamp(spot[1], bounds.minY, bounds.maxY + 6);
+        player.z = clamp(spot[2], bounds.minZ, bounds.maxZ);
+        this.send(player, { type: 'correct', x: player.x, y: player.y, z: player.z });
+      }
+      this.pushYou(player);
+      return;
+    }
+    const tool = String(message.tool || '');
+    if (!DEV_SERVER_TOOLS.includes(tool)) return;
+    const on = message.on === true;
+    if (on) player.devTools[tool] = true; else delete player.devTools[tool];
+    if (tool === 'rich' && on) { player.credits = ECONOMY.max; this.pushYou(player); }
+    if (tool === 'ghost') this.pushRoom();
+    console.log(`dev tool: ${player.name} turned ${tool} ${on ? 'on' : 'off'} in ${this.name}`);
+    this.send(player, { type: 'dev', tools: { ...player.devTools } });
   }
 
   onTeam(player, team) {
@@ -737,10 +771,13 @@ export class Room {
     const elapsed = Math.max(1 / 120, t - (player.lastStateAt || t - 0.05));
     const dist = Math.hypot(x - player.x, z - player.z);
     const speed = dist / elapsed;
-    let reject = speed > 13 && dist > 0.9;
+    // Dev tools loosen the checks for that account only: flying goes through walls, speed moves faster.
+    const fly = Boolean(player.devTools?.fly);
+    const limit = fly ? 60 : player.devTools?.speed ? 13 * DEV_SPEED : 13;
+    let reject = speed > limit && dist > 0.9;
     // During the buy phase pilots stay behind their gate.
     if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
-    if (!reject && !this.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9)) reject = true;
+    if (!reject && !fly && !this.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9)) reject = true;
     player.lastStateAt = t;
     if (reject) {
       player.strikes += 1;
@@ -814,7 +851,7 @@ export class Room {
     if (!this.live || !player.alive || !weapon || weapon.melee || player.drone) return false;
     const ammo = player.ammo[player.active];
     if (t < player.nextFire - 0.035 || t < player.equipUntil || player.reloadEnd || !ammo || ammo.mag <= 0) { this.pushYou(player); return false; }
-    ammo.mag -= 1;
+    if (!player.devTools?.ammo) ammo.mag -= 1;
     player.nextFire = Math.max(t, player.nextFire) + weapon.cooldown;
     if (t - player.nextFire > 0.2) player.nextFire = t + weapon.cooldown;
     player.lastFireAt = t;
@@ -899,6 +936,7 @@ export class Room {
 
   applyDamage(victim, attacker, amount, zone, weapon, meta = {}) {
     if (!victim.alive || !this.live) return;
+    if (victim.devTools?.god) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
     const modifier = this.rules.modifier;
     if (modifier === 'headhunter' && zone !== 'head' && !weapon.melee) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
     if (modifier === 'instagib' || this.phase === 'overtime') amount = 999;

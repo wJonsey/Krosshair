@@ -5,6 +5,8 @@ import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '..
 import { SpreadTracker, applySpread, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
+import { devState } from './devtools.js';
+import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
 import { actionsFor, bindsFor, held, mouseCode } from './input.js';
 import { net } from './net.js';
 import { DROP, PAD_LAUNCH } from '../shared/royale.js';
@@ -450,6 +452,8 @@ export class LocalPlayer {
     if (length > 1) { mx /= length; mz /= length; }
     let maxSpeed = BODY.runSpeed * (weapon.speed || 1);
     if (this.crouching) maxSpeed = BODY.crouchSpeed; else if (walkKey) maxSpeed = BODY.walkSpeed;
+    if (devState.speed) maxSpeed *= DEV_SPEED;
+    if (devState.fly) maxSpeed = BODY.runSpeed * DEV_FLY_SPEED * (walkKey ? 0.35 : 1);
     if (this.scopeAmount > 0.3) maxSpeed *= 0.55;
     const clock = performance.now();
     if (clock < this.boost.speedUntil) maxSpeed *= this.boost.speed;
@@ -468,12 +472,16 @@ export class LocalPlayer {
     this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
     const jump = !blocked && (held(keys, 'jump') || this.pad.jump);
     if (jump && body.onGround && !this.crouching) { body.vy = BODY.jumpVelocity * (clock < this.boost.jumpUntil ? this.boost.jump : 1); body.onGround = false; play('jump'); bus.emit('tutorial', 'jump'); }
-    const gravity = this.drop ? 0 : BODY.gravity * this.gravityScale; // the drop sets its own fall speed
+    const gravity = this.drop || devState.fly ? 0 : BODY.gravity * this.gravityScale; // the drop sets its own fall speed
     body.vy = Math.max(-40, body.vy - gravity * dt);
     if (this.drop) { const fall = this.drop.chute ? -DROP.chuteFall : -DROP.fall; body.vy += (fall - body.vy) * Math.min(1, dt * (this.drop.chute ? 2.6 : 1.4)); }
     const fallSpeed = body.vy;
     const beforeX = body.x, beforeZ = body.z, wasGrounded = body.onGround;
-    this.arena.physics.moveBody(body, this.vel.x * dt, body.vy * dt, this.vel.z * dt);
+    if (devState.fly) {
+      const lift = ((jumpKey ? 1 : 0) - (held(keys, 'crouch') ? 1 : 0)) * DEV_FLY_LIFT;
+      body.vy = 0; body.onGround = false;
+      body.x += this.vel.x * dt; body.y += lift * dt; body.z += this.vel.z * dt;
+    } else this.arena.physics.moveBody(body, this.vel.x * dt, body.vy * dt, this.vel.z * dt);
     const movedX = body.x - beforeX, movedZ = body.z - beforeZ;
     if (dt > 0) { if (Math.abs(movedX) < Math.abs(this.vel.x * dt) * 0.5) this.vel.x *= 0.5; if (Math.abs(movedZ) < Math.abs(this.vel.z * dt) * 0.5) this.vel.z *= 0.5; }
     const { bounds } = this.arena.map;
@@ -519,6 +527,8 @@ export class LocalPlayer {
     if (Math.abs(dy) > 0.7 || !body.onGround) this.viewY = body.y; else this.viewY += dy * Math.min(1, dt * 16);
     const shakeX = (Math.random() - 0.5) * this.shake * 0.012, shakeY = (Math.random() - 0.5) * this.shake * 0.012;
     this.camera.position.set(body.x, this.viewY + eye, body.z);
+    // The dev No sway tool takes the wobble and the kick out of the view.
+    if (devState.nospread) { this.swayX = 0; this.swayY = 0; this.recoilPitch = 0; this.recoilYaw = 0; }
     this.camera.rotation.set(this.pitch + this.recoilPitch + this.swayY + shakeY, this.yaw + this.recoilYaw + this.swayX + shakeX, 0, 'YXZ');
     const baseFov = game.settings.fov;
     const zoomFov = weapon.scope ? weapon.scope[Math.min(this.zoomIndex, weapon.scope.length - 1)] : baseFov;

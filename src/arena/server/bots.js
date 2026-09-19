@@ -62,13 +62,14 @@ export function createBot(room, team, difficulty) {
   const taken = new Set([...room.players.values()].map((p) => p.name));
   const pool = BOT_NAMES.filter((name) => !taken.has(name));
   const name = pool.length ? pool[Math.floor(Math.random() * pool.length)] : `Unit-${room.nextPlayer}`;
-  const suits = COSMETICS.suit, visors = COSMETICS.visor;
+  // Never anything from the Dev class: that belongs to the developers' accounts only.
+  const suits = COSMETICS.suit.filter((item) => !item.dev), visors = COSMETICS.visor.filter((item) => !item.dev);
   const bot = room.newPlayer({
     name, team, bot: true, ready: true, difficulty, title: difficulty === 'elite' ? 'Deadeye' : difficulty === 'veteran' ? 'Marksman' : 'Recruit',
     color: suits[Math.floor(Math.random() * suits.length)].id, accent: visors[Math.floor(Math.random() * visors.length)].id,
     level: difficulty === 'elite' ? 18 : difficulty === 'veteran' ? 9 : 2,
     // Free gear only (level-unlocked), so bots never show off something a pilot has to buy.
-    ...Object.fromEntries(['headgear', 'face', 'pack'].map((kind) => { const free = COSMETICS[kind].filter((item) => !item.price); return [kind, free[Math.floor(Math.random() * free.length)].id]; })),
+    ...Object.fromEntries(['headgear', 'face', 'pack'].map((kind) => { const free = COSMETICS[kind].filter((item) => !item.price && !item.dev); return [kind, free[Math.floor(Math.random() * free.length)].id]; })),
   });
   bot.traits = rollTraits();
   // What people see in the lobby follows the bot's own skill, not just the level picked for the room.
