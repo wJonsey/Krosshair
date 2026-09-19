@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { AccountStore } from '../server/accounts.js';
-import { buyGear, buySkin, openCrate, playGame, sendCoins } from '../server/economy.js';
+import { buyGear, buySkin, cashOutCrash, openCrate, playGame, refundCrashes, scrapSkin, sendCoins, startCrash, tradeUp } from '../server/economy.js';
 import { Room } from '../server/room.js';
-import { COINS, CRATES, SLOTS, finishInfo, finishPrice, killCoins, slotsMultiplier } from '../shared/economy.js';
+import { COINS, CRASH, CRATES, EPIC_OR_BETTER, FINISHES, PLINKO, RARITY, crashAt, hiloMultiplier, SCRAP, SLOTS, crateFinishes, crateOdds, finishInfo, finishPrice, finishValue, killCoins, slotsMultiplier } from '../shared/economy.js';
+import { readFileSync } from 'node:fs';
 
 async function stores() {
   const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-coins-'));
@@ -53,38 +54,98 @@ test('match coins: wins beat losses, bots are worth less than people, higher lev
 test('the shop sells each skin and piece of gear once, and only for coins you have', async () => {
   const { profiles } = await stores();
   const token = ProfileStore.newToken();
-  assert.match(buySkin(profiles, token, 'm44', 'gilded').error, /Not enough/);
-  profiles.credit(token, finishPrice('gilded') + 1000, 'test', 'top up');
-  assert.deepEqual(buySkin(profiles, token, 'm44', 'gilded').bought, { weapon: 'm44', finish: 'gilded' });
-  assert.match(buySkin(profiles, token, 'm44', 'gilded').error, /Already/);
-  assert.match(buySkin(profiles, token, 'raygun', 'gilded').error, /Not in the shop/);
+  assert.match(buySkin(profiles, token, 'm44', 'obsidian').error, /Not enough/);
+  profiles.credit(token, finishPrice('obsidian') + 1000, 'test', 'top up');
+  assert.deepEqual(buySkin(profiles, token, 'm44', 'obsidian').bought, { weapon: 'm44', finish: 'obsidian' });
+  assert.match(buySkin(profiles, token, 'm44', 'obsidian').error, /Already/);
+  assert.match(buySkin(profiles, token, 'raygun', 'obsidian').error, /Not in the shop/);
+  profiles.credit(token, 10 ** 6, 'test', 'rich');
+  assert.match(buySkin(profiles, token, 'm44', 'inferno').error, /crates/, 'Mythics are crate-only');
   assert.ok(buyGear(profiles, token, 'headgear', 'beret').bought);
   assert.match(buyGear(profiles, token, 'headgear', 'helmet').error, /Not in the shop/, 'level items are not for sale');
   // Only what you own survives in your look.
-  const clean = profiles.sanitizeCosmetics(token, { ...look, headgear: 'beret', face: 'gasmask', skins: { m44: 'gilded', talon: 'void', nope: 'gilded' } });
+  const clean = profiles.sanitizeCosmetics(token, { ...look, headgear: 'beret', face: 'gasmask', skins: { m44: 'obsidian', talon: 'void', nope: 'obsidian' } });
   assert.equal(clean.headgear, 'beret');
   assert.equal(clean.face, 'visor');
-  assert.deepEqual(clean.skins, { m44: 'gilded' });
+  assert.deepEqual(clean.skins, { m44: 'obsidian' });
 });
 
-test('crates always cost the same and always give a skin or a refund; elite crates never give commons', async () => {
+test('every crate charges its price, drops only from its own pool, and gives a skin or a refund', async () => {
   const { profiles } = await stores();
   const token = ProfileStore.newToken();
-  profiles.credit(token, (CRATES.field.cost + CRATES.elite.cost) * 60, 'test', 'top up');
+  profiles.credit(token, 10 ** 6, 'test', 'top up');
   let owned = 0;
-  for (let i = 0; i < 120; i += 1) {
-    const crate = i % 2 ? CRATES.elite : CRATES.field;
-    const before = profiles.coins(token);
-    const result = openCrate(profiles, token, crate.id).crate;
-    assert.equal(profiles.coins(token), before - crate.cost + result.refund);
-    assert.equal(finishInfo(result.finish).rarity, result.rarity);
-    if (crate.id === 'elite') assert.notEqual(result.rarity, 'common');
-    if (!result.duplicate) owned += 1;
+  for (const crate of Object.values(CRATES)) {
+    const pool = crateFinishes(crate).map((finish) => finish.id);
+    for (let i = 0; i < 40; i += 1) {
+      const count = i % 4 ? 1 : 5;
+      const before = profiles.coins(token);
+      const { drops } = openCrate(profiles, token, crate.id, count).unboxed;
+      assert.equal(drops.length, count);
+      assert.equal(profiles.coins(token), before - crate.cost * count + drops.reduce((sum, drop) => sum + drop.refund, 0));
+      for (const drop of drops) {
+        assert.ok(pool.includes(drop.finish), `${crate.id} dropped ${drop.finish}`);
+        assert.equal(finishInfo(drop.finish).rarity, drop.rarity);
+        if (!drop.duplicate) owned += 1;
+      }
+    }
   }
-  assert.match(openCrate(profiles, token, 'golden').error, /No such crate/);
   const skins = Object.values(profiles.wallet(token).skins).reduce((sum, list) => sum + list.length, 0);
   assert.equal(skins, owned);
-  assert.match(openCrate(profiles, token).error || 'ok', /Not enough|ok/);
+  assert.match(openCrate(profiles, token, 'golden').error, /No such crate/);
+});
+
+test('pity: an Epic or better always lands within ten opens of a crate', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10 ** 6, 'test', 'top up');
+  for (const id of ['field', 'elite']) {
+    let dry = 0;
+    for (let i = 0; i < 300; i += 1) {
+      const [drop] = openCrate(profiles, token, id).unboxed.drops;
+      dry = EPIC_OR_BETTER.includes(drop.rarity) ? 0 : dry + 1;
+      assert.ok(dry < CRATES[id].pity, `${id}: ${dry} opens without an Epic`);
+    }
+  }
+});
+
+test('the daily crate is free once, then waits', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  const before = profiles.coins(token);
+  assert.equal(openCrate(profiles, token, 'field', 1, true).unboxed.free, true);
+  assert.equal(profiles.coins(token) - before, profiles.wallet(token).coinLog.filter((e) => e.kind === 'crate').reduce((sum, e) => sum + e.amount, 0), 'only duplicate refunds change the balance');
+  assert.match(openCrate(profiles, token, 'field', 1, true).error, /Next free crate/);
+  assert.match(openCrate(profiles, token, 'elite', 1, true).error, /daily crate/);
+  profiles.wallet(token).dailyCrate = Date.now() - 21 * 3600e3;
+  assert.ok(openCrate(profiles, token, 'field', 1, true).unboxed);
+});
+
+test('scrapping pays part of the price and takes the skin off the gun; trade-ups need five of one rarity', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  const profile = profiles.wallet(token);
+  profile.skins = { m44: ['olive', 'sand', 'slate'], talon: ['olive', 'woodland', 'tiger'], wasp: ['prism'] };
+  profile.look = { skins: { m44: 'olive' } };
+  const before = profiles.coins(token);
+  assert.equal(scrapSkin(profiles, token, 'm44', 'olive').scrapped.coins, Math.floor(finishValue('olive') * SCRAP));
+  assert.equal(profiles.coins(token), before + Math.floor(finishValue('olive') * SCRAP));
+  assert.deepEqual(profile.skins.m44, ['sand', 'slate']);
+  assert.equal(profile.look.skins.m44, undefined);
+  assert.match(scrapSkin(profiles, token, 'm44', 'olive').error, /own/);
+  const commons = [{ weapon: 'm44', finish: 'sand' }, { weapon: 'm44', finish: 'slate' }, { weapon: 'talon', finish: 'olive' }, { weapon: 'talon', finish: 'woodland' }];
+  assert.match(tradeUp(profiles, token, commons).error, /Pick 5/);
+  assert.match(tradeUp(profiles, token, [...commons, { weapon: 'talon', finish: 'tiger' }]).error, /same rarity/);
+  assert.match(tradeUp(profiles, token, [...commons, commons[0]]).error, /different/);
+  profile.skins.ronin = ['midnight'];
+  const { traded } = tradeUp(profiles, token, [...commons, { weapon: 'ronin', finish: 'midnight' }]);
+  assert.equal(traded.rarity, 'rare');
+  assert.ok(['m44', 'talon', 'ronin'].includes(traded.weapon));
+  assert.ok(FINISHES.find((f) => f.id === traded.finish).rarity === 'rare');
+  for (const item of commons) assert.ok(!profile.skins[item.weapon].includes(item.finish), `${item.finish} was used up`);
+  profile.skins.wasp = ['prism', 'aurora', 'inferno', 'hologram'];
+  profile.skins.m44.push('prism');
+  assert.match(tradeUp(profiles, token, [...profile.skins.wasp.map((finish) => ({ weapon: 'wasp', finish })), { weapon: 'm44', finish: 'prism' }]).error, /Mythic/);
 });
 
 test('minigames: stakes are checked, balances never go negative, and the house keeps a little', async () => {
@@ -211,4 +272,83 @@ test('a player who cannot cover the stake cannot ready up, and nobody pays if on
   assert.equal(room.phase, 'lobby');
   assert.equal(profiles.coins(a.token), before, 'the one who could pay was refunded');
   room.close();
+});
+
+test('skins: buying outright costs far more than a crate, and no crate pays back more than it costs when scrapped', () => {
+  for (const [id, rarity] of Object.entries(RARITY)) if (rarity.price) assert.ok(rarity.price >= CRATES.field.cost * 10, `${id} is too cheap to buy`);
+  for (const crate of Object.values(CRATES)) {
+    const odds = crateOdds(crate), total = odds.reduce((sum, [, w]) => sum + w, 0);
+    const scrapBack = odds.reduce((sum, [rarity, w]) => sum + (w / total) * RARITY[rarity].value * SCRAP, 0);
+    assert.ok(scrapBack < crate.cost * 0.6, `${crate.id}: scrapping pays ${scrapBack.toFixed(0)} of ${crate.cost}`);
+    assert.ok(crateFinishes(crate).length > 0);
+  }
+});
+
+test('every finish has a painter, and exactly the Mythics are animated', () => {
+  const source = readFileSync(new URL('../client/skins.js', import.meta.url), 'utf8');
+  const art = source.slice(source.indexOf('const FINISH_ART = {'), source.indexOf('\n};', source.indexOf('const FINISH_ART = {')));
+  const entries = Object.fromEntries(art.split(/\n  (?=[a-z]+: \{)/).slice(1).map((chunk) => [chunk.match(/^([a-z]+):/)[1], /shader: '/.test(chunk)]));
+  for (const finish of FINISHES) {
+    assert.ok(finish.id in entries, `${finish.id} has no painter`);
+    assert.equal(entries[finish.id], finish.rarity === 'mythic', `${finish.id} (${finish.rarity}) ${entries[finish.id] ? 'animates' : 'does not animate'}`);
+  }
+});
+
+test('plinko and higher-or-lower pay what their tables say, and every bet lands in the history', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10 ** 5, 'test', 'top up');
+  for (let i = 0; i < 60; i += 1) {
+    const { game } = playGame(profiles, token, { game: 'plinko', stake: 10 });
+    assert.equal(game.detail.path.length, PLINKO.rows);
+    assert.equal(game.detail.slot, game.detail.path.reduce((a, b) => a + b, 0));
+    assert.equal(game.payout, Math.floor(10 * PLINKO.multipliers[game.detail.slot]));
+  }
+  for (let i = 0; i < 60; i += 1) {
+    const card = profiles.wallet(token).hiloCard || 7;
+    const pickId = card >= 7 ? 'lower' : 'higher';
+    const { game } = playGame(profiles, token, { game: 'hilo', stake: 10, pick: pickId });
+    assert.equal(game.detail.card, card);
+    const won = pickId === 'higher' ? game.detail.next > card : game.detail.next < card;
+    assert.equal(game.payout, won ? Math.floor(10 * hiloMultiplier(card, pickId)) : 0);
+    assert.equal(profiles.wallet(token).hiloCard, game.detail.next, 'the next card stays on the table');
+  }
+  profiles.wallet(token).hiloCard = 13;
+  assert.match(playGame(profiles, token, { game: 'hilo', stake: 10, pick: 'higher' }).error, /king/);
+  assert.equal(profiles.wallet(token).gameLog.length, 20);
+  const stats = profiles.wallet(token).coinStats;
+  assert.ok(stats.in.game > 0 && stats.out.game > 0, 'games show up in the wallet breakdown');
+});
+
+test('crash: cash out before the crash to win, the round settles itself if nobody does, and restarts refund', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10 ** 5, 'test', 'top up');
+  let clock = 0;
+  const settledRounds = [];
+  const notify = (who, result) => settledRounds.push(result);
+  for (let i = 0; i < 40; i += 1) {
+    const before = profiles.coins(token);
+    assert.ok(startCrash(profiles, token, { stake: 100 }, () => clock, notify).crashStarted);
+    assert.equal(profiles.coins(token), before - 100, 'the stake is taken at the start');
+    assert.match(startCrash(profiles, token, { stake: 100 }, () => clock, notify).error, /already/);
+    clock += 0.05; // cash out almost straight away: ×1.00 unless it crashed on the spot
+    const out = cashOutCrash(token);
+    if (out.game) { assert.equal(out.game.payout, Math.floor(100 * crashAt(0.05))); assert.ok(out.game.detail.crash > out.game.detail.cashed); }
+    else { assert.match(out.error, /late|No round/); refundCrashes(); }
+  }
+  // Auto cash-out settles on the server's own timer.
+  const before = profiles.coins(token);
+  startCrash(profiles, token, { stake: 100, auto: 1.01 }, () => clock, notify);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const last = settledRounds.at(-1);
+  if (last.detail.cashed) assert.equal(profiles.coins(token), before - 100 + Math.floor(100 * 1.01));
+  else assert.equal(profiles.coins(token), before - 100, 'crashed before ×1.01');
+  // A restart mid-round gives the stake back.
+  clock = 0;
+  const held = profiles.coins(token);
+  startCrash(profiles, token, { stake: 100 }, () => clock, notify);
+  refundCrashes();
+  assert.equal(profiles.coins(token), held);
+  assert.ok(CRASH.max >= 100);
 });

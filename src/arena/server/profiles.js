@@ -148,6 +148,16 @@ export class ProfileStore {
   }
   coins(token) { return this.unsaved(token) ? 0 : this.wallet(token).coins; }
   logCoins(profile, amount, kind, note) {
+    // Totals for the wallet: lifetime in and out per source, and the last 14 days.
+    const whole = Math.abs(Math.round(amount));
+    if (whole && kind !== 'test') {
+      const side = amount > 0 ? 'in' : 'out';
+      const stats = (profile.coinStats ||= { in: {}, out: {} });
+      stats[side][kind] = (stats[side][kind] || 0) + whole;
+      const days = (profile.coinDays ||= {});
+      (days[dateKey()] ||= { in: 0, out: 0 })[side] += whole;
+      for (const day of Object.keys(days).sort().slice(0, -14)) delete days[day];
+    }
     profile.coinLog = [{ at: Date.now(), amount: Math.round(amount), kind, note: String(note).slice(0, 80) }, ...(profile.coinLog || [])].slice(0, COIN_LOG_LIMIT);
   }
   credit(token, amount, kind, note) {
@@ -192,7 +202,8 @@ export class ProfileStore {
     const profile = guest ? this.get(token) : this.wallet(token);
     const level = levelFromXp(profile.xp);
     return {
-      coins: guest ? 0 : profile.coins, owned: profile.owned || [], skins: profile.skins || {}, coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
+      coins: guest ? 0 : profile.coins, owned: profile.owned || [], skins: profile.skins || {}, pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
+      gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,

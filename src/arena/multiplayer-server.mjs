@@ -10,7 +10,7 @@ import { AccountStore } from './server/accounts.js';
 import { DiscordAuth, callbackPage, setupPage, tokenPage } from './server/discord.js';
 import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
-import { buyGear, buySkin, openCrate, playGame, sendCoins } from './server/economy.js';
+import { buyGear, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { WAGER } from './shared/economy.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -110,22 +110,51 @@ function dropGuest(socket) {
 
 const avatarOf = (account) => (account.avatar && account.discordId ? `https://cdn.discordapp.com/avatars/${account.discordId}/${account.avatar}.png?size=64` : null);
 
+// Big drops (Legendary and Mythic, from crates or trade-ups): the last few are shown in the shop, and
+// everyone in the menus hears about each one once the opener's reel has had time to land.
+const recentDrops = [];
+const DROP_DELAY = 5.5;
+function announceDrops(name, drops) {
+  const big = drops.filter((drop) => drop.rarity === 'legendary' || drop.rarity === 'mythic');
+  if (!big.length) return;
+  setTimeout(() => {
+    for (const drop of big) {
+      const entry = { name, weapon: drop.weapon, finish: drop.finish, rarity: drop.rarity, at: Date.now() };
+      recentDrops.unshift(entry);
+      recentDrops.length = Math.min(recentDrops.length, 12);
+      for (const socket of sockets) if (socket.identified) send(socket, { type: 'drop', drop: entry });
+    }
+  }, DROP_DELAY * 1000).unref?.();
+}
+
 // Coins: shop, crates, minigames, transfers, username lookup. Accounts only, one request at a time,
 // and a short cooldown so nobody can hammer the dice.
 function handleCoins(socket, message) {
   const reply = (type, body) => send(socket, { type, ...body, profile: socket.token ? profiles.view(socket.token) : null });
   if (!socket.account) return reply('coins-error', { error: 'Coins need a Discord login.' });
   const t = now();
-  if (socket.coinsAt && t - socket.coinsAt < (message.type === 'lookup' ? 0.2 : 0.45)) return reply('coins-error', { error: 'Slow down.' });
-  socket.coinsAt = t;
+  // Cashing out of Crash is never throttled: a click that arrives must count.
+  const urgent = message.type === 'crash' && message.action === 'out';
+  if (!urgent && socket.coinsAt && t - socket.coinsAt < (message.type === 'lookup' || message.type === 'friends' ? 0.2 : 0.45)) return reply('coins-error', { error: 'Slow down.' });
+  if (!urgent) socket.coinsAt = t;
+  if (message.type === 'friends') return handleFriends(socket, message);
   if (message.type === 'lookup') {
     const account = accounts.accounts.get(String(message.name || '').toLowerCase().slice(0, 32));
     const profile = account && profiles.profiles.get(ProfileStore.key(account.profileToken));
     return send(socket, { type: 'lookup-result', query: String(message.name || '').slice(0, 32), pilot: account ? { name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0), title: profile?.look?.title || 'Recruit', you: account.username.toLowerCase() === socket.account } : null });
   }
   let result;
-  if (message.type === 'shop') result = message.action === 'crate' ? openCrate(profiles, socket.token, message.crate) : message.action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, message.weapon, message.finish);
+  if (message.type === 'shop') {
+    const action = message.action;
+    result = action === 'crate' ? openCrate(profiles, socket.token, String(message.crate || ''), message.count, message.free === true)
+      : action === 'scrap' ? scrapSkin(profiles, socket.token, String(message.weapon || ''), String(message.finish || ''))
+      : action === 'tradeup' ? tradeUp(profiles, socket.token, message.items)
+      : action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, message.weapon, message.finish);
+    if (result.unboxed) announceDrops(socket.name, result.unboxed.drops);
+    if (result.traded) announceDrops(socket.name, [result.traded]);
+  }
   else if (message.type === 'game') result = playGame(profiles, socket.token, message);
+  else if (message.type === 'crash') result = message.action === 'out' ? cashOutCrash(socket.token) : startCrash(profiles, socket.token, message, now, crashSettled);
   else if (message.type === 'send-coins') {
     result = sendCoins(profiles, accounts, socket.token, socket.name, message.to, message.amount);
     if (result.sent) {
@@ -137,6 +166,37 @@ function handleCoins(socket, message) {
   }
   if (!result) return;
   reply(result.error ? 'coins-error' : 'coins-result', result);
+}
+
+// A Crash round that ended on its own (crashed, or hit the auto cash-out): tell every tab on that account.
+function crashSettled(token, game) {
+  for (const socket of sockets) if (socket.token === token && socket.account) send(socket, { type: 'coins-result', game, profile: profiles.view(token) });
+}
+
+// Friends: a short list of usernames for quick sending, shown with their picture, level and whether they're on.
+function friendView(name) {
+  const account = accounts.accounts.get(name.toLowerCase());
+  if (!account) return null;
+  const profile = profiles.profiles.get(ProfileStore.key(account.profileToken));
+  return { name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0), title: profile?.look?.title || 'Recruit', online: [...sockets].some((s) => s.account === account.username.toLowerCase()) };
+}
+function handleFriends(socket, message) {
+  const profile = profiles.wallet(socket.token);
+  const list = (profile.friends ||= []);
+  const name = String(message.name || '').slice(0, 32);
+  let error = null;
+  if (message.action === 'add') {
+    const account = accounts.accounts.get(name.toLowerCase());
+    if (!account) error = 'No pilot with that name.';
+    else if (account.username.toLowerCase() === socket.account) error = 'That’s you.';
+    else if (list.some((friend) => friend.toLowerCase() === account.username.toLowerCase())) error = 'Already a friend.';
+    else if (list.length >= 50) error = 'Friends list is full.';
+    else { list.push(account.username); profiles.scheduleSave(); }
+  } else if (message.action === 'remove') {
+    profile.friends = list.filter((friend) => friend.toLowerCase() !== name.toLowerCase());
+    profiles.scheduleSave();
+  }
+  send(socket, { type: 'friends-result', error, friends: (profile.friends || []).map(friendView).filter(Boolean), profile: profiles.view(socket.token) });
 }
 
 function signIn(socket, account, message, session = null) {
@@ -463,7 +523,8 @@ wss.on('connection', (socket) => {
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
       if (message.type === 'feedback') return void saveFeedback(socket, message);
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
-      if (['shop', 'game', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
+      if (['shop', 'game', 'crash', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
+      if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {
@@ -495,7 +556,7 @@ setTimeout(checkBoards, 15 * 1000).unref();
 // (systemd waits 90 s by default before it kills a service, so the grace period must stay well under that.)
 const RESTART_GRACE = Math.min(60, Math.max(0, Number(process.env.RESTART_GRACE_SECONDS ?? 20)));
 let stopping = false;
-function shutdown() { profiles.flush(); accounts.flush(); process.exit(0); }
+function shutdown() { refundCrashes(); profiles.flush(); accounts.flush(); process.exit(0); }
 process.on('SIGINT', shutdown); // Ctrl+C while developing: no ceremony
 process.on('SIGTERM', () => {
   if (stopping) return shutdown(); // asked twice: go now

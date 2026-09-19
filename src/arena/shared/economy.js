@@ -22,15 +22,17 @@ export function killCoins(killerLevel, victimLevel) {
   return COINS.playerKill * (1 + bonus);
 }
 
+// price: buying one skin outright in the Skins tab, deliberately steep so crates are the better deal
+// (Mythics can't be bought at all). value: what a skin is worth back as scrap or a duplicate refund,
+// kept low enough that opening crates to scrap them always loses coins.
 export const RARITY = {
-  common: { name: 'Common', price: 150, color: '#aab6c0' },
-  rare: { name: 'Rare', price: 400, color: '#5fa8ff' },
-  epic: { name: 'Epic', price: 1000, color: '#b07cff' },
-  legendary: { name: 'Legendary', price: 2500, color: '#ffb547' },
-  mythic: { name: 'Mythic', price: 6000, color: '#ff4fa3' },
+  common: { name: 'Common', price: 1500, value: 40, color: '#aab6c0' },
+  rare: { name: 'Rare', price: 4000, value: 120, color: '#5fa8ff' },
+  epic: { name: 'Epic', price: 10000, value: 400, color: '#b07cff' },
+  legendary: { name: 'Legendary', price: 25000, value: 1500, color: '#ffb547' },
+  mythic: { name: 'Mythic', price: null, value: 5000, color: '#ff4fa3' },
 };
-// Gun finishes. The painters are in client/skins.js. Finishes with a shader there move: every legendary and
-// mythic, plus Neon Grid, Circuit, Toxic and Frostbite.
+// Gun finishes. The painters are in client/skins.js. Only Mythics move, and every Mythic does.
 export const FINISHES = [
   { id: 'olive', name: 'Olive Drab', rarity: 'common' },
   { id: 'sand', name: 'Sandstorm', rarity: 'common' },
@@ -51,33 +53,59 @@ export const FINISHES = [
   { id: 'checker', name: 'Checkered', rarity: 'rare' },
   { id: 'marble', name: 'Marble', rarity: 'rare' },
   { id: 'hazard', name: 'Hazard', rarity: 'epic' },
-  { id: 'neon', name: 'Neon Grid', rarity: 'epic' },
   { id: 'damascus', name: 'Damascus', rarity: 'epic' },
   { id: 'crimson', name: 'Crimson Web', rarity: 'epic' },
-  { id: 'circuit', name: 'Circuit', rarity: 'epic' },
   { id: 'sakura', name: 'Sakura', rarity: 'epic' },
-  { id: 'frost', name: 'Frostbite', rarity: 'epic' },
-  { id: 'toxic', name: 'Toxic', rarity: 'epic' },
   { id: 'graffiti', name: 'Graffiti', rarity: 'epic' },
-  { id: 'gilded', name: 'Gilded', rarity: 'legendary' },
-  { id: 'void', name: 'Void', rarity: 'legendary' },
-  { id: 'lava', name: 'Magma', rarity: 'legendary' },
-  { id: 'dragon', name: 'Dragon Scale', rarity: 'legendary' },
-  { id: 'hexcore', name: 'Hexcore', rarity: 'legendary' },
+  { id: 'bubblegum', name: 'Bubblegum Camo', rarity: 'epic' },
+  { id: 'tide', name: 'Tide', rarity: 'epic' },
+  { id: 'obsidian', name: 'Obsidian', rarity: 'legendary' },
+  { id: 'royal', name: 'Royal Filigree', rarity: 'legendary' },
+  { id: 'jade', name: 'Imperial Jade', rarity: 'legendary' },
+  { id: 'redline', name: 'Redline', rarity: 'legendary' },
+  { id: 'koi', name: 'Koi', rarity: 'legendary' },
+  { id: 'blueprint', name: 'Blueprint', rarity: 'legendary' },
+  { id: 'neon', name: 'Neon Grid', rarity: 'mythic' },
+  { id: 'circuit', name: 'Circuit', rarity: 'mythic' },
+  { id: 'toxic', name: 'Toxic', rarity: 'mythic' },
+  { id: 'frost', name: 'Frostbite', rarity: 'mythic' },
+  { id: 'gilded', name: 'Gilded', rarity: 'mythic' },
+  { id: 'void', name: 'Void', rarity: 'mythic' },
+  { id: 'lava', name: 'Magma', rarity: 'mythic' },
+  { id: 'dragon', name: 'Dragon Scale', rarity: 'mythic' },
+  { id: 'hexcore', name: 'Hexcore', rarity: 'mythic' },
   { id: 'aurora', name: 'Aurora', rarity: 'mythic' },
   { id: 'inferno', name: 'Inferno', rarity: 'mythic' },
   { id: 'hologram', name: 'Hologram', rarity: 'mythic' },
   { id: 'prism', name: 'Prism', rarity: 'mythic' },
 ];
 export const finishInfo = (id) => FINISHES.find((finish) => finish.id === id) || null;
-export const finishPrice = (id) => RARITY[finishInfo(id)?.rarity]?.price || 0;
+export const finishPrice = (id) => RARITY[finishInfo(id)?.rarity]?.price || 0;   // 0: not for sale
+export const finishValue = (id) => RARITY[finishInfo(id)?.rarity]?.value || 0;
 
-// Crates: a random finish for a random gun. Weights are per rarity.
+// Crates: a random finish for a random gun. `weights` are per rarity; `pool` limits the finishes a crate
+// can drop (rarities with nothing in the pool are skipped). `pity`: an Epic or better is guaranteed within
+// that many opens of the same crate.
 export const CRATES = {
-  field: { id: 'field', name: 'Field crate', cost: 120, weights: { common: 64, rare: 26, epic: 8, legendary: 1.7, mythic: 0.3 } },
-  elite: { id: 'elite', name: 'Elite crate', cost: 450, weights: { rare: 62, epic: 29, legendary: 7.5, mythic: 1.5 } },
+  field: { id: 'field', name: 'Field crate', cost: 120, color: '#8fa0ad', blurb: 'Anything can drop.', pity: 10, weights: { common: 64, rare: 26, epic: 8, legendary: 1.7, mythic: 0.3 } },
+  camo: { id: 'camo', name: 'Camo crate', cost: 90, color: '#7d8a4c', blurb: 'Patterns only. Cheap.', weights: { common: 68, rare: 29, epic: 3 },
+    pool: ['olive', 'sand', 'slate', 'woodland', 'midnight', 'flecktarn', 'digital', 'desert', 'splinter', 'tiger', 'arctic', 'zebra', 'leopard', 'bubblegum'] },
+  elite: { id: 'elite', name: 'Elite crate', cost: 450, color: '#b07cff', blurb: 'No commons.', pity: 10, weights: { rare: 62, epic: 29, legendary: 7.5, mythic: 1.5 } },
+  neon: { id: 'neon', name: 'Neon crate', cost: 650, color: '#3ff2ff', blurb: 'Loud colours. Best Mythic odds.', weights: { epic: 78, legendary: 17, mythic: 5 },
+    pool: ['hazard', 'graffiti', 'bubblegum', 'tide', 'sakura', 'koi', 'blueprint', 'royal', 'redline', 'neon', 'circuit', 'toxic', 'frost', 'gilded', 'void', 'lava', 'dragon', 'hexcore', 'aurora', 'inferno', 'hologram', 'prism'] },
 };
+export const crateFinishes = (crate) => FINISHES.filter((finish) => (!crate.pool || crate.pool.includes(finish.id)) && crate.weights[finish.rarity]);
+// Rarities that can actually drop, with their weights.
+export function crateOdds(crate) {
+  const present = new Set(crateFinishes(crate).map((finish) => finish.rarity));
+  return Object.entries(crate.weights).filter(([rarity]) => present.has(rarity));
+}
+export const DAILY_CRATE = { crate: 'field', hours: 20 };
 export const DUPLICATE_REFUND = 0.3;
+export const SCRAP = 0.4;                 // scrapping pays back this share of a skin's value
+export const TRADE_UP = 5;                // this many skins of one rarity make one of the next
+export const NEXT_RARITY = { common: 'rare', rare: 'epic', epic: 'legendary', legendary: 'mythic' };
+export const EPIC_OR_BETTER = ['epic', 'legendary', 'mythic'];
 
 // Minigames. Every game keeps about 5% so coins drain slowly instead of multiplying.
 export const STAKE = { min: 1, max: 500 };
@@ -104,6 +132,17 @@ export function slotsMultiplier(reels) {
   }
   return best;
 }
+
+// Plinko: 12 rows of pegs, each bounce left or right. The slot is the number of rights; ~95% back.
+export const PLINKO = { rows: 12, multipliers: [26, 6, 2.4, 1.4, 1.1, 0.8, 0.45, 0.8, 1.1, 1.4, 2.4, 6, 26] };
+// Higher or lower: cards 1 (ace) to 13 (king), drawn with replacement. A tie loses.
+export const CARD_NAMES = ['', 'A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+export function hiloOdds(card, pick) { return pick === 'higher' ? (13 - card) / 13 : (card - 1) / 13; }
+export function hiloMultiplier(card, pick) { const odds = hiloOdds(card, pick); return odds > 0 ? Math.floor((0.95 / odds) * 100) / 100 : 0; }
+// Crash: the multiplier climbs as e^(rate·t) until the crash point; cash out before it. P(crash ≥ m) = 0.95 / m.
+export const CRASH = { rate: 0.12, max: 100, minAuto: 1.01 };
+export const crashAt = (seconds) => Math.floor(Math.exp(CRASH.rate * Math.max(0, seconds)) * 100) / 100;
+export const crashTime = (multiplier) => Math.log(multiplier) / CRASH.rate;
 
 export const WAGER = { sizes: [1, 2, 3], minStake: 10, maxStake: 5000 };
 export const TRANSFER = { min: 1, max: 100000 };
