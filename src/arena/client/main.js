@@ -16,7 +16,7 @@ import { announce, meter, musicState, play, playImpact, playShot, setAmbience, s
 import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
 import { initDevTools } from './devtools.js';
-import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast } from './menu.js';
+import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
 
 // Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
 const boot = window.__boot;
@@ -101,10 +101,11 @@ net.on('identity', (message) => {
   const invite = new URLSearchParams(location.search).get('room');
   if (invite && !inviteHandled && game.screen === 'home') { inviteHandled = true; toast(`Joining room ${invite}…`); net.enter({ action: 'join', room: invite }); }
 });
-net.on('error', (message) => { toast(message.message, 'warn'); play('deny'); });
-net.on('rejoin-failed', () => { toast('Seat lost.', 'warn'); leaveToHome(); });
+net.on('error', (message) => {
+  hideLoading(); toast(message.message, 'warn'); play('deny'); });
+net.on('rejoin-failed', () => { hideLoading(); toast('Seat lost.', 'warn'); leaveToHome(); });
 bus.on('logged-out', () => { if (game.screen !== 'home') leaveToHome(); });
-net.on('left', (message) => { game.profile = message.profile; game.publicRooms = message.rooms; leaveToHome(); });
+net.on('left', (message) => { hideLoading(); game.profile = message.profile; game.publicRooms = message.rooms; leaveToHome(); });
 
 function leaveToHome() {
   game.room = null; game.id = null; game.you = null; game.roster.clear(); game.marks.clear();
@@ -126,6 +127,8 @@ net.on('welcome', (message) => {
   arena.loadMap(message.map);
   hud.layers = null;
   arena.resetRound();
+  // The world is up: the wait is over.
+  requestAnimationFrame(() => hideLoading());
   message.broken.forEach((id) => arena.breakGlass(id));
   message.shields.forEach((shield) => arena.addShield(shield, !isEnemyTeam(shield.team)));
   arena.setBarriers(Boolean(message.barriers));
@@ -484,6 +487,13 @@ const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
 const scopeTilt = new THREE.Quaternion();
 const royale = initRoyale({ arena, hud, player });
 const devtools = initDevTools({ player, operators, camera });
+// Runs one part of a frame. The first time a part throws it is reported, then it is left to try again.
+const broken = new Set();
+function step(name, run) {
+  try { run(); } catch (error) {
+    if (!broken.has(name)) { broken.add(name); console.error(`${name} failed this frame`, error); }
+  }
+}
 function frame(now = 0) {
   requestAnimationFrame(frame);
   // Frame cap: skip this tick if the previous frame was drawn too recently (small tolerance so 60 on a 60 Hz screen is not halved).
@@ -508,11 +518,13 @@ function frame(now = 0) {
   }
   const debugCam = window.__arena?.debugCam; // handy for screenshots, in the menu or in a match: { pos: [x,y,z], look: [x,y,z] }
   if (debugCam) { camera.position.set(...debugCam.pos); camera.lookAt(...debugCam.look); }
-  operators.update(dt, net.time(), camera, wallDt);
-  effects.update(dt);
-  arena.update(dt, camera);
-  royale.update(dt);
-  devtools.update(dt);
+  // One misbehaving part of a frame must not take the rest of the game with it: without this a single
+  // throw here stops the HUD, the input and every overlay until the page is reloaded.
+  step('operators', () => operators.update(dt, net.time(), camera, wallDt));
+  step('effects', () => effects.update(dt));
+  step('arena', () => arena.update(dt, camera));
+  step('royale', () => royale.update(dt));
+  step('dev tools', () => devtools.update(dt));
   camera.updateMatrixWorld();
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));

@@ -157,7 +157,8 @@ function swing(dir, vel, force, length, damping, dt, limit, onHit) {
 export function updateCharm(charm, dt, { gravity = DOWN, jolt = null, onClink = null, scale = 1 } = {}) {
   const data = charm.userData, body = data.physics;
   const step = Math.min(dt, 0.05);
-  if (step <= 0) return;
+  if (step <= 0 || !charm.parent) return;                 // nothing to hang from, nothing to swing
+
   // How the attachment point is accelerating, from where it has been the last three frames.
   charm.updateWorldMatrix(true, false);
   const point = scratch.point.setFromMatrixPosition(charm.matrixWorld);

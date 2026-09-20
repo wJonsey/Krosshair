@@ -476,7 +476,29 @@ function play_(payload) {
     if (!net.identified || game.profile?.name !== game.name) { pendingPlay = payload; play('ready'); net.identify(); return; }
   } else if (!net.identified) { toast('Log in or sign up to play.', 'warn'); setHomePage('play'); $('#auth-username')?.focus(); play('deny'); return; }
   play('ready');
+  // The island is a big world to build, so say what is happening instead of looking frozen.
+  const where = payload.action === 'royale' ? 'Kestrel Island' : payload.action === 'range' ? 'the practice range' : payload.queue === 'ranked' ? 'a ranked match' : TEAM_MODES[payload.queue] ? `a ${payload.queue}` : 'a match';
+  showLoading(`Dropping into ${where}`, payload.action === 'royale' ? 'Building the island' : 'Finding a room');
   net.enter(payload);
+}
+
+// A plain overlay while a room is found and its map is built. Anything that takes us out of the wait
+// clears it, and it never outstays 25 seconds even if a message goes missing.
+let loadingTimer = null;
+const loadingCard = document.createElement('div');
+loadingCard.className = 'loading-card hidden';
+loadingCard.innerHTML = '<div><p class="eyebrow" id="loading-sub">Loading</p><h2 id="loading-title">Dropping in</h2><div class="loading-bar"><i></i></div></div>';
+document.body.append(loadingCard);
+export function showLoading(title, sub = 'Loading') {
+  document.querySelector('#loading-title').textContent = title;
+  document.querySelector('#loading-sub').textContent = sub;
+  loadingCard.classList.remove('hidden');
+  clearTimeout(loadingTimer);
+  loadingTimer = setTimeout(hideLoading, 25000);
+}
+export function hideLoading() {
+  clearTimeout(loadingTimer);
+  loadingCard.classList.add('hidden');
 }
 
 home.addEventListener('click', (event) => {

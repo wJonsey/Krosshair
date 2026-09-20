@@ -641,8 +641,10 @@ function heldGun(data, weapon) {
     model.traverse((part) => { if (part.isMesh) part.castShadow = true; });
     const front = Math.min(-0.2, model.userData.front ?? -0.4);
     // The charm hangs off the left of the receiver, the same place it hangs in your own hands.
-    const charm = buildCharm(data.charm);
+    let charm = buildCharm(data.charm);
+    // Only a gun with a place to hang one gets a charm: an unattached charm has no parent to swing from.
     if (charm && model.userData.charmAt) { charm.position.set(...model.userData.charmAt); charm.scale.setScalar(model.userData.charmScale * 1.15); charm.traverse((part) => { if (part.isMesh) part.castShadow = false; }); model.add(charm); }
+    else charm = null;
     entry = { key, model, charm, reach: -front * GUN_SCALE };
     data.guns.set(key, entry);
     data.gun.add(model);
