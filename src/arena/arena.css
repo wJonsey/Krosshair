@@ -645,7 +645,9 @@ button.room-teaser:hover { --tick: var(--signal); background: rgba(20, 27, 34, .
 
 /* operator */
 .stage { position: relative; display: grid; place-items: center; min-height: min(56vh, 520px); padding: 0 22px; backdrop-filter: blur(14px); background: radial-gradient(ellipse at 50% 78%, rgba(108, 230, 209, .1), transparent 55%), radial-gradient(circle at 50% 40%, rgba(230, 237, 241, .06), transparent 62%), rgba(11, 16, 21, .8); border-bottom: 1px solid var(--hairline); }
-#operator-preview { width: min(360px, 80%); height: min(52vh, 460px); }
+/* Scoped to its own stage: unscoped, this ID beat the play page's canvas rule and pinned the pilot
+   to the top left of a much taller panel. */
+.stage #operator-preview { width: min(360px, 80%); height: min(52vh, 460px); }
 .stage-tag { position: absolute; left: 22px; bottom: 18px; display: grid; gap: 4px; }
 .stage-tag small { color: var(--signal); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
 .stage-tag b { font: 400 20px/1.1 var(--display); text-transform: uppercase; }
@@ -911,24 +913,23 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .earn-list { margin: 8px 0 0; padding: 0; list-style: none; color: var(--haze); font-size: 12px; line-height: 1.8; }
 .earn-list b { color: var(--frost); font-weight: 500; }
 .shop-locked { display: grid; gap: 14px; justify-items: start; max-width: 420px; }
-.shop-skins { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; align-items: start; }
-.shop-weapons { display: grid; gap: 2px; max-height: 620px; overflow-y: auto; padding-right: 4px; }
-.shop-class { margin: 12px 0 4px; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.shop-skins { display: grid; gap: 14px; align-items: start; }
+.gun-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); gap: 4px; }
+.shop-class { grid-column: 1 / -1; margin: 10px 0 2px; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .shop-class:first-child { margin-top: 0; }
-.shop-weapon { display: grid !important; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 8px 10px !important; background: var(--glass) !important; color: var(--haze) !important; border: 0 !important; border-left: 2px solid transparent !important; font: 400 13px var(--body) !important; text-transform: none !important; letter-spacing: 0 !important; text-align: left; }
-.shop-weapon img { width: 16px; height: 16px; }
-.shop-weapon small { color: var(--graphite); font: 500 10px var(--mono); }
-.shop-weapon.active { color: var(--frost) !important; border-left-color: var(--signal) !important; background: rgba(20, 27, 34, .85) !important; }
+.shop-weapon { padding: 8px 4px !important; background: rgba(230, 237, 241, .04) !important; color: var(--haze) !important; border: 1px solid var(--hairline-strong) !important; font: 500 10px/1 var(--mono) !important; letter-spacing: .08em !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shop-weapon:hover { border-color: var(--signal) !important; background: rgba(108, 230, 209, .1) !important; color: var(--signal) !important; }
+.shop-weapon.active { color: var(--void) !important; border-color: var(--frost) !important; background: var(--frost) !important; }
 .skin-preview { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 20px; align-items: center; }
 .skin-preview img { width: 100%; aspect-ratio: 720 / 300; object-fit: contain; }
 .skin-preview small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .14em; }
 .skin-preview h3 { margin: 6px 0 8px; font: 400 20px/1.2 var(--display); text-transform: uppercase; }
 .skin-preview span { color: var(--haze); font-size: 13px; line-height: 1.6; }
-.finish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
-.finish-card { display: grid; gap: 8px; padding: 10px; background: var(--glass); border-top: 2px solid var(--rarity, var(--hairline-strong)); }
+.finish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 8px; }
+.finish-card { display: grid; gap: 7px; padding: 9px; background: var(--glass); border-top: 2px solid var(--rarity, var(--hairline-strong)); }
 .finish-card.showing { box-shadow: inset 0 0 0 1px var(--hairline-strong); background: rgba(20, 27, 34, .85); }
 .finish-look { display: grid !important; gap: 4px; padding: 0 !important; background: transparent !important; border: 0 !important; color: var(--frost) !important; text-align: left; text-transform: none !important; letter-spacing: 0 !important; font: 400 13px var(--body) !important; }
-.finish-look img, .finish-plain { display: block; width: 100%; height: 54px; object-fit: cover; }
+.finish-look img, .finish-plain { display: block; width: 100%; height: 46px; object-fit: cover; }
 .finish-plain { background: linear-gradient(135deg, #2a3038, #3d4853); }
 .finish-look small { color: var(--rarity, var(--haze)); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .finish-card .mini { justify-self: start; display: inline-flex !important; align-items: center; gap: 6px; }
@@ -1013,7 +1014,6 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
   .shop-skins, .shop-crates, .shop-wallet { grid-template-columns: 1fr; }
   .game-grid { grid-template-columns: 1fr; }
   .skin-preview { grid-template-columns: 1fr; }
-  .shop-weapons { max-height: 220px; }
 }
 .menu-tools .coin-chip .coins { display: inline-flex; margin: 0; }
 
@@ -1035,7 +1035,7 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 @keyframes mythic-glow { from { box-shadow: inset 0 0 0 1px rgba(255, 79, 163, .45), 0 0 30px rgba(255, 79, 163, .12); } to { box-shadow: inset 0 0 0 1px rgba(90, 184, 255, .45), 0 0 40px rgba(90, 184, 255, .16); } }
 .reel-item.rarity-mythic, .reel-item.rarity-legendary { box-shadow: 0 0 14px color-mix(in srgb, var(--rarity) 45%, transparent); }
 .crate-result.rarity-mythic, .crate-result.rarity-legendary { animation: card-in .35s var(--ease) both, mythic-glow 3s ease-in-out infinite alternate; }
-.crate-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.crate-pick { display: grid; gap: 12px; margin-bottom: 12px; }
 .crate-card { display: grid !important; gap: 4px; justify-items: start; padding: 12px 14px !important; background: rgba(5, 8, 11, .5) !important; color: var(--frost) !important; border: 1px solid var(--hairline-strong) !important; text-transform: none !important; letter-spacing: 0 !important; font: 400 13px var(--body) !important; text-align: left; }
 .crate-card b { font: 400 14px var(--display); text-transform: uppercase; }
 .crate-card small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
@@ -1048,7 +1048,6 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 
 /* ---------- crates v2: picker, daily, reveal, feed ---------- */
 .shop-crates { grid-template-columns: minmax(0, 1fr) 300px; }
-.crate-pick { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .crate-card { border-top: 2px solid var(--crate) !important; }
 .crate-card.active { box-shadow: inset 0 0 0 1px var(--crate), 0 0 22px color-mix(in srgb, var(--crate) 22%, transparent); border-color: var(--crate) !important; }
 .crate-card b { color: var(--frost) !important; }
@@ -1101,8 +1100,8 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 .trade-slots { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 12px 0; }
 .trade-slots img, .trade-slots i { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; border: 1px dashed var(--hairline-strong); }
 .trade-slots img { border-style: solid; }
-.inv-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
-.inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.inv-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); gap: 8px; }
 .inv-card { display: grid !important; gap: 4px; padding: 10px !important; background: var(--glass) !important; border: 0 !important; border-top: 2px solid var(--rarity) !important; color: var(--frost) !important; text-align: left; text-transform: none !important; letter-spacing: 0 !important; font: 400 13px var(--body) !important; }
 .inv-card img { width: 100%; aspect-ratio: 720 / 300; object-fit: contain; }
 .inv-card small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .06em; }
@@ -1112,7 +1111,6 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 .inv-card.blocked { opacity: .35; }
 .inv-card.rarity-mythic, .inv-card.rarity-legendary { position: relative; overflow: hidden; }
 @media (max-width: 1020px) {
-  .crate-pick { grid-template-columns: 1fr 1fr; }
   .reveal, .inv-top { grid-template-columns: 1fr; }
   .reveal-row { grid-template-columns: repeat(3, 1fr); }
 }
@@ -1128,8 +1126,8 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 .try-tag .ghost-button { padding: 6px 10px !important; font-size: 9px !important; }
 .tracer-demo { position: absolute; right: 18px; top: 40px; width: 4px; height: 160px; background: linear-gradient(transparent, var(--tracer), transparent); box-shadow: 0 0 12px var(--tracer); transform: rotate(18deg); }
 .gear-kinds { flex-wrap: wrap; margin-bottom: 12px; }
-.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.gear-card { display: grid; gap: 9px; padding: 12px; background: var(--glass); border-top: 2px solid var(--hairline-strong); }
+.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 8px; }
+.gear-card { display: grid; gap: 7px; padding: 10px; background: var(--glass); border-top: 2px solid var(--hairline-strong); }
 .gear-card.on { border-top-color: var(--ally); }
 .gear-card.showing { box-shadow: inset 0 0 0 1px var(--signal); background: rgba(20, 27, 34, .85); }
 .gear-card.locked .gear-look b { color: var(--haze) !important; }
@@ -1231,7 +1229,7 @@ button.cash-out .coins { color: var(--void); }
 .crate-thumb { display: block; width: 84px; height: 63px; margin: -6px 0 2px -8px; object-fit: contain; filter: drop-shadow(0 6px 8px rgba(0, 0, 0, .55)); transition: transform .25s var(--ease); }
 .crate-card:hover .crate-thumb, .crate-card.active .crate-thumb { transform: translateY(-3px) scale(1.06); }
 .daily-crate .crate-thumb { margin: -8px 4px -8px -6px; }
-.charm-thumb { display: block; width: 96px; height: 72px; margin: -6px auto 2px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
+.charm-thumb { display: block; width: 84px; height: 62px; margin: -6px auto 2px; object-fit: contain; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .5)); }
 
 /* ---------- the reveal ----------
    A face-down card in the drop's colour holds for --tease seconds (longer for better drops), shaking harder
@@ -1344,8 +1342,9 @@ button.cash-out .coins { color: var(--void); }
 @media (min-width: 1021px) {
   .shop-crates { grid-template-columns: 290px minmax(0, 1fr) 320px; grid-template-rows: auto auto 1fr; }
   .shop-crates .crate-main { display: contents; }
-  .shop-crates .crate-pick { grid-column: 1; grid-row: 1; grid-template-columns: 1fr; margin: 0; }
-  .shop-crates .daily-crate { grid-column: 1; grid-row: 2; margin: 0; }
+  .shop-crates .crate-pick { grid-column: 1; grid-row: 2; margin: 0; }
+  .shop-crates .crate-row { grid-template-columns: 1fr; }
+  .shop-crates .daily-crate { grid-column: 1; grid-row: 1; margin: 0; }
   .shop-crates .crate-panel { grid-column: 2; grid-row: 1 / span 3; margin: 0; display: flex; flex-direction: column; min-height: calc(100vh - 250px); }
   .shop-crates .crate-side { grid-column: 3; grid-row: 1 / span 3; }
   .shop-crates .crate-card { grid-template-columns: auto 1fr auto; align-items: center; column-gap: 12px; padding: 10px 14px !important; }
@@ -1358,19 +1357,19 @@ button.cash-out .coins { color: var(--void); }
   .shop-crates .reveal-flip, .shop-crates .reveal .skin-stage { height: clamp(240px, 42vh, 460px); }
   .shop-skins .skin-stage { height: clamp(240px, 34vh, 380px); }
   .shop-gear { grid-template-columns: minmax(340px, .75fr) minmax(0, 1.6fr); }
-  .shop-gear .skin-stage.tall { height: calc(100vh - 350px); min-height: 440px; }
+  .shop-gear .skin-stage.tall { height: calc(100vh - 300px); min-height: 460px; }
   .shop-gear .operator-try { position: sticky; top: 84px; }
   .shop-charms { grid-template-columns: minmax(340px, .8fr) minmax(0, 1.6fr); align-items: start; }
   .shop-charms .skin-preview { position: sticky; top: 84px; grid-template-columns: 1fr; }
   .shop-charms .skin-stage { height: clamp(260px, 44vh, 480px); }
 }
 .shop-gear .gear-kinds { flex-wrap: wrap; margin-bottom: 12px; }
-.shop-gear .gear-grid, .shop-charms .gear-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; }
-.shop-gear .gear-card, .shop-charms .gear-card { padding: 14px; align-content: start; transition: transform .2s var(--ease), background .2s; }
+.shop-gear .gear-grid, .shop-charms .gear-grid { grid-template-columns: repeat(auto-fill, minmax(142px, 1fr)); gap: 8px; }
+.shop-gear .gear-card, .shop-charms .gear-card { padding: 10px; align-content: start; transition: transform .2s var(--ease), background .2s; }
 .shop-gear .gear-card:hover, .shop-charms .gear-card:hover { transform: translateY(-2px); background: rgba(20, 27, 34, .85); }
 .gear-look { width: 100%; }
 .gear-thumb { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; margin-bottom: 4px; background: radial-gradient(ellipse at 50% 60%, rgba(230, 237, 241, .08), transparent 70%); }
-.gear-card .gear-swatch { width: 100%; height: 72px; }
+.gear-card .gear-swatch { width: 100%; height: 54px; }
 .gear-card.locked .gear-thumb { filter: saturate(.5) brightness(.75); }
 .skin-stage canvas { display: block; width: 100%; height: 100%; }
 
@@ -1429,7 +1428,7 @@ button.cash-out .coins { color: var(--void); }
 
 /* ---- The crate page fits the window: the lists scroll inside it, never the page. */
 @media (min-width: 1021px) {
-  .shop-crates { height: calc(100vh - var(--shop-head, 210px)); min-height: 420px; grid-template-rows: minmax(120px, 1fr) auto; }
+  .shop-crates { height: calc(100vh - var(--shop-head, 210px)); min-height: 420px; grid-template-rows: auto minmax(120px, 1fr); }
   .shop-crates .crate-pick, .shop-crates .crate-side, .shop-crates .crate-panel { align-self: stretch; }
   .shop-crates .crate-pick { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
   .shop-crates .crate-panel { min-height: 0; overflow: hidden; }
@@ -1438,12 +1437,10 @@ button.cash-out .coins { color: var(--void); }
   .shop-crates .reel { height: clamp(96px, 13vh, 136px); }
   .shop-crates .reveal-flip, .shop-crates .reveal .skin-stage { height: clamp(200px, 34vh, 420px); }
 }
-/* Tablets and phones: the crates become a swipeable strip and the stage follows the screen height. */
+/* Tablets and phones: the crates wrap into their groups and the stage follows the screen height. */
 @media (max-width: 1020px) {
   .shop-crates { grid-template-columns: minmax(0, 1fr); height: auto; }
   .shop-crates > *, .crate-main > * { min-width: 0; }
-  .crate-pick { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(148px, 42%); grid-template-columns: none; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; }
-  .crate-card { scroll-snap-align: start; }
   .skin-stage.crate-stage { height: clamp(180px, 30vh, 280px); }
   .reel { height: clamp(96px, 14vh, 136px); }
   .reel-item { width: 96px; }
@@ -1453,9 +1450,46 @@ button.cash-out .coins { color: var(--void); }
   .drop-feed { max-height: 220px; overflow-y: auto; }
 }
 @media (max-width: 560px) {
-  .crate-pick { grid-auto-columns: minmax(136px, 62%); }
   .crate-panel .button-row { flex-wrap: wrap; }
   .crate-panel .button-row button { flex: 1 1 140px; }
+}
+
+/* ---- Shop: crates grouped by their rarity floor, finishes as one global wall. */
+.crate-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(144px, 1fr)); gap: 8px; }
+.crate-block .crate-thumb { width: 64px; height: 48px; margin: -4px 0 2px -6px; }
+.finish-block .rarity-filter { margin: 0 0 12px; }
+.screen .finish-block .rarity-filter button { padding: 8px 12px; font-size: 10px; }
+@media (min-width: 1021px) {
+  /* Beside the stage the picker is a list, not a shelf, so all nine crates land on one screen. */
+  .shop-crates .crate-pick { gap: 8px; }
+  .shop-crates .crate-block { padding: 10px 12px; }
+  .shop-crates .crate-block .block-head { margin-bottom: 10px; }
+  .shop-crates .crate-row { gap: 5px; }
+  .shop-crates .crate-card { padding: 8px 12px !important; column-gap: 10px; }
+  /* A wrapped crate name was what pushed the ninth crate out of view. Keep it on one line. */
+  .shop-crates .crate-card b { font-size: 13px; white-space: nowrap; }
+  .shop-crates .daily-crate { padding: 9px 14px !important; }
+  .shop-crates .daily-crate .crate-thumb { width: 62px; height: 47px; margin: -6px 4px -6px -4px; }
+  /* Sentence case fits the line; the mono caps took three. */
+  .shop-crates .daily-crate small { font: 400 12px var(--body); letter-spacing: 0; text-transform: none; }
+  .crate-block .crate-thumb { width: 44px; height: 33px; margin: 0 0 0 -2px; }
+  /* Same deal as the crate page: the wall scrolls inside its block, so the balance,
+     the filter and the turntable never leave the screen. */
+  .shop-skins { grid-template-columns: minmax(300px, .8fr) minmax(0, 2.2fr); height: calc(100vh - var(--shop-head, 210px)); min-height: 420px; align-items: stretch; }
+  .shop-skins .skin-side { display: grid; gap: 14px; align-content: start; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+  .shop-skins .skin-preview { grid-template-columns: 1fr; gap: 14px; margin: 0; }
+  .shop-skins .skin-stage { height: clamp(180px, 22vh, 300px); }
+  .shop-skins .finish-block { display: flex; flex-direction: column; min-height: 0; }
+  .shop-skins .finish-grid { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; align-content: start; }
+  .shop-skins .gun-block { padding: 12px 11px; }
+  .shop-skins .gun-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+  .shop-skins .shop-weapon { padding-inline: 3px !important; }
+}
+@media (max-width: 1020px) {
+  .shop-skins .skin-stage { height: clamp(170px, 26vh, 260px); }
+  /* No room for a side column here, so the wall runs long. The filter rides with it,
+     parked under the 99px bar, so you can cut the list down from anywhere in it. */
+  .shop-skins .rarity-filter { position: sticky; top: 99px; z-index: 3; display: flex; background: var(--glass-solid); backdrop-filter: blur(12px); }
 }
 
 /* ---- The kill feed shows the gun that did it, wearing the killer's skin. */
@@ -1493,3 +1527,103 @@ button.cash-out .coins { color: var(--void); }
 .online-row small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .online-row span { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .online-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
+
+/* ---- ranked: the competitive hub. Everything takes its colour from the tier you are standing in. ---- */
+.ranked-page .page-title { margin-bottom: 18px; }
+.ranked-gate { max-width: 560px; }
+.ranked-gate p { color: var(--haze); font-size: 14px; line-height: 1.6; margin-bottom: 16px; }
+.ranked-hero { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, 1fr); gap: 14px; margin-bottom: 14px; }
+.ranked-hero .panel { margin: 0; }
+.rank-now { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 22px; background: linear-gradient(115deg, color-mix(in srgb, var(--rank) 16%, transparent), transparent 58%), var(--glass) !important; }
+.rank-emblem { display: grid; place-items: center; width: 132px; height: 132px; background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--rank) 26%, transparent), transparent 68%); }
+.rank-emblem .rank-badge { filter: drop-shadow(0 0 14px color-mix(in srgb, var(--rank) 55%, transparent)); }
+.rank-read h2 { margin: 2px 0 6px; font: 400 clamp(24px, 2.6vw, 38px)/1 var(--display); text-transform: uppercase; color: var(--rank); }
+.rank-read .sr { display: block; margin-bottom: 12px; font: 500 15px var(--mono); letter-spacing: .1em; color: var(--frost); }
+.rank-read small { display: block; margin-top: 8px; color: var(--haze); font-size: 12px; line-height: 1.5; }
+.sr-meter { height: 8px; background: rgba(230, 237, 241, .08); overflow: hidden; }
+.sr-meter i { display: block; height: 100%; background: var(--rank); box-shadow: 0 0 12px color-mix(in srgb, var(--rank) 60%, transparent); transition: width .5s var(--ease); }
+
+.ladder { display: flex; flex-direction: column; gap: 4px; }
+.ladder-step { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 10px; padding: 6px 10px; border-left: 2px solid var(--hairline-strong); opacity: .45; }
+.ladder-step.reached { opacity: .8; border-left-color: var(--rank); }
+.ladder-step.here { opacity: 1; border-left-color: var(--rank); background: color-mix(in srgb, var(--rank) 12%, transparent); }
+.ladder-step b { font: 400 13px var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.ladder-step.here b { color: var(--rank); }
+.ladder-step small { color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .1em; }
+.ladder-step em { padding: 2px 7px; background: var(--rank); color: var(--void); font: 700 9px var(--mono); font-style: normal; letter-spacing: .14em; }
+
+.ranked-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.ranked-grid .panel { margin: 0; }
+.rank-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 10px; margin-top: 12px; }
+.rank-stat b { display: block; font: 400 21px var(--display); }
+.rank-stat small { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.rank-stat.good b { color: var(--ally); }
+.rank-stat.bad b { color: var(--enemy); }
+.rank-streak { margin-top: 14px; font-size: 12px; }
+.form-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+.pip { display: grid; place-items: center; width: 26px; height: 26px; font: 700 11px var(--mono); font-style: normal; border: 1px solid var(--hairline-strong); color: var(--haze); }
+.pip.win { border-color: var(--ally); color: var(--ally); background: rgba(108, 230, 209, .1); }
+.pip.loss { border-color: var(--enemy); color: var(--enemy); background: rgba(255, 77, 61, .1); }
+.sr-track { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; font: 500 10px var(--mono); letter-spacing: .06em; }
+.sr-track .up { color: var(--ally); }
+.sr-track .down { color: var(--enemy); }
+.rank-link { padding: 0 !important; background: none !important; border: 0 !important; line-height: 0; }
+.rank-link:hover { filter: brightness(1.3); }
+@media (max-width: 1020px) { .ranked-hero { grid-template-columns: 1fr; } .rank-now { gap: 16px; } .rank-emblem { width: 104px; height: 104px; } }
+@media (max-width: 560px) { .rank-now { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+
+/* ---- Locker: nine slots up top, one rack below. Same blocks as the play page.
+   The slot row answers what you are wearing, the rack answers what else there is, so the rack is the
+   only thing that scrolls and the operator never leaves the screen. */
+.gear-side { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.slot-block .size-row { grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); gap: 6px; }
+.slot-chip { padding: 8px 10px !important; gap: 2px !important; min-width: 0; }
+.slot-chip b { font: 500 10px var(--mono) !important; letter-spacing: .1em; }
+.slot-chip span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-chip.active { border-color: var(--signal) !important; background: rgba(108, 230, 209, .12) !important; }
+.slot-chip.active b { color: var(--signal); }
+.rack-block { min-width: 0; }
+.rack-block .inv-head { margin-bottom: 10px; }
+.rack-block .rarity-filter { margin: 0; }
+/* The rack is already a pane of glass, so its cards take the lighter chip tint instead of a second one. */
+.rack-block .gear-card { background: rgba(230, 237, 241, .04); }
+.rack-block .inv-card { background: rgba(230, 237, 241, .04) !important; }
+.shop-inventory .inv-top { margin-bottom: 12px; }
+@media (min-width: 1021px) {
+  /* Operator and Charms: the preview column is fixed, so the rack takes the height left over and scrolls in place. */
+  .shop-gear .gear-side { height: calc(100vh - 240px); min-height: 470px; grid-template-rows: auto minmax(0, 1fr); }
+  .shop-gear .rack-block, .shop-charms .rack-block { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+  .shop-charms .rack-block { height: calc(100vh - 240px); min-height: 470px; }
+  .shop-gear .gear-grid, .shop-charms .gear-grid { min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 6px; align-content: start; }
+  /* Skins keeps the page scroll: the preview and the trade-up sit above the grid, not beside it. */
+  .shop-inventory .inv-grid { max-height: calc(100vh - 500px); min-height: 200px; overflow-y: auto; scrollbar-width: thin; padding-right: 6px; }
+}
+/* Tablets and phones: the operator shrinks so the slots are not a whole screen away. */
+@media (max-width: 1020px) { .shop-gear .skin-stage.tall { height: clamp(300px, 42vh, 420px); } }
+/* Phones: fewer across, and the racks grow with the page instead of scrolling inside it. */
+@media (max-width: 560px) {
+  .slot-block .size-row { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); }
+  .shop-gear .gear-grid, .shop-charms .gear-grid { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+  .inv-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+}
+/* Signed out: the nine groups flow two or three across beside the preview, not one long column. */
+@media (min-width: 1021px) {
+  .page-locker.menu-page { grid-template-columns: minmax(0, .9fr) minmax(420px, 1.1fr); }
+  .page-locker .page-side { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-content: start; }
+}
+
+/* ---- notice card: anything a pilot has to read before carrying on ---- */
+.notice-card { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 20px; background: rgba(4, 6, 9, .82); backdrop-filter: blur(6px); }
+.notice-card.hidden { display: none; }
+.notice-panel { width: min(520px, 100%); padding: 26px 28px; background: rgba(12, 17, 22, .97); border: 1px solid var(--hairline-strong); border-top: 3px solid var(--signal); animation: notice-in .22s var(--ease) both; }
+.notice-card.hot .notice-panel { border-top-color: #ff9d3d; }
+.notice-panel h2 { margin: 6px 0 14px; font: 400 clamp(19px, 2vw, 25px)/1.2 var(--display); text-transform: uppercase; }
+.notice-card.hot .notice-panel .eyebrow { color: #ff9d3d; }
+.notice-body p { margin: 0 0 11px; color: var(--haze); font-size: 13.5px; line-height: 1.6; }
+.notice-body p:last-child { margin-bottom: 0; }
+.notice-body b { color: var(--frost); }
+.notice-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.notice-go { padding: 10px 16px !important; background: var(--signal) !important; color: var(--void) !important; border: 0 !important; font: 500 11px var(--mono) !important; letter-spacing: .12em; }
+.notice-card.hot .notice-go { background: #ff9d3d !important; }
+.notice-go:hover { filter: brightness(1.1); }
+@keyframes notice-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }

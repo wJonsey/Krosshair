@@ -379,7 +379,7 @@ export function initRoyale({ arena, hud, player }) {
   // Early access note, shown each time you join a royale room.
   const note = document.createElement('div');
   note.className = 'royale-note';
-  note.innerHTML = '<div><b>EARLY ACCESS</b>Battle royale is in very early development. Expect bugs. Feedback and bug reports are really appreciated.</div><button type="button">GOT IT</button>';
+  note.innerHTML = '<div><b>PLAYTEST BUILD</b>This mode is the rawest thing in the game and it is here to be broken. Expect bugs. Tell us what you find.</div><button type="button">GOT IT</button>';
   document.body.append(note);
   let noteTimer = 0, noteRoom = null;
   note.querySelector('button').addEventListener('click', () => { note.classList.remove('on'); clearTimeout(noteTimer); });

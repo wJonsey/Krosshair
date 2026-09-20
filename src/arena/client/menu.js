@@ -1,7 +1,7 @@
 // Everything outside the match: home screen, career, lobby, settings,
 // end-of-match report, share card, tutorial checklist, toasts.
 import * as THREE from 'three';
-import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, TEAM_MODES, TEAM_MODE_IDS, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
+import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, RANK_TIERS, TEAM_MODES, TEAM_MODE_IDS, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
@@ -166,6 +166,27 @@ function ensurePreview(placeholder) {
   scene.add(model, disc);
   preview = { canvas, renderer, scene, camera, model, last: performance.now() };
 }
+// Fills the panel with the pilot, measured off the model rather than a fixed distance: the stage is
+// much taller than it is wide, and the name card sits over the bottom of it, so the fit is to the band
+// above the card. Without this the pilot floated in the top corner with dead space under them.
+function framePreview(width, height) {
+  const box = new THREE.Box3().setFromObject(preview.model);
+  const size = box.getSize(new THREE.Vector3());
+  const mid = box.getCenter(new THREE.Vector3());
+  const half = Math.tan((preview.camera.fov * Math.PI / 180) / 2);
+  const card = preview.canvas.parentElement?.querySelector('.play-stage-info');
+  // Only the solid part of the card covers anything: above that it fades to nothing.
+  const covered = card ? Math.min(height * 0.45, card.offsetHeight * 0.6) : 0;
+  const band = Math.max(120, height - covered);
+  // The pilot turns on the spot, so fit whichever of the two horizontal sizes is wider.
+  const tall = (size.y * 1.06) / 2 / half * (height / band);
+  const wide = (Math.max(size.x, size.z) * 1.12) / 2 / half / preview.camera.aspect;
+  const dist = Math.min(Math.max(tall, wide), tall * 1.35);
+  // Drop the camera by half the covered strip so the pilot sits centred in the band, not the panel.
+  const lift = (covered / 2 / height) * (2 * dist * half);
+  preview.camera.position.set(0, mid.y - lift, dist);
+  preview.camera.lookAt(0, mid.y - lift, 0);
+}
 export function renderPreview() {
   if (!preview || home.classList.contains('hidden') || !preview.canvas.isConnected) return;
   const now = performance.now();
@@ -174,8 +195,7 @@ export function renderPreview() {
     preview.width = width; preview.height = height;
     preview.renderer.setSize(width, height, false);
     preview.camera.aspect = width / height;
-    // A narrow slot pulls the camera back so the shoulders and the rifle stay in frame.
-    preview.camera.position.z = 3.7 * Math.max(1, 0.62 / preview.camera.aspect);
+    framePreview(width, height);
     preview.camera.updateProjectionMatrix();
   }
   const dt = Math.min(0.05, (now - preview.last) / 1000);
@@ -247,7 +267,7 @@ function rankPanelHtml(profile) {
 // The menu is split into pages; the hash keeps the page across refreshes and makes Back work.
 // Top-level entries own a group of pages: the first is where the nav button goes, the rest are its tabs.
 const NAV = [
-  ['Play', [['play', 'Matchmaking'], ['rooms', 'Rooms']]],
+  ['Play', [['play', 'Matchmaking'], ['ranked', 'Ranked'], ['rooms', 'Rooms']]],
   ['Locker', [['locker', 'Locker']]],
   ['Shop', [['shop', 'Shop']]],
   ['Games', [['games', 'Games']]],
@@ -294,8 +314,9 @@ function askBoards() {
   boardsAskedAt = performance.now();
   net.send({ type: 'leaderboard' });
 }
-net.on('leaderboard', (message) => { boards = message.boards; if (game.screen === 'home' && (homePage === 'leaderboard' || homePage === 'play')) renderHome(); });
-setInterval(() => { if (game.screen === 'home' && (homePage === 'leaderboard' || homePage === 'play') && !document.hidden) askBoards(); }, 2000);
+const BOARD_PAGES = ['leaderboard', 'play', 'ranked'];
+net.on('leaderboard', (message) => { boards = message.boards; if (game.screen === 'home' && BOARD_PAGES.includes(homePage)) renderHome(); });
+setInterval(() => { if (game.screen === 'home' && BOARD_PAGES.includes(homePage) && !document.hidden) askBoards(); }, 2000);
 const pilotFace = (row) => (row.avatar ? `<img class="avatar" src="${escapeHtml(row.avatar)}" alt="" width="28" height="28" loading="lazy" referrerpolicy="no-referrer" />` : `<i class="avatar blank">${escapeHtml(row.name.slice(0, 1).toUpperCase())}</i>`);
 const boardRank = (id, row) => (id === 'rating' ? rankBadge(rankInfo(row.value), 22) : '');
 const boardRow = (id, row) => `<div class="board-row${row.you ? ' you' : ''}"><b class="place">${row.rank}</b>${pilotFace(row)}<span class="who"><strong>${escapeHtml(row.name)}</strong><small>${titleHtml(row.title)} · LV ${row.level}${id === 'rating' ? ` · ${rankInfo(row.value).name}` : ''}</small></span><em>${boardRank(id, row)}${boardValue(id, row)}</em></div>`;
@@ -330,12 +351,106 @@ function rankedCardHtml() {
     : info.placed ? `${info.name} · ${info.rating} SR` : `Placement ${info.placement.played} / ${info.placement.total}`;
   // One rating, four sizes. Each size queues on its own, so you pick the fight you want.
   return `<section class="mode-block ranked-block${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}>
-    <header class="block-head"><small>03 // RANKED</small><b>Climb the ladder</b><span>${line}</span>${info ? rankBadge(info, 34) : ''}</header>
+    <header class="block-head"><small>03 // RANKED</small><b>Climb the ladder</b><span>${line}</span>${info ? `<button type="button" class="rank-link" data-page="ranked" title="The ladder">${rankBadge(info, 34)}</button>` : ''}</header>
     <div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>
   </section>`;
 }
 // One button per team size, the same shape in ranked and in the unranked queues.
 const sizeChip = (prefix) => (id) => `<button type="button" class="size-chip" data-play="${prefix}${id}"><b>${id.toUpperCase()}</b><span>${TEAM_MODES[id].name}</span></button>`;
+
+// ------------------------------------------------------------------ ranked
+// The history keeps each ranked match's rating swing, so walking it backwards from the current rating
+// rebuilds the whole SR line: the peak, the streak and every result since placements came out of it.
+function rankedSeason() {
+  const played = (game.profile?.history || []).filter((row) => typeof row.rating === 'number');
+  const now = Math.round(game.profile?.rating ?? 1000);
+  let sr = now, peak = now;
+  const games = played.map((row) => {
+    const after = sr;
+    sr -= row.rating;
+    peak = Math.max(peak, after);
+    return { result: row.result, delta: row.rating, mode: row.mode, after };
+  });
+  const count = (result) => played.filter((row) => row.result === result).length;
+  let streak = 0;
+  for (const row of played) { if (row.result !== played[0].result) break; streak += 1; }
+  return { games, played: played.length, wins: count('win'), losses: count('loss'), draws: count('draw'), peak, streak, last: played[0]?.result || null };
+}
+
+function rankedPageHtml() {
+  askBoards();
+  const profile = game.profile;
+  if (!game.username || !profile) {
+    return `<section class="page-wide ranked-page">${groupTabsHtml('ranked')}<p class="eyebrow">Competitive</p><h1 class="page-title">The <em>ladder.</em></h1>
+      <div class="panel ranked-gate"><p>Ranked is humans only, so it needs a Discord login. Your rating, your peak and every match are kept to your account.</p>${authHtml()}</div></section>`;
+  }
+  const info = rankInfo(profile.rating, profile.rankedMatches);
+  const season = rankedSeason();
+  const decided = season.wins + season.losses;
+  const winRate = decided ? Math.round((season.wins / decided) * 100) : 0;
+
+  // The ladder, bottom to top, with the tier you are standing in lit up.
+  const ladder = [...RANK_TIERS].reverse().map((tier) => {
+    const here = info.tier === tier.id;
+    const reached = info.placed && info.rating >= tier.min;
+    return `<div class="ladder-step${here ? ' here' : ''}${reached ? ' reached' : ''}" style="--rank:${tier.color}">
+      ${rankBadge({ placed: true, color: tier.color, division: tier.id === 'apex' ? null : 'I' }, 26)}
+      <b>${tier.name}</b><small>${tier.min} SR</small>${here ? '<em>You</em>' : ''}</div>`;
+  }).join('');
+
+  // Placements hide the rating until they are done, so the hero shows the count instead of a bar.
+  const meter = info.placed
+    ? `<div class="sr-meter"><i style="width:${Math.round(info.progress * 100)}%"></i></div>
+       <small>${info.next ? `${info.toNext} SR to ${info.next}` : 'Top of the ladder. Hold it.'}</small>`
+    : `<div class="sr-meter"><i style="width:${Math.round((info.placement.played / info.placement.total) * 100)}%"></i></div>
+       <small>${info.placement.total - info.placement.played} placement match${info.placement.total - info.placement.played === 1 ? '' : 'es'} to go. They move your rating twice as far.</small>`;
+
+  const form = season.games.slice(0, 10).map((game_) => `<i class="pip ${game_.result}" title="${game_.delta > 0 ? '+' : ''}${game_.delta} SR">${game_.result === 'win' ? 'W' : game_.result === 'loss' ? 'L' : 'D'}</i>`).join('')
+    || '<span class="muted">No ranked matches yet.</span>';
+
+  const stat = (label, value, tone = '') => `<div class="rank-stat${tone ? ` ${tone}` : ''}"><b>${value}</b><small>${label}</small></div>`;
+  const streakLine = season.streak > 1 && season.last ? `${season.streak} ${season.last === 'win' ? 'wins' : season.last === 'loss' ? 'losses' : 'draws'} in a row` : 'No run going';
+  const top = boards?.rating?.top?.slice(0, 5) || [];
+
+  return `<section class="page-wide ranked-page" style="--rank:${info.color}">
+    ${groupTabsHtml('ranked')}
+    <p class="eyebrow">Competitive · ${RANKED_SIZES.length} queues</p>
+    <h1 class="page-title">The <em>ladder.</em></h1>
+    <div class="ranked-hero">
+      <div class="panel rank-now">
+        <div class="rank-emblem">${rankBadge(info, 108)}</div>
+        <div class="rank-read">
+          <p class="eyebrow">${info.placed ? 'Current rank' : 'Placements'}</p>
+          <h2>${info.name}</h2>
+          <b class="sr">${info.placed ? `${info.rating} SR` : `${info.placement.played} / ${info.placement.total}`}</b>
+          ${meter}
+        </div>
+      </div>
+      <div class="panel rank-ladder"><p class="eyebrow">The climb <small>6 tiers · 3 divisions</small></p><div class="ladder">${ladder}</div></div>
+    </div>
+    <div class="ranked-grid">
+      <div class="panel">
+        <p class="eyebrow">This season</p>
+        <div class="rank-stats">${stat('Played', season.played)}${stat('Won', season.wins, 'good')}${stat('Lost', season.losses, 'bad')}${stat('Win rate', `${winRate}%`)}${stat('Peak', `${season.peak}`)}</div>
+        <p class="muted rank-streak">${streakLine}</p>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Recent form <small>newest first</small></p>
+        <div class="form-row">${form}</div>
+        <div class="sr-track">${season.games.slice(0, 10).reverse().map((game_) => `<span class="${game_.delta >= 0 ? 'up' : 'down'}">${game_.delta > 0 ? '+' : ''}${game_.delta}</span>`).join('') || ''}</div>
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Top of the ladder</p>
+        ${top.length ? top.map((row) => boardRow('rating', row)).join('') : `<p class="muted">${boards ? 'Nobody placed yet.' : 'Loading…'}</p>`}
+        <div class="link-row"><button type="button" class="ghost-button" data-page="leaderboard">Full standings →</button></div>
+      </div>
+    </div>
+    <section class="mode-block ranked-block">
+      <header class="block-head"><small>QUEUE</small><b>Pick your size</b><span>One rating across all four. Each queues on its own.</span></header>
+      <div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>
+    </section>
+  </section>`;
+}
 
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
@@ -443,7 +558,7 @@ export function renderHome() {
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') { listening = null; padListening = null; }
-  const pageHtml = SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
     <div class="menu-shell">
@@ -500,9 +615,22 @@ home.addEventListener('input', (event) => { if (!SHOP_PAGES.includes(homePage)) 
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
 
+// The royale is the roughest thing in the build, so nobody walks into it by accident. Asked once a
+// session: the in-match note reminds you after that.
+let royaleWarned = false;
 function play_(payload) {
   unlockAudio();
   if (!net.connected) { toast('Still connecting…', 'warn'); return; }
+  if (payload.action === 'royale' && !royaleWarned) {
+    showNotice({
+      tag: 'Playtest only', tone: 'hot',
+      title: 'Battle royale is the roughest mode in the game.',
+      body: '<p>This one is barely held together. It is the rawest, buggiest thing we have, and it is only open so people can play it and tell us what falls over.</p><p><b>Expect to get stuck, fall through things and lose matches to bugs.</b> Nothing here counts towards your rating.</p><p>Go in wanting to break it, then report what broke.</p>',
+      accept: 'I understand, drop me in', cancel: 'Not now',
+      onAccept: () => { royaleWarned = true; play_(payload); },
+    });
+    return;
+  }
   if (isRanked(payload.queue) && !game.username) { toast('Ranked needs a Discord login.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
   if (game.username) { /* signed in: straight in */ } else if (game.loginRequired && !ACCOUNTS_ENABLED) {
     if (!net.identified) { toast('Log in with Discord to play.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
@@ -538,6 +666,50 @@ export function hideLoading() {
   clearTimeout(loadingTimer);
   loadingCard.classList.add('hidden');
 }
+
+// ------------------------------------------------------------------ warnings
+// One card for anything the pilot has to read before carrying on. It takes the keyboard so Enter or
+// Escape answers it, and it hands back whether they went ahead.
+const noticeCard = document.createElement('div');
+noticeCard.className = 'notice-card hidden';
+document.body.append(noticeCard);
+let noticeGo = null;
+function showNotice({ tag, title, body, accept = 'Got it', cancel = null, tone = '', onAccept = null }) {
+  noticeGo = onAccept;
+  noticeCard.className = `notice-card${tone ? ` ${tone}` : ''}`;
+  noticeCard.innerHTML = `<div class="notice-panel" role="alertdialog" aria-modal="true">
+    <p class="eyebrow">${tag}</p><h2>${title}</h2><div class="notice-body">${body}</div>
+    <div class="notice-buttons">${cancel ? `<button type="button" class="ghost-button" data-notice="no">${cancel}</button>` : ''}<button type="button" class="notice-go" data-notice="yes">${accept}</button></div>
+  </div>`;
+  play('ui');
+  setTimeout(() => noticeCard.querySelector('.notice-go')?.focus(), 0);
+}
+function closeNotice(accepted) {
+  if (noticeCard.classList.contains('hidden')) return;
+  const go = noticeGo;
+  noticeGo = null;
+  noticeCard.classList.add('hidden');
+  noticeCard.innerHTML = '';
+  if (accepted && go) go();
+}
+noticeCard.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-notice]');
+  if (!button) return;
+  play(button.dataset.notice === 'yes' ? 'ready' : 'uiBack');
+  closeNotice(button.dataset.notice === 'yes');
+});
+addEventListener('keydown', (event) => {
+  if (noticeCard.classList.contains('hidden')) return;
+  if (event.key === 'Escape') { event.preventDefault(); closeNotice(false); }
+}, true);
+
+// The whole game is a work in progress, and the first thing a pilot sees should say so.
+addEventListener('krosshair:entered', () => showNotice({
+  tag: 'Heads up',
+  title: 'Krosshair is still in development.',
+  body: '<p>This is a live build, not a finished game. Things break, maps change, and your stats can move around while we work.</p><p>If something looks wrong, tell us. Bug reports are the fastest way to get it fixed.</p>',
+  accept: 'Understood',
+}));
 
 home.addEventListener('click', (event) => {
   const target = event.target.closest('button');

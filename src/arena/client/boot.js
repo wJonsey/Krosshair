@@ -59,17 +59,20 @@
     enter.classList.remove('hidden');
     enter.focus({ preventScroll: true });
   }
-  function close() {
+  function close(entered = false) {
     if (closed) return;
     closed = true;
+    // The menu puts up the build warning, but only for someone who actually sat through the intro:
+    // a rejoin or a deploy refresh drops straight back in and has seen it already.
+    if (entered) setTimeout(() => dispatchEvent(new Event('krosshair:entered')), 400);
     clearInterval(spawnTimer);
     removeEventListener('pointermove', aim);
     removeEventListener('keydown', onKey);
     el.classList.add('leaving');
     setTimeout(() => el.remove(), calm ? 0 : 650);
   }
-  enter.addEventListener('click', (event) => { event.stopPropagation(); if (ready) close(); });
-  function onKey(event) { if (ready && (event.code === 'Enter' || event.code === 'Space')) { event.preventDefault(); close(); } }
+  enter.addEventListener('click', (event) => { event.stopPropagation(); if (ready) close(true); });
+  function onKey(event) { if (ready && (event.code === 'Enter' || event.code === 'Space')) { event.preventDefault(); close(true); } }
   addEventListener('keydown', onKey);
 
   // ----- the logo tracks your aim -----

@@ -386,11 +386,11 @@ function showingFinish() { return preview === undefined ? null : preview ?? equi
 // ------------------------------------------------------------------ skins
 const rarityOrder = () => (isDev() ? [...PUBLIC_RARITIES, 'dev'] : PUBLIC_RARITIES);
 function skinsHtml() {
-  const profile = game.profile;
-  const owned = profile.finishes || [];
+  const owned = game.profile.finishes || [];
   const equipped = equippedFinish();
   const showing = showingFinish();
-  const weapons = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map(weaponButton).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
+  const pool = isDev() ? FINISHES : PUBLIC_FINISHES;
+  const guns = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map(weaponButton).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
   const card = (finish) => {
     const info = finishInfo(finish.id), rarity = RARITY[info.rarity];
     const mine = owned.includes(finish.id) || (devFinish(finish.id) && isDev()), on = equipped === finish.id;
@@ -402,19 +402,28 @@ function skinsHtml() {
   };
   const stock = `<div class="finish-card${!showing ? ' showing' : ''}${!equipped ? ' on' : ''}"><button type="button" class="finish-look" data-preview=""><i class="finish-plain"></i><b>Factory</b><small>Default</small></button>${equipped ? '<button type="button" class="mini" data-equip="">Strip it off</button>' : '<em class="state on">On every gun</em>'}</div>`;
   const info = showing && finishInfo(showing);
+  // Every rarity carries its size, so the wall reads as bands you can cut it down to.
+  const filter = `<div class="segmented rarity-filter">${['all', ...rarityOrder()].map((id) => {
+    const count = id === 'all' ? pool.length : pool.filter((finish) => finish.rarity === id).length;
+    return `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? 'All' : RARITY[id].name} ${count}</button>`;
+  }).join('')}</div>`;
   return `<div class="shop-skins">
-    <nav class="shop-weapons" aria-label="Weapons">${weapons}</nav>
-    <div class="shop-stage">
+    <div class="skin-side">
       <div class="panel skin-preview${info ? ` rarity-${info.rarity}` : ''}"><div id="skin-stage" class="skin-stage"></div><div><small>${WEAPONS[weaponId].tag}</small><h3>${WEAPONS[weaponId].name}</h3><span>${info ? `<b style="color:${RARITY[info.rarity].color}">${info.name}</b> · ${RARITY[info.rarity].name}${animatedFinish(info.id) ? ' · animated' : ''}` : 'Factory finish'}</span>${info ? `<p class="skin-price">${devFinish(info.id) ? DEV_CLASS.blurb : owned.includes(info.id) ? 'Owned' : RARITY[info.rarity].price ? coins(RARITY[info.rarity].price) : 'Crates only'}</p>` : ''}</div></div>
-      <p class="muted skins-owned">Skins fit every gun. You own ${ownedCount() || '0'}.</p>
-      <div class="segmented rarity-filter">${['all', ...rarityOrder()].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? 'All' : RARITY[id].name}</button>`).join('')}</div>
-      <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${(isDev() ? FINISHES : PUBLIC_FINISHES).filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
-    </div></div>`;
+      <section class="mode-block gun-block">
+        <header class="block-head"><small>01 // TURNTABLE</small><b>Pick a gun</b><span>Preview only. One finish paints all of them.</span></header>
+        <nav class="gun-grid" aria-label="Weapons">${guns}</nav>
+      </section>
+    </div>
+    <section class="mode-block finish-block">
+      <header class="block-head"><small>02 // FINISHES</small><b>${pool.length} paints</b><span>Equip one and the whole locker wears it. You own ${ownedCount() || '0'}.</span></header>
+      ${filter}
+      <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${pool.filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
+    </section></div>`;
 }
+// A finish is global, so a gun here only decides what the turntable holds.
 function weaponButton(weapon) {
-  const finish = game.look.skins?.[weapon.id];
-  const count = (game.profile.finishes || []).length;
-  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}"><span>${weapon.name}</span>${finish ? `<img src="${finishSwatch(finish)}" alt="" />` : ''}<small>${finish ? finishInfo(finish)?.name || '' : ''}</small></button>`;
+  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}" title="${weapon.name}">${weapon.short}</button>`;
 }
 function ownedCount() {
   const count = (game.profile.finishes || []).length;
@@ -425,6 +434,12 @@ function ownedCount() {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 const dropName = (drop) => `${finishInfo(drop.finish).name} · ${WEAPONS[drop.weapon].name}`;
 function crateBox(c) { const image = thumb(`crate:${c.id}`); return image ? `<img class="crate-thumb" src="${image}" alt="" />` : `<i class="crate-box" style="--crate:${c.color}"><b></b></i>`; }
+// Nine crates split on the one thing that changes how an open feels: whether commons are still in the pool.
+const CRATE_GROUPS = [
+  { eyebrow: '01 // EVERY RARITY', name: 'Open stock', note: 'Commons on up. Cheap to chase.', holds: (c) => Boolean(c.weights.common) },
+  { eyebrow: '02 // NO COMMONS', name: 'High grade', note: 'Rare or better, every open.', holds: (c) => !c.weights.common },
+];
+const crateChip = (c) => `<button type="button" class="crate-card${crateId === c.id ? ' active' : ''}" data-crate="${c.id}" style="--crate:${c.color}">${crateBox(c)}<b>${c.name}</b><span>${coins(c.cost)}</span><small>${c.blurb}</small></button>`;
 function cratesHtml() {
   const profile = game.profile;
   const chosen = CRATES[crateId];
@@ -435,7 +450,10 @@ function cratesHtml() {
   const pity = chosen.pity ? `Epic or better within ${plural(chosen.pity - since, 'open')}.` : odds.every(([id]) => EPIC_OR_BETTER.includes(id)) ? 'Every drop is Epic or better.' : '';
   const dailyWait = Math.max(0, (profile.dailyCrate || 0) + DAILY_CRATE.hours * 3600e3 - Date.now());
   const spinning = Boolean(crate) && !reveal?.landed;
-  const picker = `<div class="crate-pick">${Object.values(CRATES).map((c) => `<button type="button" class="crate-card${crateId === c.id ? ' active' : ''}" data-crate="${c.id}" style="--crate:${c.color}">${crateBox(c)}<b>${c.name}</b><span>${coins(c.cost)}</span><small>${c.blurb}</small></button>`).join('')}</div>`;
+  const picker = `<div class="crate-pick">${CRATE_GROUPS.map((group) => {
+    const list = Object.values(CRATES).filter(group.holds).sort((a, b) => a.cost - b.cost);
+    return `<section class="mode-block crate-block"><header class="block-head"><small>${group.eyebrow}</small><b>${group.name}</b><span>${group.note}</span></header><div class="crate-row">${list.map(crateChip).join('')}</div></section>`;
+  }).join('')}</div>`;
   const daily = `<button type="button" class="daily-crate${dailyWait ? ' waiting' : ''}" data-daily="1" ${dailyWait || busy || spinning ? 'disabled' : ''}>${crateBox(CRATES[DAILY_CRATE.crate])}<span><b>Daily crate</b><small>${dailyWait ? `Next one in ${Math.ceil(dailyWait / 3600e3)}h` : 'Free. One field crate a day.'}</small></span></button>`;
   let stageHtml;
   if (reveal?.landed) {
@@ -476,10 +494,10 @@ function cratesHtml() {
   const contents = Object.keys(RARITY).map((rarity) => { const list = crateFinishes(chosen).filter((finish) => finish.rarity === rarity); return list.length ? `<div class="contents-row" style="--rarity:${RARITY[rarity].color}"><small>${RARITY[rarity].name}</small><div>${list.map((finish) => `<img src="${finishSwatch(finish.id)}" alt="${finish.name}" title="${finish.name}" />`).join('')}</div></div>` : ''; }).join('');
   const feed = drops.length ? drops.map((drop) => `<div class="drop-row" style="--rarity:${RARITY[drop.rarity].color}"><img src="${finishSwatch(drop.finish)}" alt="" /><span><b>${escapeHtml(drop.name)}</b> ${dropName(drop)}</span><small>${WHEN(drop.at)}</small></div>`).join('') : '<p class="muted">No big drops yet.</p>';
   return `<div class="shop-crates">
-    <div class="crate-main">${picker}${daily}<div class="panel crate-panel">${stageHtml}</div></div>
+    <div class="crate-main">${daily}${picker}<div class="panel crate-panel">${stageHtml}</div></div>
     <div class="crate-side">
       <div class="panel"><p class="eyebrow">Odds <small>${chosen.name}</small></p><ul class="odds">${oddsHtml}</ul><small class="muted">Duplicates pay back ${Math.round(DUPLICATE_REFUND * 100)}% of the skin’s price.</small></div>
-      <div class="panel"><p class="eyebrow">Inside</p>${contents}</div>
+      <div class="panel"><p class="eyebrow">Inside <small>${crateFinishes(chosen).length} finishes</small></p>${contents}</div>
       <div class="panel"><p class="eyebrow">Big drops</p><div class="drop-feed">${feed}</div></div>
     </div></div>`;
 }
@@ -519,13 +537,21 @@ function inventoryHtml() {
       <div class="panel trade-panel"><p class="eyebrow">Trade-up</p><p class="muted">${TRADE_UP} skins of one rarity for 1 random skin of the next.</p><div class="trade-slots">${slots}</div>
         <div class="button-row">${tradeMode ? `<button type="button" data-trade-go="1" ${trade.length === TRADE_UP && !busy ? '' : 'disabled'}>Trade up${tradeRarity ? ` to ${RARITY[NEXT_RARITY[tradeRarity]].name}` : ''}</button><button type="button" class="ghost-button" data-trade-cancel="1">Cancel</button>` : '<button type="button" class="secondary-button" data-trade-start="1">Pick skins</button>'}</div></div>
     </div>
-    <div class="inv-head"><div class="segmented rarity-filter">${['all', ...PUBLIC_RARITIES].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? `All ${items.length}` : `${RARITY[id].name} ${counts.find(([r]) => r === id)?.[1] || 0}`}</button>`).join('')}</div>${tradeMode ? `<span class="muted">Picking ${trade.length}/${TRADE_UP}</span>` : ''}</div>
-    <div class="inv-grid">${shown.map(card).join('') || '<p class="muted">None of that rarity.</p>'}</div></div>`;
+    <section class="mode-block rack-block">
+      <header class="block-head"><small>COLLECTION</small><b>${plural(items.length, 'finish')}</b><span>One finish covers every gun you carry. Click one to see it.</span></header>
+      <div class="inv-head"><div class="segmented rarity-filter">${['all', ...rarityOrder()].map((id) => `<button type="button" data-rarity="${id}" class="${rarityFilter === id ? 'active' : ''}"${id === 'all' ? '' : ` style="--rarity:${RARITY[id].color}"`}>${id === 'all' ? `All ${items.length}` : `${RARITY[id].name} ${counts.find(([r]) => r === id)?.[1] || 0}`}</button>`).join('')}</div>${tradeMode ? `<span class="muted">Picking ${trade.length}/${TRADE_UP}</span>` : ''}</div>
+      <div class="inv-grid">${shown.map(card).join('') || '<p class="muted">None of that rarity.</p>'}</div>
+    </section></div>`;
 }
 
 // ------------------------------------------------------------------ gear
 // Every operator item in one place. Clicking one tries it on the model; it only sticks once equipped.
-const GEAR_KINDS = [['headgear', 'Headgear'], ['face', 'Face'], ['pack', 'Pack'], ['pattern', 'Pattern'], ['suit', 'Suit colour'], ['visor', 'Visor'], ['tracer', 'Tracer'], ['title', 'Title']];
+// Slot id, the label on its chip, the line above its rack. Worn kit first, then colour, then what trails you.
+const GEAR_KINDS = [
+  ['headgear', 'Headgear', 'Helmets, hats and hoods.'], ['face', 'Face', 'Masks, visors and shades.'], ['pack', 'Pack', 'What rides on your back.'],
+  ['suit', 'Suit', 'The base colour of the suit.'], ['pattern', 'Pattern', 'Camo printed over the suit.'], ['visor', 'Visor', 'The glow through the mask.'],
+  ['tracer', 'Tracer', 'The streak your rounds leave.'], ['title', 'Title', 'The line under your callsign.'],
+];
 const LOOK_KEY = { suit: 'color', visor: 'accent' };
 const lookKey = (kind) => LOOK_KEY[kind] || kind;
 function tryLook() { return tryOn ? { ...game.look, [lookKey(gearKind)]: tryOn } : { ...game.look }; }
@@ -549,10 +575,20 @@ function gearVisual(kind, item) {
   const shot = thumb(`gear:${kind}:${item.id}`);
   return shot ? `<img class="gear-thumb" src="${shot}" alt="" />` : '';
 }
+const wornName = (kind) => COSMETICS[kind].find((item) => item.id === game.look[lookKey(kind)])?.name || 'None';
+// How many of a kind this pilot can actually wear, for the line above its rack.
+const unlockedCount = (kind, items) => items.filter((item) => gearStatus(kind, item).unlocked).length;
+// All nine slots with what is in each, so the loadout reads at a glance. Charms keep their own tab.
+function slotRowHtml() {
+  const chip = (id, label, target, on) => `<button type="button" class="size-chip slot-chip${on ? ' active' : ''}" ${target}><b>${label}</b><span>${escapeHtml(wornName(id))}</span></button>`;
+  return `<div class="size-row slot-row">${GEAR_KINDS.map(([id, label]) => chip(id, label, `data-gear-kind="${id}"`, gearKind === id)).join('')}${chip('charm', 'Charm', 'data-shop-tab="charms"', false)}</div>`;
+}
 function gearHtml() {
   const look = tryLook();
+  const [, kindLabel, kindBlurb] = GEAR_KINDS.find(([id]) => id === gearKind);
+  const items = COSMETICS[gearKind].filter(listed);
   const current = COSMETICS[gearKind].find((item) => item.id === look[lookKey(gearKind)]);
-  const cards = COSMETICS[gearKind].filter(listed).map((item) => {
+  const cards = items.map((item) => {
     const state = gearStatus(gearKind, item);
     return `<div class="gear-card${state.equipped ? ' on' : ''}${tryOn === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-try="${item.id}">${gearVisual(gearKind, item)}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction(gearKind, item, state)}</div>`;
   }).join('');
@@ -560,15 +596,24 @@ function gearHtml() {
     <div class="panel operator-try"><div id="skin-stage" class="skin-stage tall"></div>
       <div class="try-tag"><small${look.title === 'Developer' ? ' class="dev-title"' : ''}>${escapeHtml(look.title)}</small><b>${escapeHtml(game.profile.name)}</b>${current?.dev ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : ''}${tryOn ? `<span>Trying on: ${escapeHtml(current?.name || '')}</span><button type="button" class="ghost-button" data-try-reset="1">Back to mine</button>` : '<span>Click anything to try it on.</span>'}</div>
       ${gearKind === 'tracer' ? `<i class="tracer-demo${look.tracer === 'devprism' ? ' dev-prism' : ''}" style="--tracer:${look.tracer === 'devprism' ? '#00ffc6' : look.tracer}"></i>` : ''}</div>
-    <div class="gear-side"><div class="segmented gear-kinds">${GEAR_KINDS.map(([id, label]) => `<button type="button" data-gear-kind="${id}" class="${gearKind === id ? 'active' : ''}">${label}</button>`).join('')}</div>
-      <div class="gear-grid">${cards}</div></div></div>`;
+    <div class="gear-side">
+      <section class="mode-block slot-block">
+        <header class="block-head"><small>LOADOUT</small><b>Nine slots</b><span>Pick a slot, then click a piece to try it on.</span></header>
+        ${slotRowHtml()}
+      </section>
+      <section class="mode-block rack-block">
+        <header class="block-head"><small>${kindLabel.toUpperCase()}</small><b>${escapeHtml(current?.name || 'None')}</b><span>${kindBlurb} ${unlockedCount(gearKind, items)} of ${items.length} yours.</span></header>
+        <div class="gear-grid">${cards}</div>
+      </section>
+    </div></div>`;
 }
 
 // ------------------------------------------------------------------ charms
 const CHARM_GUNS = ['talon', 'm44', 'wasp', 'breaker', 'p9'];
 function charmsHtml() {
   const showing = charmTry ?? game.look.charm;
-  const cards = COSMETICS.charm.filter(listed).map((item) => {
+  const charms = COSMETICS.charm.filter(listed);
+  const cards = charms.map((item) => {
     const state = gearStatus('charm', item);
     return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
   }).join('');
@@ -576,7 +621,10 @@ function charmsHtml() {
   return `<div class="shop-charms">
     <div class="panel skin-preview"><div id="skin-stage" class="skin-stage"></div><div><small>${item?.dev ? devChip : 'Gun charm'}</small><h3>${escapeHtml(item?.name || 'None')}</h3><span>${item?.dev ? DEV_CLASS.blurb : 'On a chain. Moves with recoil, reloads and every step.'}</span>
       <div class="segmented charm-guns">${CHARM_GUNS.map((id) => `<button type="button" data-charm-gun="${id}" class="${charmWeapon === id ? 'active' : ''}">${WEAPONS[id].short}</button>`).join('')}</div></div></div>
-    <div class="gear-grid">${cards}</div></div>`;
+    <section class="mode-block rack-block">
+      <header class="block-head"><small>CHARM</small><b>${escapeHtml(item?.name || 'None')}</b><span>One charm, every gun. ${unlockedCount('charm', charms)} of ${charms.length} yours.</span></header>
+      <div class="gear-grid">${cards}</div>
+    </section></div>`;
 }
 
 // ------------------------------------------------------------------ games
