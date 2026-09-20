@@ -138,7 +138,8 @@ export class Hud {
   chat(message) {
     const line = document.createElement('div');
     const enemy = message.team !== myTeam();
-    line.innerHTML = `<b class="${enemy ? 'foe' : 'friend'}">${message.scope === 'team' ? '[TEAM] ' : ''}${message.dead ? '☠ ' : ''}${escapeHtml(message.name)}</b> ${escapeHtml(message.text)}`;
+    // Bots say so, so nobody wonders who they are talking to.
+    line.innerHTML = `<b class="${enemy ? 'foe' : 'friend'}">${message.scope === 'team' ? '[TEAM] ' : ''}${message.dead ? '☠ ' : ''}${escapeHtml(message.name)}${message.bot ? ' <em class="bot-tag">BOT</em>' : ''}</b> ${escapeHtml(message.text)}`;
     this.dom.chatLog.append(line);
     while (this.dom.chatLog.children.length > 7) this.dom.chatLog.firstChild.remove();
     setTimeout(() => line.classList.add('faded'), 9000);

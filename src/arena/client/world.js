@@ -23,6 +23,9 @@ const NOISE_GLSL = `
 float h21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+// How much of a pattern at this frequency still fits on screen. Detail finer than a pixel is dropped
+// instead of drawn, which is what stops distant walls and floors crawling as you move.
+float aaFade(float px, float freq) { return 1.0 - smoothstep(0.3, 0.9, px * freq); }
 `;
 
 function surfaceMaterial(key) {
@@ -42,13 +45,16 @@ function surfaceMaterial(key) {
       .replace('#include <color_fragment>', `#include <color_fragment>
         vec3 an = abs(vWNrm);
         vec2 suv = an.y > 0.5 ? vWPos.xz : (an.x > 0.5 ? vWPos.zy : vWPos.xy);
-        float grain = vnoise(suv * 1.3) * 0.55 + vnoise(suv * 6.1) * 0.3 + vnoise(suv * 23.0) * 0.15;
+        float px = max(fwidth(suv.x), fwidth(suv.y));
+        float fMid = aaFade(px, 6.1), fFine = aaFade(px, 23.0), fLine = aaFade(px, 3.0);
+        // Faded detail hands its share back as flat mid grey, so nothing gets darker or lighter with range.
+        float grain = vnoise(suv * 1.3) * 0.55 + mix(0.5, vnoise(suv * 6.1), fMid) * 0.3 + mix(0.5, vnoise(suv * 23.0), fFine) * 0.15;
         float shade = mix(0.78, 1.1, grain);
         float glow = 0.0;
         #if PATTERN == 1
           vec2 cell = suv / vec2(2.4, 1.2);
           vec2 edge = abs(fract(cell) - 0.5);
-          shade *= 1.0 - 0.35 * smoothstep(0.485, 0.5, max(edge.x, edge.y));
+          shade *= 1.0 - 0.35 * fLine * smoothstep(0.485, 0.5, max(edge.x, edge.y));
           shade *= 0.94 + 0.12 * h21(floor(cell));
         #elif PATTERN == 2
           vec2 b = suv / vec2(0.52, 0.2);
@@ -56,29 +62,29 @@ function surfaceMaterial(key) {
           vec2 be = abs(fract(b) - 0.5);
           float mortar = smoothstep(0.455, 0.5, max(be.x * 0.2 + 0.4, be.y));
           shade *= 0.82 + 0.36 * h21(floor(b));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.28), mortar * 0.75);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.28), mortar * 0.75 * aaFade(px, 5.0));
         #elif PATTERN == 3
           float along = an.y > 0.5 ? suv.x : suv.y;
           float plank = along / 0.24;
           shade *= 0.8 + 0.35 * h21(vec2(floor(plank), 3.0));
-          shade *= 1.0 - 0.45 * smoothstep(0.42, 0.5, abs(fract(plank) - 0.5));
-          shade *= 0.92 + 0.16 * vnoise(vec2(suv.x * 1.5, suv.y * 22.0));
+          shade *= 1.0 - 0.45 * aaFade(px, 4.2) * smoothstep(0.42, 0.5, abs(fract(plank) - 0.5));
+          shade *= 0.92 + 0.16 * mix(0.5, vnoise(vec2(suv.x * 1.5, suv.y * 22.0)), fFine);
         #elif PATTERN == 4
-          shade *= 0.86 + 0.16 * sin(suv.x * 21.0);
+          shade *= 0.86 + 0.16 * aaFade(px, 3.3) * sin(suv.x * 21.0);
           shade *= 1.0 - 0.25 * vnoise(suv * 0.7) * step(0.55, vnoise(suv * 2.3));
         #elif PATTERN == 5
           vec2 te = abs(fract(suv / 1.5) - 0.5);
-          shade *= 1.0 - 0.3 * smoothstep(0.48, 0.5, max(te.x, te.y));
+          shade *= 1.0 - 0.3 * fLine * smoothstep(0.48, 0.5, max(te.x, te.y));
           shade *= 0.93 + 0.14 * h21(floor(suv / 1.5));
         #elif PATTERN == 6
           shade *= 1.0;
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.9, 0.84), step(0.5, fract(suv.x / 0.9)) * 0.85);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.9, 0.84), step(0.5, fract(suv.x / 0.9)) * 0.85 * aaFade(px, 1.1));
         #elif PATTERN == 8
           // Sedimentary bands on cliff faces; tops stay plain.
           float warp = vnoise(suv * 0.12) * 2.4;
           float bands = vnoise(vec2(2.7, suv.y * 1.7 + warp)) * 0.6 + vnoise(vec2(9.1, suv.y * 5.3 + warp)) * 0.4;
           shade *= mix(1.0, 0.72 + 0.5 * bands, 1.0 - an.y);
-          shade *= 1.0 - 0.22 * (1.0 - an.y) * smoothstep(0.44, 0.5, abs(fract(suv.y * 0.55 + warp * 0.3) - 0.5));
+          shade *= 1.0 - 0.22 * aaFade(px, 1.0) * (1.0 - an.y) * smoothstep(0.44, 0.5, abs(fract(suv.y * 0.55 + warp * 0.3) - 0.5));
         #elif PATTERN == 7
           vec2 w = suv / vec2(2.2, 3.0);
           vec2 we = abs(fract(w) - 0.5);

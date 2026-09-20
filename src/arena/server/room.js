@@ -1297,14 +1297,14 @@ export class Room {
     const t = now();
     if (t - (player.lastPing || 0) < 0.8) return;
     player.lastPing = t;
-    this.sendTeam(player.team, { type: 'ping-loc', from: player.id, x: round2(m.x), y: round2(m.y), z: round2(m.z), where: zoneAt(this.map, m.x, m.y, m.z), danger: Boolean(m.danger) });
+    this.sendTeam(player.team, { type: 'ping-loc', from: player.id, bot: player.bot, x: round2(m.x), y: round2(m.y), z: round2(m.z), where: zoneAt(this.map, m.x, m.y, m.z), danger: Boolean(m.danger) });
   }
   onChat(player, m) {
     const text = String(m.text || '').replace(/[\x00-\x1f<>]/g, '').trim().slice(0, 140);
     const t = now();
     if (!text || t - (player.lastChat || 0) < 0.5) return;
     player.lastChat = t;
-    const payload = { type: 'chat', from: player.id, name: player.name, team: player.team, text, scope: m.team ? 'team' : 'all', dead: !player.alive && this.live };
+    const payload = { type: 'chat', from: player.id, name: player.name, bot: player.bot, team: player.team, text, scope: m.team ? 'team' : 'all', dead: !player.alive && this.live };
     if (m.team) this.sendTeam(player.team, payload); else this.broadcast(payload);
   }
   onQuick(player, m) {
@@ -1312,7 +1312,7 @@ export class Room {
     const t = now();
     if (!command || t - (player.lastQuick || 0) < 1.2) return;
     player.lastQuick = t;
-    this.sendTeam(player.team, { type: 'quick', from: player.id, name: player.name, id: command.id, where: zoneAt(this.map, player.x, player.y, player.z) });
+    this.sendTeam(player.team, { type: 'quick', from: player.id, name: player.name, bot: player.bot, id: command.id, where: zoneAt(this.map, player.x, player.y, player.z) });
   }
   onReact(player, m) {
     const t = now();

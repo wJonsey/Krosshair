@@ -46,8 +46,9 @@ export function migrateSettings(settings) {
 }
 // What each graphics preset means. 'custom' leaves the fine controls alone.
 export const GRAPHICS_PRESETS = {
-  low: { renderScale: 0.75, shadows: 'off', streetLights: false, viewDistance: 'low' },
-  medium: { renderScale: 0.85, shadows: 'low', streetLights: true, viewDistance: 'medium' },
+  // Sharpness is the last thing to go: a soft picture hurts a sniper more than a missing shadow.
+  low: { renderScale: 0.85, shadows: 'off', streetLights: false, viewDistance: 'low' },
+  medium: { renderScale: 1, shadows: 'low', streetLights: true, viewDistance: 'medium' },
   high: { renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high' },
   ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true, viewDistance: 'ultra' },
 };

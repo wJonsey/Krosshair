@@ -2,10 +2,16 @@
 // walk the generated nav grid and shoot through the same authoritative fire path
 // as humans, so everything a bot does is a legal play.
 import { BODY, BOT_DIFFICULTY, BOT_NAMES, COSMETICS, FLAG, MODIFIERS, WEAPONS, BOT_TYPES, BOT_TYPE_IDS } from '../shared/constants.js';
+import { FINISHES, RARITY } from '../shared/economy.js';
 import { dirFromAngles } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 
 const VISIBILITY = { noon: 130, dusk: 110, storm: 75, night: 62 };
+// A hop: how high it goes and how long it is off the floor.
+const HOP = { peak: 0.55, time: 0.5 };
+// How often a level does something daft. A Recruit throws rounds away; an Elite almost never does.
+const QUIRK_RATE = { recruit: 1.6, veteran: 0.85, elite: 0.28 };
+const GUN_IDS = Object.keys(WEAPONS);
 const rand = (min, max) => min + Math.random() * (max - min);
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.5;
 const angleDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -44,13 +50,18 @@ function rollTraits() {
     trigger: rand(0.6, 1.5),                  // how settled the aim must be before a slow weapon fires
     pace: rand(0.9, 1.06),
     curiosity: rand(0.5, 1.5),                // how much it looks around while moving
+    chatty: Math.random(),                    // how often they call things out
+    blade: Math.random(),                     // appetite for the knife up close
+    jumpy: Math.random(),                     // hops for no good reason
   };
 }
-// The level's numbers bent by this bot's personality.
+// The level's numbers bent by this bot's personality and how the match is going for them.
 function profile(bot) {
   const base = BOT_DIFFICULTY[bot.difficulty] || BOT_DIFFICULTY.veteran;
   const k = bot.traits || (bot.traits = rollTraits());
-  return { reaction: base.reaction * k.reaction, aimTime: base.aimTime * k.aimTime, error: base.error * k.error, headBias: clamp(base.headBias * k.headBias, 0, 0.6), fov: base.fov * k.awareness };
+  // Form drifts across a match, so a pilot has a sharp spell and then a scrappy one.
+  const form = bot.ai?.form || 0;
+  return { reaction: base.reaction * k.reaction * (1 + form * 0.18), aimTime: base.aimTime * k.aimTime * (1 + form * 0.14), error: base.error * k.error * (1 + form * 0.3), headBias: clamp(base.headBias * k.headBias * (1 - form * 0.25), 0, 0.6), fov: base.fov * k.awareness };
 }
 
 function freshAi() {
@@ -62,21 +73,127 @@ function freshAi() {
     // current walking speed, strafe velocity, and what they are glancing at.
     yawVel: 0, pitchVel: 0, noiseYaw: 0, noisePitch: 0, settle: 0, acquiredAt: 0, track: null, hurtAt: -99,
     moveSpeed: 0, strafeVel: 0, glanceYaw: 0, glancePitch: 0, glanceUntil: 0, pauseUntil: 0, nextPauseCheck: 0, burstLeft: 0, burstRestUntil: 0, plantUntil: 0,
+    // Judgement calls and bad seconds: the sidearm swap, the knife, the whiffed burst, the greedy push.
+    form: 0, formAt: 0, nextQuirk: 0, whiffUntil: 0, panicUntil: 0, freezeUntil: 0, pushUntil: 0, peekUntil: 0,
+    sidearmUntil: 0, dryAt: -99, bladeUntil: 0, bladeBan: 0, bladeCheck: 0, bladeSwings: 0, bladeMark: 0,
+    // Radio discipline and both feet off the floor.
+    quietUntil: 0, sawKill: null, hopAt: 0, hopEnd: 0, hopLift: 0, nextHop: 0,
   };
+}
+
+// Radio: one team should not sound like a radio play, so a call books the whole team quiet for a while.
+const chatter = new WeakMap();
+function canSpeak(room, bot, t, gap) {
+  let book = chatter.get(room);
+  if (!book) chatter.set(room, (book = {}));
+  if (t < (book[bot.team] || 0)) return false;
+  book[bot.team] = t + gap;
+  return true;
+}
+function callOut(room, bot, t, id, chance) {
+  const ai = bot.ai;
+  if (t < ai.quietUntil || Math.random() > chance * (0.35 + bot.traits.chatty)) return;
+  if (!canSpeak(room, bot, t, rand(20, 42))) return;
+  ai.quietUntil = t + rand(30, 70);
+  room.onQuick(bot, { id });
+}
+function spotCall(room, bot, seen, t) {
+  const ai = bot.ai;
+  if (t < ai.quietUntil || Math.random() > 0.3 * (0.3 + bot.traits.chatty)) return;
+  if (!canSpeak(room, bot, t, rand(16, 34))) return;
+  ai.quietUntil = t + rand(24, 60);
+  room.onPing(bot, { x: seen.x, y: seen.y, z: seen.z, danger: true });
+  if (Math.random() < 0.4) room.onQuick(bot, { id: 'spotted' });
+}
+
+// A hop is an arc laid on top of whatever the movement code already decided, so it can never walk a bot
+// into geometry: only the headroom above them and the floor under them have to check out.
+function tryHop(room, bot, t, chance) {
+  const ai = bot.ai;
+  if (t < ai.hopEnd || t < ai.nextHop || Math.random() > chance) return false;
+  ai.nextHop = t + rand(4, 10);
+  const node = ai.path && ai.pathIndex < ai.path.length ? ai.path[ai.pathIndex] : null;
+  if (node && Math.abs(node.y - bot.y) > 0.05) return false;                       // stairs or a ramp: both feet stay down
+  if (room.world.groundBelow(bot.x, bot.y + 0.1, bot.z) < bot.y - 0.12) return false;
+  if (!room.world.bodyFree(bot.x, bot.y, bot.z, BODY.radius, BODY.height + HOP.peak)) return false;
+  ai.hopAt = t; ai.hopEnd = t + HOP.time;
+  return true;
+}
+
+// The magazine runs out mid-fight. Close in, with a loaded sidearm, most pilots pull it and keep shooting;
+// the patient ones would rather break off and reload properly. Decided once, not every tick.
+function dryMagazine(room, bot, t, near, sideReady) {
+  const ai = bot.ai, k = bot.traits;
+  if (bot.active === 'primary' && sideReady && near < 25 && t - ai.dryAt > 4) {
+    ai.dryAt = t;
+    const swap = 0.2 + k.aggression * 0.45 + (1 - k.patience) * 0.3 - (near / 25) * 0.25;
+    if (Math.random() < swap) { ai.sidearmUntil = t + rand(5, 9); room.switchWeapon(bot, 'sidearm'); return; }
+  }
+  room.startReload(bot);
+}
+
+// One bad second, picked to suit the moment. Nothing here stops a bot acting for as long as a second.
+function quirk(room, bot, t) {
+  const ai = bot.ai;
+  const roll = Math.random();
+  if (ai.visible) {
+    if (roll < 0.26) ai.whiffUntil = t + rand(0.4, 0.9);                            // a burst at where they were
+    else if (roll < 0.48) { ai.panicUntil = t + rand(0.5, 1.2); ai.burstLeft = 14; }
+    else if (roll < 0.6) ai.freezeUntil = t + rand(0.2, 0.7);                       // caught out, does nothing for a beat
+    else if (roll < 0.82) { ai.pushUntil = t + rand(0.8, 1.8); ai.evadeUntil = 0; } // walks into a fight they should not take
+    else room.startReload(bot);                                                     // reloading in the open
+    return;
+  }
+  if (roll < 0.45 && ai.lastKnown) ai.peekUntil = t + rand(0.5, 1.2);               // one peek too many
+  else if (roll < 0.7) ai.pauseUntil = t + rand(0.4, 0.9);
+  else tryHop(room, bot, t, 0.6);
+}
+
+// Bots dress like pilots who have played a while: free and cheap gear is everywhere, the pricey pieces are
+// a treat. Never anything from the Dev class: that belongs to the developers' accounts only.
+const priceWeight = (item) => (item.price ? Math.min(1, (260 / item.price) ** 1.25) : 1.5);
+const wearable = (item) => !item.dev && item.id !== 'devprism';
+function lookPick(kind) {
+  const list = COSMETICS[kind];
+  let total = 0;
+  for (const item of list) if (wearable(item)) total += priceWeight(item);
+  let roll = Math.random() * total;
+  for (const item of list) {
+    if (!wearable(item)) continue;
+    roll -= priceWeight(item);
+    if (roll <= 0) return item.id;
+  }
+  return list[0].id;
+}
+// Gun finishes, weighted per rarity and shared out over the finishes in it, so a Mythic barely ever shows up.
+const FINISH_ODDS = { common: 60, rare: 26, epic: 10, legendary: 3, mythic: 1 };
+const BOT_FINISHES = (() => {
+  const counts = {};
+  for (const finish of FINISHES) counts[finish.rarity] = (counts[finish.rarity] || 0) + 1;
+  return FINISHES.filter((finish) => !RARITY[finish.rarity].secret && FINISH_ODDS[finish.rarity])
+    .map((finish) => ({ id: finish.id, weight: FINISH_ODDS[finish.rarity] / counts[finish.rarity] }));
+})();
+const FINISH_TOTAL = BOT_FINISHES.reduce((sum, finish) => sum + finish.weight, 0);
+// Most pilots run a plain gun. The ones who do have a skin wear it on everything, the way the shop sells it.
+function botSkins() {
+  if (Math.random() > 0.34) return {};
+  let roll = Math.random() * FINISH_TOTAL;
+  let picked = BOT_FINISHES[0].id;
+  for (const finish of BOT_FINISHES) { roll -= finish.weight; if (roll <= 0) { picked = finish.id; break; } }
+  const skins = {};
+  for (const id of GUN_IDS) skins[id] = picked;
+  return skins;
 }
 
 export function createBot(room, team, difficulty) {
   const taken = new Set([...room.players.values()].map((p) => p.name));
   const pool = BOT_NAMES.filter((name) => !taken.has(name));
   const name = pool.length ? pool[Math.floor(Math.random() * pool.length)] : `Unit-${room.nextPlayer}`;
-  // Never anything from the Dev class: that belongs to the developers' accounts only.
-  const suits = COSMETICS.suit.filter((item) => !item.dev), visors = COSMETICS.visor.filter((item) => !item.dev);
   const bot = room.newPlayer({
     name, team, bot: true, ready: true, difficulty, title: difficulty === 'elite' ? 'Deadeye' : difficulty === 'veteran' ? 'Marksman' : 'Recruit',
-    color: suits[Math.floor(Math.random() * suits.length)].id, accent: visors[Math.floor(Math.random() * visors.length)].id,
+    color: lookPick('suit'), accent: lookPick('visor'), tracer: lookPick('tracer'),
     level: difficulty === 'elite' ? 18 : difficulty === 'veteran' ? 9 : 2,
-    // Free gear only (level-unlocked), so bots never show off something a pilot has to buy.
-    ...Object.fromEntries(['headgear', 'face', 'pack'].map((kind) => { const free = COSMETICS[kind].filter((item) => !item.price && !item.dev); return [kind, free[Math.floor(Math.random() * free.length)].id]; })),
+    headgear: lookPick('headgear'), face: lookPick('face'), pack: lookPick('pack'), pattern: lookPick('pattern'), charm: lookPick('charm'), skins: botSkins(),
   });
   // Temperament: the type bends the rolled traits, so two Rushers still play a little differently.
   bot.botType = pickType();
@@ -86,6 +203,8 @@ export function createBot(room, team, difficulty) {
   bot.level = Math.max(1, Math.round(tier + bot.traits.skill * tier * 0.6 + rand(-1, 1)));
   const titles = { recruit: ['Recruit', 'Recruit', 'Rifleman'], veteran: ['Rifleman', 'Marksman', 'Marksman', 'Sharpshooter'], elite: ['Sharpshooter', 'Deadeye', 'Deadeye', 'Ghost'] }[difficulty] || ['Marksman'];
   bot.title = titles[clamp(Math.round((bot.traits.skill + 1) / 2 * (titles.length - 1)), 0, titles.length - 1)];
+  // Plenty of pilots wear something they bought rather than the rank they earned.
+  if (Math.random() < 0.35) bot.title = lookPick('title');
   bot.ai = freshAi();
   return bot;
 }
@@ -100,8 +219,11 @@ export function createDummy(room, spec, index) {
 export function resetBot(bot) {
   if (bot.dummy) return;
   const scan = bot.ai?.scanPhase ?? 0;
+  // Form runs across the whole match, not the round: a pilot having a night of it keeps having one.
+  const form = bot.ai?.form ?? 0;
   bot.ai = freshAi();
   bot.ai.scanPhase = scan;
+  bot.ai.form = form;
   bot.ai.pulseAt = rand(6, 30);
   bot.ai.openers = null;
   bot.ai.tunnelCost = rand(1, 3.2);
@@ -138,6 +260,17 @@ export function botBuy(room, bot) {
 export function botOnHurt(room, bot, attacker) {
   if (bot.dummy || !bot.ai) return;
   const ai = bot.ai;
+  // Shooting a team mate is worth an apology, whoever pulled the trigger.
+  if (attacker.team === bot.team && attacker.bot && attacker.ai && attacker !== bot) callOut(room, attacker, room.time, 'sorry', 0.8);
+  // Hurt and short of bodies: ask for help rather than die quietly.
+  if (bot.hp < 45 && Math.random() < 0.5) {
+    let mates = 0, foes = 0;
+    for (const other of room.players.values()) {
+      if (!other.alive || other.dummy) continue;
+      if (other.team === bot.team) mates += 1; else foes += 1;
+    }
+    if (foes > mates) callOut(room, bot, room.time, 'help', 0.7);
+  }
   ai.lastKnown = { x: attacker.x, y: attacker.y, z: attacker.z, t: room.time };
   if (!ai.visible) {
     ai.lookYaw = Math.atan2(-(attacker.x - bot.x), -(attacker.z - bot.z));
@@ -218,6 +351,9 @@ function perceive(room, bot, t) {
       ai.track = { x: best.x, y: best.y, z: best.z };
       ai.aimHead = Math.random() < diff.headBias * (best.dist > 60 ? 0.4 : 1);
       ai.errYaw = gauss(); ai.errPitch = gauss();
+      spotCall(room, bot, best, t);
+      // A jump-peek round the corner, from the ones who play that way.
+      if (best.dist > 8 && best.dist < 34) tryHop(room, bot, t, 0.05 * bot.traits.jumpy);
     }
     ai.visible = true;
     ai.seen = best;
@@ -300,7 +436,8 @@ function followPath(room, bot, dt, speed) {
 // The look-ahead costs a few collision tests, so it runs when a node is reached rather than every tick.
 function t_skipDue(ai) { if (ai.skipAt) return false; ai.skipAt = 1; return true; }
 
-function strafe(room, bot, dt, speed) {
+// Sideways footwork, plus an optional walk straight ahead for the ones closing a knife or pushing a fight.
+function strafe(room, bot, dt, speed, forward = 0) {
   const ai = bot.ai;
   const body = ai.body;
   body.x = bot.x; body.y = bot.y; body.z = bot.z; body.vy = 0; body.onGround = true;
@@ -312,16 +449,26 @@ function strafe(room, bot, dt, speed) {
   // Changing direction takes a moment: the strafe speed eases toward the wanted one instead of flipping.
   ai.strafeVel += clamp(ai.strafe * speed - ai.strafeVel, -22 * dt, 22 * dt);
   const sx = Math.cos(bot.yaw), sz = -Math.sin(bot.yaw);
-  // Do not strafe off ledges.
-  const side = Math.sign(ai.strafeVel) || ai.strafe;
-  const aheadX = bot.x + sx * side * 0.7, aheadZ = bot.z + sz * side * 0.7;
-  if (room.world.groundBelow(aheadX, bot.y + 0.3, aheadZ) < bot.y - 0.6) { ai.strafe *= -1; ai.strafeVel *= 0.3; return Math.abs(ai.strafeVel); }
-  const want = Math.abs(ai.strafeVel) * dt;
-  room.world.moveBody(body, sx * ai.strafeVel * dt, -0.05 - lift, sz * ai.strafeVel * dt);
-  if (want > 0.01 && Math.hypot(body.x - bot.x, body.z - bot.z) < want * 0.3) { ai.strafe *= -1; ai.strafeVel *= 0.2; }
+  const vx = sx * ai.strafeVel - Math.sin(bot.yaw) * forward, vz = sz * ai.strafeVel - Math.cos(bot.yaw) * forward;
+  const want = Math.hypot(vx, vz);
+  // Do not walk off ledges, whichever way the feet are taking them.
+  if (want > 0.01) {
+    const aheadX = bot.x + (vx / want) * 0.7, aheadZ = bot.z + (vz / want) * 0.7;
+    if (room.world.groundBelow(aheadX, bot.y + 0.3, aheadZ) < bot.y - 0.6) { ai.strafe *= -1; ai.strafeVel *= 0.3; return Math.abs(ai.strafeVel); }
+  }
+  const fromX = bot.x, fromY = bot.y, fromZ = bot.z;
+  room.world.moveBody(body, vx * dt, -0.05 - lift, vz * dt);
+  if (want * dt > 0.01 && Math.hypot(body.x - bot.x, body.z - bot.z) < want * dt * 0.3) { ai.strafe *= -1; ai.strafeVel *= 0.2; }
   bot.x = body.x; bot.y = body.y; bot.z = body.z;
+  // Walking forwards can wedge a body into a corner. If the step lands somewhere the server would reject
+  // a pilot for standing, stay where they were and turn around instead.
+  if (forward && !room.world.bodyFree(bot.x, bot.y + 0.3, bot.z, BODY.radius * 0.5, 0.9)) {
+    bot.x = fromX; bot.y = fromY; bot.z = fromZ;
+    ai.strafe *= -1; ai.strafeVel *= 0.2;
+    return 0;
+  }
   ai.path = null;
-  return Math.abs(ai.strafeVel);
+  return want;
 }
 
 // Where someone walking this route would be looking: mostly where they are going, with glances at
@@ -347,12 +494,20 @@ export function updateBot(room, bot, dt, t) {
   // Coming down under a parachute (royale): the room moves them until they land.
   if (bot.dropping) return;
   if (bot.dummy) return updateDummy(room, bot, dt);
+  const ai = bot.ai;
+  // Put them back on the floor before thinking, so every move is worked out from the ground they stand on.
+  if (ai.hopLift) { bot.y -= ai.hopLift; ai.hopLift = 0; }
   think(room, bot, dt, t);
   // The speed other players see drives the running animation, so it eases between states too.
-  const ai = bot.ai;
   ai.shownSpeed = (ai.shownSpeed || 0) + clamp(bot.speed - (ai.shownSpeed || 0), -16 * dt, 16 * dt);
   bot.speed = ai.shownSpeed;
   if (bot.speed > 0.2 && bot.speed < 4 && !(bot.flags & FLAG.crouch)) bot.flags |= FLAG.walking;
+  if (t < ai.hopEnd) {
+    const k = (t - ai.hopAt) / HOP.time;
+    ai.hopLift = HOP.peak * 4 * k * (1 - k);
+    bot.y += ai.hopLift;
+    bot.flags &= ~FLAG.ground;              // watching clients animate the pilot in the air
+  }
 }
 
 function think(room, bot, dt, t) {
@@ -388,6 +543,23 @@ function think(room, bot, dt, t) {
   const stimSlot = bot.gadgets.indexOf('stim');
   if (stimSlot >= 0 && bot.hp < 55 && !ai.visible) room.useGadget(bot, { slot: stimSlot });
 
+  // Form: a slow walk up and down through the match, so nobody plays at one level for twenty minutes.
+  if (t >= ai.formAt) { ai.formAt = t + rand(8, 18); ai.form = clamp(ai.form * 0.75 + gauss() * 0.4, -1, 1); }
+  // A bad second now and then: a whiff, a panic spray, a greedy push, a reload in the open. Rare, and
+  // weighted by the pilot's own level, so Recruits are a mess and Elites almost never slip.
+  if (t >= ai.nextQuirk) {
+    ai.nextQuirk = t + rand(4, 9);
+    const sloppy = clamp(0.5 - k.skill * 0.45, 0.05, 1) * (QUIRK_RATE[bot.difficulty] ?? 1) * (1.2 - k.composure * 0.4);
+    if (!fleeing && Math.random() < 0.3 * sloppy) quirk(room, bot, t);
+  }
+  // The kill feed: a hop for their own, a word for a team mate's.
+  const feed = room.lastKill;
+  if (feed && feed !== ai.sawKill) {
+    ai.sawKill = feed;
+    if (feed.killer === bot.id) tryHop(room, bot, t, 0.1 + k.jumpy * 0.3);
+    else if (room.players.get(feed.killer)?.team === bot.team) callOut(room, bot, t, 'nice', 0.3);
+  }
+
   // The hand is never perfectly still: a slow random drift that pulls back toward zero.
   const tremor = k.wobble * Math.sqrt(dt) * 1.6;
   ai.noiseYaw += -ai.noiseYaw * dt * 1.8 + gauss() * tremor;
@@ -402,19 +574,40 @@ function think(room, bot, dt, t) {
     const crouched = Boolean(current.flags & FLAG.crouch);
     // Eyes follow a moving target a beat late, so strafing genuinely throws their aim off.
     if (!ai.track) ai.track = { x: current.x, y: current.y, z: current.z };
-    const follow = Math.min(1, dt / Math.max(0.05, k.trackLag));
+    // A whiffed burst is just the eyes falling a long way behind: the shots go where they were.
+    const follow = Math.min(1, dt / Math.max(0.05, k.trackLag * (t < ai.whiffUntil ? 9 : 1)));
     ai.track.x += (current.x - ai.track.x) * follow; ai.track.y += (current.y - ai.track.y) * follow; ai.track.z += (current.z - ai.track.z) * follow;
     const dx = ai.track.x - eye[0], dz = ai.track.z - eye[2];
     const dist = Math.hypot(dx, dz);
-    // Pick the right tool.
-    const wantSidearm = (WEAPONS[bot.weapons.primary]?.action === 'bolt' && dist < 9) || !bot.weapons.primary || (bot.ammo.primary && bot.ammo.primary.mag + bot.ammo.primary.reserve === 0);
-    const wantSlot = wantSidearm ? 'sidearm' : 'primary';
+    const near = Math.hypot(current.x - bot.x, current.z - bot.z);   // where they really are: for the knife and the swap
+    const sideReady = Boolean(bot.weapons.sidearm) && (bot.ammo.sidearm?.mag ?? 0) > 0;
+    const primaryOut = Boolean(bot.ammo.primary) && bot.ammo.primary.mag + bot.ammo.primary.reserve === 0;
+
+    // The knife: close, in front, and either the gun is empty or this pilot likes it. A few swings without
+    // a body and they give it up and go back to shooting, the way anyone would.
+    if (t >= ai.bladeCheck && bot.weapons.melee) {
+      ai.bladeCheck = t + 0.35;
+      const facing = Math.abs(angleDiff(Math.atan2(-(current.x - bot.x), -(current.z - bot.z)), bot.yaw));
+      const empty = (bot.ammo[bot.active]?.mag ?? 1) <= 0 && !sideReady;
+      if (near < 3.5 && facing < 0.9 && t >= ai.bladeBan && t >= ai.bladeUntil) {
+        const appetite = k.blade * (0.3 + k.aggression * 0.7) * (bot.botType === 'rusher' ? 1.8 : 1);
+        if (empty || Math.random() < 0.2 * appetite) { ai.bladeUntil = t + 2.6; ai.bladeSwings = 0; ai.bladeMark = bot.match.kills; }
+      }
+    }
+    const blading = t < ai.bladeUntil && Boolean(bot.weapons.melee) && near < 4.5;
+    // A knife run that came to nothing: back to the gun, and no more knife ideas for a while.
+    if (!blading && ai.bladeUntil) { ai.bladeUntil = 0; if (bot.match.kills === ai.bladeMark) ai.bladeBan = t + rand(6, 16); }
+    // Pick the right tool. A dry magazine in a close fight is a judgement call: pull the sidearm and keep
+    // shooting, or duck the fight and reload. Impatient pilots swap; patient ones reload.
+    const wantSidearm = (WEAPONS[bot.weapons.primary]?.action === 'bolt' && dist < 9) || !bot.weapons.primary || primaryOut || (t < ai.sidearmUntil && sideReady);
+    const wantSlot = blading ? 'melee' : wantSidearm ? 'sidearm' : 'primary';
     if (bot.active !== wantSlot && !bot.reloadEnd) room.switchWeapon(bot, wantSlot);
     const weapon = WEAPONS[bot.weapons[bot.active]];
     const aimY = ai.track.y + (ai.aimHead && target.seesChest !== false ? (crouched ? 1.06 : 1.6) : target.seesChest ? (crouched ? 0.7 : 1.15) : (crouched ? 1.06 : 1.6));
     const rattled = t - ai.hurtAt < 1.2 ? 1.5 - k.composure * 0.5 : 1;
     const moving = ai.strafeVel * ai.strafeVel > 4 ? 1.35 : 1;
-    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 5) * (weapon.family === 'sniper' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1) * rattled * moving;
+    const panic = t < ai.panicUntil;
+    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 5) * (weapon.family === 'sniper' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1) * rattled * moving * (panic ? 2.4 : 1);
     // Aim point = the target, plus this engagement's bias, the unsettled first flick, and the hand's drift.
     const spread = 1 + ai.settle * 1.8;
     const yaw = Math.atan2(-dx, -dz) + (ai.errYaw * spread + ai.noiseYaw * 0.55) * errorScale;
@@ -422,8 +615,11 @@ function think(room, bot, dt, t) {
     const off = turnToward(bot, yaw, pitch, t < ai.reactAt ? 0.55 : 1, dt);
 
     // Footwork: dancers strafe, planters stop and shoot; snipers mostly plant, and everyone moves after being hit.
+    // A knife run or a greedy push walks them straight at the fight instead.
     const sniping = weapon.family === 'sniper' || weapon.family === 'marksman';
-    const wantsToMove = t < ai.evadeUntil || dist < 14 || (!sniping && t >= ai.plantUntil);
+    const charge = blading ? 5.6 * k.pace : (t < ai.pushUntil ? 5 * k.pace : 0);
+    const frozen = t < ai.freezeUntil;
+    const wantsToMove = !frozen && (charge > 0 || t < ai.evadeUntil || dist < 14 || (!sniping && t >= ai.plantUntil));
     if (fleeing) ai.evadeUntil = 0;
     else if (wantsToMove) {
       if (t > ai.strafeUntil) {
@@ -432,8 +628,8 @@ function think(room, bot, dt, t) {
         // Now and then they just stop for a beat to steady a burst.
         if (!sniping && t >= ai.evadeUntil && Math.random() < 0.3 * (1 - k.dancer) + 0.08) ai.plantUntil = t + rand(0.4, 1.1);
       }
-      bot.speed = strafe(room, bot, dt, (sniping ? 3.2 : 4.4) * k.pace);
-      if (k.croucher > 0.75 && dist > 12 && t >= ai.evadeUntil && Math.sin(ai.scanPhase * 2.1) > 0.6) bot.flags |= FLAG.crouch;
+      bot.speed = strafe(room, bot, dt, (charge ? 2.2 : sniping ? 3.2 : 4.4) * k.pace, charge);
+      if (k.croucher > 0.75 && dist > 12 && t >= ai.evadeUntil && !charge && Math.sin(ai.scanPhase * 2.1) > 0.6) bot.flags |= FLAG.crouch;
     } else {
       ai.strafeVel *= Math.max(0, 1 - dt * 9);
       if (sniping) bot.flags |= FLAG.scoped;
@@ -444,9 +640,17 @@ function think(room, bot, dt, t) {
     const ammo = bot.ammo[bot.active];
     const slow = !weapon.auto && weapon.cooldown >= 0.9;
     // A careful shot waits for the aim to settle; a rattled or impatient pilot lets it go early.
-    const settledEnough = !slow || ai.settle < 0.25 * k.trigger || t - ai.hurtAt < 1 || t - ai.acquiredAt > diff.aimTime * 2.2;
-    if (ammo && ammo.mag <= 0) room.startReload(bot);
-    else if (t >= ai.reactAt && t >= ai.burstRestUntil && off < (slow ? 0.04 : 0.07) && settledEnough && t >= bot.nextFire && t >= bot.equipUntil && !bot.reloadEnd && t >= ai.evadeUntil - 0.2) {
+    const settledEnough = !slow || ai.settle < 0.25 * k.trigger || t - ai.hurtAt < 1 || t - ai.acquiredAt > diff.aimTime * 2.2 || panic;
+    if (blading) {
+      // Swing only once they are genuinely inside reach: a swing at air is a wasted second.
+      if (bot.active === 'melee' && t >= bot.nextFire && t >= bot.equipUntil && !frozen && near <= weapon.range - 0.2) {
+        room.onMelee(bot, { t });
+        ai.bladeSwings += 1;
+        if (bot.match.kills > ai.bladeMark) ai.bladeUntil = 0;
+        else if (ai.bladeSwings >= 3) { ai.bladeUntil = 0; ai.bladeBan = t + rand(10, 25); }  // three swings and no body: back to the gun
+      }
+    } else if (ammo && ammo.mag <= 0) dryMagazine(room, bot, t, near, sideReady);
+    else if (!frozen && t >= ai.reactAt && (t >= ai.burstRestUntil || panic) && off < (slow ? 0.04 : 0.07) * (panic ? 2.5 : 1) && settledEnough && t >= bot.nextFire && t >= bot.equipUntil && !bot.reloadEnd && t >= ai.evadeUntil - 0.2) {
       const dir = dirFromAngles(bot.yaw, bot.pitch);
       if (room.fire(bot, eye, dir, t, ++bot.shotSeq)) {
         ai.errYaw = ai.errYaw * 0.5 + gauss() * 0.75; ai.errPitch = ai.errPitch * 0.5 + gauss() * 0.75;
@@ -478,10 +682,19 @@ function think(room, bot, dt, t) {
   if (bot.active !== 'primary' && bot.weapons.primary && !bot.reloadEnd && bot.ammo.primary.mag + bot.ammo.primary.reserve > 0) room.switchWeapon(bot, 'primary');
 
   let holding = !ai.path;
-  if (t < ai.evadeUntil && !fleeing) { bot.speed = strafe(room, bot, dt, 5 * k.pace); holding = false; }
-  else if (!ai.path && t >= ai.repathAt && (t >= ai.holdUntil || fleeing)) {
+  if (t < ai.freezeUntil && !fleeing) { ai.moveSpeed = 0; holding = true; }   // frozen for a beat, not for a round
+  else if (t < ai.evadeUntil && !fleeing) { bot.speed = strafe(room, bot, dt, 5 * k.pace); holding = false; }
+  else if (t < ai.peekUntil && ai.lastKnown && !fleeing) {
+    // One peek too many: they lean out at the noise instead of holding the wall.
+    ai.lookYaw = Math.atan2(-(ai.lastKnown.x - bot.x), -(ai.lastKnown.z - bot.z));
+    ai.lookUntil = Math.max(ai.lookUntil, ai.peekUntil);
+    bot.speed = strafe(room, bot, dt, 1.4 * k.pace, 3.4 * k.pace);
+    holding = false;
+  } else if (!ai.path && t >= ai.repathAt && (t >= ai.holdUntil || fleeing)) {
     ai.repathAt = t + 0.5;
     ai.goal = chooseGoal(room, bot, t);
+    // A change of plan is worth saying out loud: chasing someone down, or settling on an angle.
+    if (ai.goal?.hunt) callOut(room, bot, t, 'push', 0.05);
     const accept = (node) => room.world.lineOfSight(bot.x, bot.y + 0.9, bot.z, node.x, node.y + 0.9, node.z) && Math.abs(node.y - bot.y) < 1.2;
     const start = room.nav.nearest(bot.x, bot.y, bot.z, accept) || room.nav.nearest(bot.x, bot.y, bot.z);
     // Each bot weighs the underpass and the open plaza differently, so they do not all take the shortest line.
@@ -502,12 +715,15 @@ function think(room, bot, dt, t) {
     bot.speed = ai.moveSpeed;
     if (ai.moveSpeed > 0.2 && ai.moveSpeed < 4) bot.flags |= FLAG.walking;
     holding = paused && ai.moveSpeed < 0.5;
+    // The odd hop on a long run, for no better reason than people do it.
+    if (!paused && ai.moveSpeed > 4 && t >= ai.nextHop) tryHop(room, bot, t, 0.004 * k.jumpy);
     if (ai.moveSpeed > 0.05 && followPath(room, bot, dt, ai.moveSpeed)) {
       ai.path = null;
       if (hunting) ai.lastKnown = null;
       ai.holdUntil = t + rand(1.5, hunting ? 3 : 6) * (0.6 + k.patience * 0.9) * (1.3 - k.aggression * 0.6);
       ai.holdYaw = Math.atan2(bot.x, bot.z) + rand(-0.4, 0.4);
       ai.glanceUntil = 0;
+      if (!hunting) callOut(room, bot, t, 'hold', 0.08);
     }
     // Hunters abandon stale trails when a fresher sound comes in.
     if (!fleeing && ai.lastKnown && ai.goal && !ai.goal.hunt && t - ai.lastKnown.t < 1) ai.path = null;

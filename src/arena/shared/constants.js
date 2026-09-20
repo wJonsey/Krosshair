@@ -341,7 +341,40 @@ export const TEAM_MODES = {
 export const TEAM_MODE_IDS = Object.keys(TEAM_MODES);
 export const teamSizeOf = (queue) => TEAM_MODES[queue]?.size || 0;
 
-export const BOT_NAMES = ['Halcyon', 'Mako', 'Juno', 'Rook', 'Sable', 'Vesper', 'Onyx', 'Tundra', 'Piper', 'Echo', 'Marrow', 'Quill', 'Basil', 'Nova', 'Flint', 'Wren'];
+// Handles in the styles real pilots pick: short words, a name with a number, an underscore or a dot, the
+// odd clan tag. The lobby, the scoreboard and their chat already say these are bots, so the names never do.
+// A name already taken in the room is skipped (server/bots.js).
+export const BOT_NAMES = [
+  'Mako', 'Juno', 'Rook', 'Sable', 'Onyx', 'Piper', 'Flint', 'Marrow', 'Quill', 'Basil',
+  'Nova', 'Wren', 'Tundra', 'Echo', 'Vexx', 'Kade', 'Nyx', 'Dizzy', 'Grim', 'Pyro',
+  'Wisp', 'Cobalt', 'Dash', 'Havoc', 'Moss', 'Draco', 'Bex', 'Hollow', 'Ash', 'Voss',
+  'Kira', 'Dez', 'Omen', 'Riven', 'Syx', 'Bolt', 'Creed', 'Ember', 'Fitz', 'Gizmo',
+  'Haze', 'Iggy', 'Jinx', 'Kelp', 'Lurk', 'Noodle', 'Opal', 'Prowl', 'Quartz', 'Rumble',
+  'Slate', 'Tally', 'Umber', 'Vance', 'Wolfie', 'Yuki', 'Zen', 'Bandit', 'Cinder', 'Pixel',
+  'Milo42', 'Zed07', 'Nico_9', 'Kaden99', 'jonas_7', 'ryan_21', 'sam.k', 'ryn.exe', 'jayden04', 'snipes88',
+  'lil_reaper', 'lowkey', 'crispy', 'toaster', 'm1lk', 'wavy', 'sleepy_j', 'big.tuna', 'pixel_j', 'zappy',
+  'TTV_Kane', 'ttv.mozz', 'FZE_Lynx', 'NRG.Skye', 'RVN_Dusty', 'xX_Rook_Xx',
+  'Talon9', 'Vix', 'Drexx', 'Sunny', 'Rook_7', 'Marlow', 'Kestrel', 'Vega', 'Juniper', 'Sorrel',
+  'Bram', 'Cassia', 'Dune', 'Fennec', 'Gale', 'Halo_x', 'Indigo', 'Jett', 'Koa', 'Larkin',
+  'Mira', 'Norrix', 'Otter', 'Peregrine', 'Quinn', 'Rio', 'Sage_v', 'Tobin', 'Ulla', 'Vesper_k',
+  'Wilder', 'Xan', 'Yarrow', 'Zephyr', 'Briar', 'Corvus', 'Delta_9', 'Espen', 'Fable', 'Gideon',
+  'Hux', 'Ivo', 'Jorah', 'Kell', 'Lumen', 'Mox', 'Nero', 'Osprey', 'Pike_3', 'Quiver',
+  'Rell', 'Sparrow', 'Thorne', 'Ursa', 'Vale', 'Wex', 'Yara', 'Zia', 'Aspen', 'Bodhi',
+  'Cricket', 'Dov', 'Elm', 'Fox_e', 'Gully', 'Hollis', 'Ives', 'Jubi', 'Kestra', 'Lomax',
+  'Mercer', 'Nash', 'Orin', 'Plover', 'Ripley', 'Sten', 'Tavi', 'Uzo', 'Vann', 'Wrenley',
+  'Yates', 'Zuri', 'Ferro', 'Hatch', 'Mallow', 'Quip', 'Rusk', 'Tamsin', 'Vireo', 'Wold',
+  'ace_09', 'blitz22', 'coop_14', 'dax77', 'eli.j', 'frostyK', 'gus_01', 'hexa5', 'ivyjo', 'jak_11',
+  'kit90', 'loz_8', 'max.v', 'nedd', 'nim_3', 'ozzy12', 'pax_04', 'quill7', 'raf.k', 'sid_66',
+  'tox9', 'uri_5', 'vik.t', 'wisp_2', 'yolo_j', 'zeke31', 'andi_7', 'bexx_9', 'cade.m', 'dune42',
+  'finn_23', 'gabe.x', 'hollyK', 'ines_4', 'jonty', 'kayo_8', 'lena.r', 'moz_15', 'nori_6', 'obi_20',
+  'remy.j', 'saff_3', 'toby_18', 'uma_9', 'vinnie', 'wil.k', 'yusef', 'zara_5', 'dom_44', 'esme7',
+  'lazy_cat', 'sleepywolf', 'crunchy', 'fizzy', 'noodlearm', 'pocket.rocket', 'static.j', 'tinman', 'two.left.feet', 'velvet',
+  'whisker', 'yolo.k', 'zigzag', 'cloudy', 'dusty_pan', 'gravy_train', 'jellyfish', 'kiwi_bird', 'lamp_post', 'mango.j',
+  'neon_owl', 'oats', 'pebble', 'quiet.storm', 'rusty_nail', 'salty_fry', 'tofu', 'umbrella', 'vhs_tape', 'waffles',
+  'xerox', 'yawn', 'zippy', 'blank_page', 'cardboard', 'donut.king', 'eggshell', 'flatpack', 'ghosted', 'hiccup',
+  'TTV_Nyx', 'ttv.rell', 'FZE_Storm', 'NRG.Vale', 'RVN_Kite', 'xX_Nyx_Xx', 'VLT_Sage', 'AKM_Juno', 'EXO.Wren', 'SGX_Pike',
+  'Dagger', 'Falcon_2', 'Ghost_9', 'Hunter_x', 'Ironsight', 'Jackal', 'Longshot_j', 'Maverick', 'Nomad_7', 'Overwatch_k',
+];
 
 export const QUICK_COMMANDS = [
   { id: 'push', text: 'Pushing now', voice: 'Pushing' },

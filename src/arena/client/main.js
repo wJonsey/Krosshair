@@ -355,13 +355,14 @@ net.on('drone-end', (message) => {
 net.on('ping-loc', (message) => {
   effects.ping(message.x, message.y, message.z, message.where, message.danger);
   hud.addPing(message.x, message.z, message.danger);
-  hud.notice(message.danger ? `${nameOf(message.from)}: enemy at ${message.where}` : `${nameOf(message.from)} pinged ${message.where}`, message.danger ? 'warn' : 'info');
+  const who = `${nameOf(message.from)}${message.bot ? ' (bot)' : ''}`;
+  hud.notice(message.danger ? `${who}: enemy at ${message.where}` : `${who} pinged ${message.where}`, message.danger ? 'warn' : 'info');
   play('ping');
 });
 net.on('chat', (message) => { if (game.screen === 'lobby') { lobbyChat(message); play('chat'); } else hud.chat(message); });
 net.on('quick', (message) => {
   const command = { push: 'Pushing now', hold: 'Hold this angle', help: 'Need backup', spotted: 'Enemy spotted', nice: 'Nice shot', sorry: 'My bad' }[message.id];
-  hud.chat({ name: message.name, team: game.roster.get(game.id)?.team, text: `${command} · ${message.where}`, scope: 'team' });
+  hud.chat({ name: message.name, bot: message.bot, team: game.roster.get(game.id)?.team, text: `${command} · ${message.where}`, scope: 'team' });
   if (message.from !== game.id) announce(command);
 });
 net.on('react', (message) => feed(`${message.name} ${message.emoji}`, 'info'));

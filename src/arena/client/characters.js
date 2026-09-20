@@ -250,6 +250,7 @@ export class Operators {
     root.position.set(source.x, source.y, source.z);
     model.rotation.y = source.yaw;
     this.scene.add(root);
+    root.visible = !this.replay;
     this.corpses.push({ root, model, age: 0, weapon: source.weapon || 'm44', fall: Math.random() < 0.5 ? 1 : -1 });
     if (entity) { entity.root.visible = false; entity.buffer = []; }
   }
@@ -267,12 +268,16 @@ export class Operators {
       this.replay.entities.set(id, entity);
     }
     this.entities.forEach((entity) => { entity.root.visible = false; });
+    // A replay rewinds the fight: the bodies lying around belong to the present, so they go away while
+    // it plays. Otherwise a pilot is on the floor and up and walking at the same time.
+    this.corpses.forEach((corpse) => { corpse.root.visible = false; });
   }
 
   stopReplay() {
     if (!this.replay) return;
     this.replay.entities.forEach((entity) => entity.dispose());
     this.replay = null;
+    this.corpses.forEach((corpse) => { corpse.root.visible = true; });
   }
 
   update(dt, serverTime, camera, wallDt = dt) {
@@ -320,7 +325,9 @@ export class Operators {
       drone.mesh.visible = owner !== game.id || !this.pilotView;
       loop(`drone-${owner}`)?.move(drone.mesh.position.x, drone.mesh.position.y, drone.mesh.position.z);
     }
+    // Bodies hold still (and stay hidden) while a replay is on screen.
     for (const corpse of this.corpses) {
+      if (this.replay) { corpse.root.visible = false; continue; }
       corpse.age += dt;
       const k = Math.min(1, corpse.age / 0.55);
       const ease = 1 - (1 - k) ** 3;
