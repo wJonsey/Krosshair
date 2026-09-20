@@ -6,7 +6,7 @@ import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DE
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
 import { net } from './net.js';
-import { ACTIONS, PAD_ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, input, padBindFor, padName, resetBinds, resetPadBinds, setBind, setPadBind } from './input.js';
+import { ACTIONS, PAD_ACTIONS, PAD_LAYOUTS, PAD_LAYOUT_IDS, RESERVED, bindLabel, bindsFor, codeLabel, input, padBindFor, padLayout, padName, resetBinds, resetPadBinds, setBind, setPadBind } from './input.js';
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
@@ -770,6 +770,7 @@ function settingsBodyHtml(tab) {
       <p class="hint bind-help">Click a slot, press a key. <b>Esc</b> cancels, <b>Backspace</b> clears. The mouse wheel always zooms and switches weapons.</p>
       <div class="panel pad-panel"><p class="eyebrow">Controller <small>${input.padName ? escapeHtml(input.padName.slice(0, 40)) : 'none connected'}</small></p>
         <p class="hint">Sticks move and aim. Click a button, then press it on the pad.</p>
+        ${select('padLayout', 'Button names', [['', `Match the pad (${PAD_LAYOUTS[input.layout].name})`], ...PAD_LAYOUT_IDS.map((id) => [id, PAD_LAYOUTS[id].name])], game.settings.padLayout || '')}
         <div class="bind-grid">${PAD_ACTIONS.map((action) => { const waiting = padListening === action.id; return `<div class="bind-row"><span>${action.label}</span><button type="button" class="bind${waiting ? ' waiting' : ''}" data-pad-bind="${action.id}">${waiting ? 'PRESS A BUTTON…' : (padBindFor(action.id) ? padName(padBindFor(action.id)) : '-')}</button></div>`; }).join('')}</div>
         ${toggle('aimAssist', 'Aim assist', 'Controller only. Slows your aim near a pilot and helps it along a little.')}
         <div class="button-row"><button type="button" id="reset-pad-binds" class="ghost-button">Reset controller</button></div></div>`;

@@ -25,23 +25,42 @@ export const DEFAULT_BINDS = {
 export const RESERVED = ['Escape', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight'];
 
 // Which kind of controller a pad is, by its id, so the prompts show the right letters.
-const XBOX = { Pad0: 'A', Pad1: 'B', Pad2: 'X', Pad3: 'Y', Pad4: 'LB', Pad5: 'RB', Pad6: 'LT', Pad7: 'RT', Pad8: 'VIEW', Pad9: 'MENU', Pad10: 'L3', Pad11: 'R3', Pad12: 'D-UP', Pad13: 'D-DOWN', Pad14: 'D-LEFT', Pad15: 'D-RIGHT', Pad16: 'GUIDE' };
-const PLAYSTATION = { Pad0: '✕', Pad1: '○', Pad2: '□', Pad3: '△', Pad4: 'L1', Pad5: 'R1', Pad6: 'L2', Pad7: 'R2', Pad8: 'SHARE', Pad9: 'OPTIONS', Pad10: 'L3', Pad11: 'R3', Pad12: 'D-UP', Pad13: 'D-DOWN', Pad14: 'D-LEFT', Pad15: 'D-RIGHT', Pad16: 'PS' };
-export const PAD_CODES = Object.keys(XBOX);
+// Every pad reports the same button numbers; only the printing on them changes. A Nintendo pad has its
+// face buttons the other way round, so its names are swapped to match what the pilot is looking at.
+const DPAD = { Pad12: 'D-UP', Pad13: 'D-DOWN', Pad14: 'D-LEFT', Pad15: 'D-RIGHT' };
+export const PAD_LAYOUTS = {
+  xbox: { name: 'Xbox', names: { Pad0: 'A', Pad1: 'B', Pad2: 'X', Pad3: 'Y', Pad4: 'LB', Pad5: 'RB', Pad6: 'LT', Pad7: 'RT', Pad8: 'VIEW', Pad9: 'MENU', Pad10: 'L3', Pad11: 'R3', ...DPAD, Pad16: 'GUIDE' } },
+  playstation: { name: 'PlayStation', names: { Pad0: '✕', Pad1: '○', Pad2: '□', Pad3: '△', Pad4: 'L1', Pad5: 'R1', Pad6: 'L2', Pad7: 'R2', Pad8: 'SHARE', Pad9: 'OPTIONS', Pad10: 'L3', Pad11: 'R3', ...DPAD, Pad16: 'PS' } },
+  nintendo: { name: 'Nintendo', names: { Pad0: 'B', Pad1: 'A', Pad2: 'Y', Pad3: 'X', Pad4: 'L', Pad5: 'R', Pad6: 'ZL', Pad7: 'ZR', Pad8: '-', Pad9: '+', Pad10: 'L-STICK', Pad11: 'R-STICK', ...DPAD, Pad16: 'HOME' } },
+  steam: { name: 'Steam Deck', names: { Pad0: 'A', Pad1: 'B', Pad2: 'X', Pad3: 'Y', Pad4: 'L1', Pad5: 'R1', Pad6: 'L2', Pad7: 'R2', Pad8: 'VIEW', Pad9: 'MENU', Pad10: 'L3', Pad11: 'R3', ...DPAD, Pad16: 'STEAM' } },
+  generic: { name: 'Generic', names: { Pad0: 'BTN 1', Pad1: 'BTN 2', Pad2: 'BTN 3', Pad3: 'BTN 4', Pad4: 'L1', Pad5: 'R1', Pad6: 'L2', Pad7: 'R2', Pad8: 'SELECT', Pad9: 'START', Pad10: 'L3', Pad11: 'R3', ...DPAD, Pad16: 'HOME' } },
+};
+export const PAD_LAYOUT_IDS = Object.keys(PAD_LAYOUTS);
+// Vendor ids are the reliable part of a pad's name; the words around them vary by browser.
+function detectLayout(id = '') {
+  const text = String(id);
+  if (/057e|nintendo|switch pro|joy-?con/i.test(text)) return 'nintendo';
+  if (/28de|steam ?deck|valve/i.test(text)) return 'steam';
+  if (/054c|dualshock|dualsense|playstation/i.test(text)) return 'playstation';
+  if (/045e|xbox|xinput/i.test(text)) return 'xbox';
+  if (/wireless controller/i.test(text)) return 'playstation';   // Sony's own name for itself
+  return 'generic';
+}
+export const PAD_CODES = Object.keys(PAD_LAYOUTS.xbox.names);
 // What the game is being played with right now. It flips on the first press of either kind.
-export const input = { mode: 'kbm', padName: '', playstation: false };
+export const input = { mode: 'kbm', padName: '', layout: 'xbox' };
 export function setInputMode(mode, pad = null) {
   if (pad) {
     const id = pad.id || '';
-    input.padName = id;
-    // Sony's vendor id is 054c. "Wireless Controller" alone is not enough: Xbox pads say that too.
-    input.playstation = /dualshock|dualsense|playstation|054c/i.test(id) || (/wireless controller/i.test(id) && !/xbox|045e/i.test(id));
+    if (id !== input.padName) { input.padName = id; input.layout = detectLayout(id); bus.emit('input-mode', input.mode); }
   }
   if (input.mode === mode) return;
   input.mode = mode;
   bus.emit('input-mode', mode);
 }
-export const padName = (code) => (input.playstation ? PLAYSTATION : XBOX)[code] || String(code || '').toUpperCase();
+// The layout the prompts use: whatever the pilot picked, or whatever the pad says it is.
+export const padLayout = () => (PAD_LAYOUTS[game.settings.padLayout] ? game.settings.padLayout : input.layout);
+export const padName = (code) => PAD_LAYOUTS[padLayout()].names[code] || String(code || '').toUpperCase();
 
 // Controller binds live in their own table.
 export const DEFAULT_PAD_BINDS = {

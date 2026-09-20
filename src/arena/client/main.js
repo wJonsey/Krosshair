@@ -366,6 +366,12 @@ net.on('quick', (message) => {
 });
 net.on('react', (message) => feed(`${message.name} ${message.emoji}`, 'info'));
 net.on('feed', (message) => feed(message.text, message.tone));
+// Killstreaks: what you earned, and what it just did for you.
+net.on('streak', (message) => {
+  hud.banner(`${message.at} KILL STREAK`, message.desc, message.name.toUpperCase(), 'go', 2600);
+  play(message.at >= 7 ? 'matchWin' : 'xp');
+  feed(`${message.name} · ${message.desc}`, 'good');
+});
 net.on('notice', (message) => { feed(message.text, message.tone); if (message.tone === 'warn') play('deny', { volume: 0.6 }); });
 
 // ---------------------------------------------------------------- pause / leave

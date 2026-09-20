@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
-  HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, teamSizeOf,
+  CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
@@ -20,7 +20,7 @@ const round2 = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
 
 export function freshMatchStats() {
-  return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, coinKills: 0, weaponKills: {} };
+  return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, bestStreak: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, coinKills: 0, weaponKills: {} };
 }
 
 export class Room {
@@ -142,7 +142,7 @@ export class Room {
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,
       nextFire: 0, equipUntil: 0, reloadEnd: 0, reloadSlot: null, scopedSince: 0, spread: { primary: new SpreadTracker(), sidearm: new SpreadTracker() },
       stimUntil: 0, stimUsed: false, ghostUntil: 0, drone: null, damageFrom: new Map(), diedThisRound: false, lastFireAt: 0,
-      disconnectedAt: 0, pendingJoin: false, shotSeq: 0, dev: false, devTools: {}, ...base,
+      disconnectedAt: 0, pendingJoin: false, shotSeq: 0, streak: 0, gunLevel: 0, dev: false, devTools: {}, ...base,
     };
     this.refillAmmo(player);
     return player;
@@ -286,6 +286,8 @@ export class Room {
     this.variant = pickVariant(this);
     for (const player of this.players.values()) {
       player.match = freshMatchStats();
+      player.streak = 0;
+      player.gunLevel = 0;
       player.credits = this.rules.startCredits;
       player.weapons = { ...DEFAULT_LOADOUT };
       player.armor = 0; player.helmet = false; player.gadgets = []; player.diedThisRound = false; player.pendingJoin = false; player.ready = false;
@@ -341,6 +343,7 @@ export class Room {
       }
       if (this.rules.modifier === 'sidearms') player.weapons.primary = null;
       if (this.rules.modifier === 'instagib') { player.armor = 0; player.helmet = false; }
+      this.fixedLoadout(player);
       player.diedThisRound = false;
       player.bought = {};
       player.match.roundsPlayed += 1;
@@ -379,6 +382,26 @@ export class Room {
     if (player.bot) resetBot(player);
     this.send(player, { type: 'spawn', x: point.x, y: point.y, z: point.z, yaw: player.yaw, epoch: player.epoch });
     this.pushYou(player);
+  }
+
+  // One in the Chamber and Gun Game hand the guns out themselves: nothing is bought, nothing is kept.
+  fixedLoadout(player) {
+    const modifier = this.rules.modifier;
+    if (modifier === 'chamber') {
+      player.weapons = { primary: null, sidearm: CHAMBER.sidearm, melee: 'knife' };
+      player.armor = 0; player.helmet = false; player.gadgets = [];
+      player.active = 'sidearm';
+      this.refillAmmo(player);
+      player.ammo.sidearm = { mag: CHAMBER.mag, reserve: 0 };
+    } else if (modifier === 'gungame') {
+      player.gunLevel = Math.min(player.gunLevel || 0, GUN_LADDER.length - 1);
+      player.weapons = { primary: null, sidearm: null, melee: 'knife' };
+      const gun = WEAPONS[GUN_LADDER[player.gunLevel]];
+      player.weapons[gun.slot] = gun.id;
+      player.armor = 0; player.helmet = false; player.gadgets = [];
+      player.active = gun.slot;
+      this.refillAmmo(player);
+    }
   }
 
   refillAmmo(player) {
@@ -942,7 +965,7 @@ export class Room {
     if (victim.devTools?.god) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
     const modifier = this.rules.modifier;
     if (modifier === 'headhunter' && zone !== 'head' && !weapon.melee) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
-    if (modifier === 'instagib' || this.phase === 'overtime') amount = 999;
+    if (modifier === 'instagib' || modifier === 'chamber' || this.phase === 'overtime') amount = 999;
     let helmetBroke = false;
     if (zone === 'head' && victim.helmet) { amount *= HELMET_FACTOR; victim.helmet = false; helmetBroke = true; }
     let absorbed = 0;
@@ -967,6 +990,7 @@ export class Room {
   kill(victim, killer, weapon, zone, meta = {}) {
     const t = now();
     victim.alive = false; victim.hp = 0; victim.diedThisRound = true; victim.reloadEnd = 0;
+    victim.streak = 0;
     if (victim.drone) this.endDrone(victim, false);
     if (!victim.dummy) victim.match.deaths += 1;
     let assist = null;
@@ -985,6 +1009,10 @@ export class Room {
         if (weapon.melee) killer.match.knifeKills += 1;
         if (weapon.slot === 'sidearm') killer.match.sidearmKills += 1;
         this.pay(killer, ECONOMY.kill + (zone === 'head' ? ECONOMY.headshot : 0));
+        this.modifierKill(killer);
+        killer.streak = (killer.streak || 0) + 1;
+        killer.match.bestStreak = Math.max(killer.match.bestStreak || 0, killer.streak);
+        this.awardStreak(killer);
         this.pushYou(killer);
       }
       let bestDamage = 35;
@@ -1053,6 +1081,44 @@ export class Room {
     if (shield.hp <= 0) { this.shields.delete(id); this.world.removeDynamic(id); this.broadcast({ type: 'shield-end', id }); } else this.broadcast({ type: 'shield-hit', id, hp: Math.round(shield.hp) });
   }
 
+  // What a kill does in the modes that hand the guns out.
+  modifierKill(killer) {
+    const modifier = this.rules.modifier;
+    if (modifier === 'chamber') {
+      const ammo = killer.ammo.sidearm;
+      if (ammo) ammo.mag = Math.min(CHAMBER.mag + 1, ammo.mag + 1);
+      return;
+    }
+    if (modifier !== 'gungame') return;
+    killer.gunLevel = (killer.gunLevel || 0) + 1;
+    if (killer.gunLevel >= GUN_LADDER.length) {
+      this.broadcast({ type: 'feed', text: `${killer.name} finished the ladder`, tone: 'good' });
+      this.endRound(killer.team, 'gungame');
+      return;
+    }
+    const gun = WEAPONS[GUN_LADDER[killer.gunLevel]];
+    killer.weapons = { primary: null, sidearm: null, melee: 'knife' };
+    killer.weapons[gun.slot] = gun.id;
+    killer.active = gun.slot;
+    killer.reloadEnd = 0;
+    this.refillAmmo(killer);
+    this.send(killer, { type: 'notice', text: `${gun.name} · ${GUN_LADDER.length - killer.gunLevel} to go`, tone: 'good' });
+  }
+
+  // Kills in a row, across the match. Small helps, never a free kill.
+  awardStreak(player) {
+    const streak = streakAt(player.streak);
+    if (!streak || player.bot) return;
+    const t = now();
+    if (streak.reveal) for (const enemy of this.enemiesOf(player)) if (!enemy.dummy) this.mark(enemy, streak.reveal, 'streak', player.team);
+    if (streak.ammo) this.refillAmmo(player);
+    if (streak.armor) player.armor = Math.max(player.armor, streak.armor);
+    if (streak.heal) { player.hp = 100; player.helmet = true; }
+    if (streak.ghost) player.ghostUntil = Math.max(player.ghostUntil, t) + streak.ghost;
+    this.send(player, { type: 'streak', streak: streak.id, name: streak.name, desc: streak.desc, at: streak.at });
+    this.broadcast({ type: 'feed', text: `${player.name} is on ${streak.at} kills · ${streak.name}`, tone: 'info' }, (other) => other !== player);
+  }
+
   mark(target, duration, reason, teamOverride = null) {
     const team = teamOverride || (target.team === 'A' ? 'B' : 'A');
     this.sendTeam(team, { type: 'mark', id: target.id, until: round3(now() + duration), reason });
@@ -1073,6 +1139,9 @@ export class Room {
     if (WEAPONS[item] && !WEAPONS[item].melee) {
       const weapon = WEAPONS[item];
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
+      if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
+      const families = MODIFIERS[modifier]?.families;
+      if (families && weapon.slot === 'primary' && !families.includes(weapon.family)) return this.notice(player, `${MODIFIERS[modifier].name}.`, 'warn');
       if (player.weapons[weapon.slot] === item) return;
       const previous = player.bought[`slot:${weapon.slot}`];
       const refund = previous ? previous.cost : 0;

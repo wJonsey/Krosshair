@@ -25,11 +25,23 @@ test('every controller action has a button, and no button does two things', () =
   assert.equal(padBinds.jump, 'Pad0');
 });
 
-test('both controller layouts name every button', () => {
-  for (const table of ['XBOX', 'PLAYSTATION']) {
-    const names = block(`const ${table}`);
-    for (let i = 0; i <= 16; i += 1) assert.match(names, new RegExp(`Pad${i}: '`), `${table} has no name for Pad${i}`);
+test('every controller layout names every button, and each has its own words', () => {
+  const layouts = source.slice(source.indexOf('export const PAD_LAYOUTS'), source.indexOf('export const PAD_LAYOUT_IDS'));
+  const rows = [...layouts.matchAll(/^  (\w+): \{ name: '([^']+)', names: \{([^}]*)\}/gm)];
+  assert.ok(rows.length >= 5, `only ${rows.length} layouts`);
+  const seen = new Set();
+  for (const [, id, name, names] of rows) {
+    assert.ok(name, `${id} has no name`);
+    for (let i = 0; i <= 11; i += 1) assert.match(names, new RegExp(`Pad${i}: '`), `${id} has no name for Pad${i}`);
+    assert.match(names, /\.\.\.DPAD/, `${id} is missing the d-pad`);
+    seen.add(names.match(/Pad0: '([^']+)'/)[1]);
   }
+  for (const id of ['xbox', 'playstation', 'nintendo', 'steam', 'generic']) assert.ok(layouts.includes(`  ${id}: {`), `no ${id} layout`);
+  // Nintendo swaps its face buttons, so the bottom button is not called A.
+  const nintendo = rows.find(([, id]) => id === 'nintendo')[3];
+  assert.match(nintendo, /Pad0: 'B'/);
+  assert.match(nintendo, /Pad1: 'A'/);
+  assert.ok(seen.size >= 3, 'the layouts all call the bottom button the same thing');
 });
 
 test('the server keeps controller binds and the aim assist switch, and drops anything else', async () => {

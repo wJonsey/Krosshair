@@ -287,7 +287,15 @@ export const MODIFIERS = {
   instagib: { name: 'One Tap', desc: 'Every hit is lethal. No armour.' },
   lowgrav: { name: 'Low Orbit', desc: 'A third of the gravity. Rooftops are for everyone.' },
   sidearms: { name: 'Sidearms Only', desc: 'Pistols, revolvers and blades only.' },
+  snipers: { name: 'Snipers Only', desc: 'Bolt-actions and marksman rifles. Nothing else.', families: ['sniper', 'marksman'] },
+  closequarters: { name: 'Close Quarters', desc: 'Shotguns and submachine guns. Get in their face.', families: ['smg', 'shotgun'] },
+  chamber: { name: 'One in the Chamber', desc: 'One round, one life. Every kill loads another.', fixed: true },
+  gungame: { name: 'Gun Game', desc: 'Every kill moves you up the ladder. Finish it to take the round.', fixed: true },
 };
+// Gun Game: the ladder, easiest to hardest. Finish the last one and the round is yours.
+export const GUN_LADDER = ['wasp', 'breaker', 'talon', 'hornet', 'ronin', 'halcyon', 'maul', 'anvil', 'recon', 'vesper', 'm44', 'harbinger', 'pike', 'viper', 'sawn', 'p9'];
+// One in the Chamber: a revolver with a single round, and a blade for when it is gone.
+export const CHAMBER = { sidearm: 'viper', mag: 1 };
 export const VARIANTS = ['dusk', 'night', 'storm', 'noon'];
 export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm Front', noon: 'High Noon', snow: 'Whiteout', haze: 'Dust Haze' };
 // A level is a centre point, not a spec: every bot rolls its own personality around it (server/bots.js),
@@ -300,6 +308,16 @@ export const BOT_DIFFICULTY = {
 // Bot personalities. Each one bends the bot's own traits and what it buys, so a Rusher really does
 // run at you with a short gun and a Sniper really does sit on a long angle. Skill still comes from the
 // difficulty; this is temperament.
+// Killstreaks. Kills in a row without dying, counted across the whole match. Each one is a small help
+// the moment you earn it, never a kill from nowhere: the game stays about the shot you take.
+export const KILLSTREAKS = [
+  { at: 3, id: 'spotter', name: 'Spotter', desc: 'Every enemy marked for 4 seconds.', reveal: 4 },
+  { at: 5, id: 'resupply', name: 'Resupply', desc: 'Magazines full, armour patched.', ammo: true, armor: 50 },
+  { at: 7, id: 'ghost', name: 'Silent Step', desc: '20 seconds of silent movement.', ghost: 20 },
+  { at: 10, id: 'overwatch', name: 'Overwatch', desc: 'Marked enemies, full health, full ammo.', reveal: 6, ammo: true, heal: true },
+];
+export const streakAt = (kills) => KILLSTREAKS.find((streak) => streak.at === kills) || null;
+
 export const BOT_TYPES = {
   allround: { id: 'allround', name: 'All-round', desc: 'Plays it straight.', weight: 26, traits: {} },
   rusher: { id: 'rusher', name: 'Rusher', desc: 'Runs at you with a short gun.', weight: 18,
@@ -546,7 +564,7 @@ export function dailyContracts(dateKey) {
   return picked;
 }
 export function dailyModifier(dateKey) {
-  const options = ['headhunter', 'instagib', 'lowgrav', 'sidearms'];
+  const options = ['headhunter', 'instagib', 'lowgrav', 'sidearms', 'snipers', 'closequarters', 'chamber', 'gungame'];
   let seed = 7;
   for (const char of dateKey) seed = (seed * 33 + char.charCodeAt(0)) >>> 0;
   return options[seed % options.length];

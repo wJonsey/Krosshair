@@ -1,7 +1,7 @@
 // Server-side bots. They see with the same line-of-sight test the game uses,
 // walk the generated nav grid and shoot through the same authoritative fire path
 // as humans, so everything a bot does is a legal play.
-import { BODY, BOT_DIFFICULTY, BOT_NAMES, COSMETICS, FLAG, WEAPONS, BOT_TYPES, BOT_TYPE_IDS } from '../shared/constants.js';
+import { BODY, BOT_DIFFICULTY, BOT_NAMES, COSMETICS, FLAG, MODIFIERS, WEAPONS, BOT_TYPES, BOT_TYPE_IDS } from '../shared/constants.js';
 import { dirFromAngles } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 
@@ -109,6 +109,8 @@ export function resetBot(bot) {
 }
 
 export function botBuy(room, bot) {
+  // Some modes hand the guns out: there is nothing to buy.
+  if (MODIFIERS[room.rules.modifier]?.fixed) return;
   if (room.rules.modifier !== 'instagib') {
     if (bot.credits >= 1500) room.buy(bot, 'heavy'); else if (bot.credits >= 700) room.buy(bot, 'light');
     if (bot.credits >= 900) room.buy(bot, 'helmet');
@@ -118,10 +120,13 @@ export function botBuy(room, bot) {
   if (room.rules.modifier !== 'sidearms' && bot.weapons.primary === 'm44') {
     // Taste follows temperament: pushers reach for rifles and SMGs, patient pilots stay on long guns.
     const pusher = bot.traits && bot.traits.aggression > 0.62, camper = bot.traits && bot.traits.patience > 0.6 && !pusher;
+    const families = MODIFIERS[room.rules.modifier]?.families;
     const typeGuns = BOT_TYPES[bot.botType]?.guns;
     const picks = typeGuns ? typeGuns.map(([id, weight]) => [id, weight * 0.8]) : pusher ? [['talon', 0.2], ['halcyon', 0.16], ['wasp', 0.12], ['hornet', 0.1], ['ronin', 0.1], ['breaker', 0.05], ['recon', 0.06]] : camper ? [['recon', 0.22], ['vesper', 0.2], ['harbinger', 0.1], ['anvil', 0.05]] : [['recon', 0.16], ['vesper', 0.12], ['talon', 0.14], ['halcyon', 0.1], ['ronin', 0.08], ['harbinger', 0.05], ['anvil', 0.04], ['wasp', 0.04], ['hornet', 0.03]];
+    // In the restricted modes they can only reach for what that mode allows.
+    const allowed = families ? (picks.filter(([id]) => families.includes(WEAPONS[id].family)).length ? picks.filter(([id]) => families.includes(WEAPONS[id].family)) : Object.values(WEAPONS).filter((w) => families.includes(w.family)).map((w) => [w.id, 0.2])) : picks;
     let chance = roll;
-    for (const [id, weight] of picks) {
+    for (const [id, weight] of allowed) {
       chance -= weight;
       if (chance <= 0) { if (bot.credits >= WEAPONS[id].cost + 400) room.buy(bot, id); break; }
     }
