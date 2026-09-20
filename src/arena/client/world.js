@@ -308,6 +308,9 @@ export class Arena {
     }
     let seed = 11 + this.map.id.length * 7;
     const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    // The ring sits around the middle of the map, and each piece is pushed out by its own half width, so a
+    // hill the size of a house can never lean into the arena. Maps are not always centred on the origin.
+    const centre = { x: (bounds.minX + bounds.maxX) / 2, z: (bounds.minZ + bounds.maxZ) / 2 };
     const ring = (count, geometry, material, place) => {
       const mesh = new THREE.InstancedMesh(geometry, material, count);
       const matrix = new THREE.Matrix4(), rotation = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
@@ -315,13 +318,14 @@ export class Arena {
         const angle = (i / count) * Math.PI * 2 + random() * 0.12;
         const spec = place(random);
         rotation.setFromAxisAngle(up, spec.turn || 0);
-        mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(Math.sin(angle) * spec.radius, spec.y, Math.cos(angle) * spec.radius * 1.12), rotation, new THREE.Vector3(spec.w, spec.h, spec.d)));
+        const out = spec.radius + Math.max(spec.w, spec.d) * 0.5;
+        mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(centre.x + Math.sin(angle) * out, spec.y, centre.z + Math.cos(angle) * out * 1.12), rotation, new THREE.Vector3(spec.w, spec.h, spec.d)));
       }
       mesh.frustumCulled = false;
       group.add(mesh);
       return mesh;
     };
-    if (env.backdrop === 'skyline') this.addSkyline(group, reach + 70);
+    if (env.backdrop === 'skyline') this.addSkyline(group, reach + 70, centre);
     if (env.backdrop === 'town') {
       const walls = surfaceMaterial('ochre');
       walls.defines = { PATTERN: PATTERNS.windows };
@@ -349,7 +353,7 @@ export class Arena {
   }
 
   // A ring of dark towers beyond the walls gives the city maps a place in the world.
-  addSkyline(group, inner = 130) {
+  addSkyline(group, inner = 130, centre = { x: 0, z: 0 }) {
     const material = surfaceMaterial('wall');
     material.defines = { PATTERN: PATTERNS.windows };
     material.customProgramCacheKey = () => 'surface-windows';
@@ -363,9 +367,9 @@ export class Arena {
     const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
     for (let i = 0; i < count; i += 1) {
       const angle = (i / count) * Math.PI * 2 + random() * 0.1;
-      const radius = inner + random() * 90;
       const width = 14 + random() * 20, depth = 14 + random() * 20, height = 18 + random() * 58;
-      mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(Math.sin(angle) * radius, height / 2 - 2, Math.cos(angle) * radius * 1.15), rotation, new THREE.Vector3(width, height, depth)));
+      const radius = inner + random() * 90 + Math.max(width, depth) * 0.5;
+      mesh.setMatrixAt(i, matrix.compose(new THREE.Vector3(centre.x + Math.sin(angle) * radius, height / 2 - 2, centre.z + Math.cos(angle) * radius * 1.15), rotation, new THREE.Vector3(width, height, depth)));
     }
     mesh.frustumCulled = false;
     group.add(mesh);

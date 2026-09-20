@@ -1,7 +1,7 @@
 // Every arena must be fair, walkable and bot-navigable. Run with `npm test`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MATERIALS } from '../shared/constants.js';
+import { BODY, MATERIALS } from '../shared/constants.js';
 import { getMap, MAP_IDS, MAP_INFO, zoneAt } from '../shared/map.js';
 import { World } from '../shared/physics.js';
 import { NavGrid } from '../server/nav.js';
@@ -22,6 +22,54 @@ for (const id of only) {
     }
     assert.ok(map.env?.variants?.length, 'declares its weather variants');
     assert.ok(map.spawnZones?.A && map.spawnZones?.B, 'declares spawn zones');
+  });
+
+  test(`${id}: no two surfaces fight for the same plane`, () => {
+    // Faces in exactly the same plane flicker as the camera moves. getMap nudges them apart; this is the
+    // check that it worked, on the real map the game hands out.
+    const solid = map.boxes.filter((box) => box.max[1] > box.min[1] + 0.001);
+    const order = [...solid].sort((a, b) => a.min[0] - b.min[0]);
+    const clashes = [];
+    for (let i = 0; i < order.length; i += 1) {
+      const a = order[i];
+      for (let j = i + 1; j < order.length && order[j].min[0] < a.max[0]; j += 1) {
+        const b = order[j];
+        if (a.min[1] >= b.max[1] || b.min[1] >= a.max[1] || a.min[2] >= b.max[2] || b.min[2] >= a.max[2]) continue;
+        for (let axis = 0; axis < 3; axis += 1) {
+          const u = (axis + 1) % 3, v = (axis + 2) % 3;
+          const side = Math.min(Math.min(a.max[u], b.max[u]) - Math.max(a.min[u], b.min[u]), Math.min(a.max[v], b.max[v]) - Math.max(a.min[v], b.min[v]));
+          if (side <= 0.05) continue;
+          if (Math.abs(a.max[axis] - b.max[axis]) < 0.002 || Math.abs(a.min[axis] - b.min[axis]) < 0.002) clashes.push(`${a.id}/${b.id}`);
+        }
+      }
+    }
+    assert.deepEqual(clashes, [], 'these faces sit in the same plane and will flicker');
+  });
+
+  test(`${id}: nowhere a pilot can stand and never leave`, () => {
+    const nav = new NavGrid(world, map);
+    const seen = new Set(), groups = [];
+    for (const node of nav.nodes) {
+      if (seen.has(node.id)) continue;
+      const queue = [node]; seen.add(node.id); const group = [];
+      while (queue.length) { const current = queue.pop(); group.push(current); for (const edge of current.edges) { const other = nav.nodes[edge.to]; if (other && !seen.has(other.id)) { seen.add(other.id); queue.push(other); } } }
+      groups.push(group);
+    }
+    // A ledge you can only jump to is fine. A patch of floor with walls all round and no drop is not.
+    const escapes = (node) => {
+      for (let a = 0; a < 16; a += 1) {
+        const angle = (a / 16) * Math.PI * 2;
+        for (const step of [0.45, 0.9, 1.4]) {
+          const x = node.x + Math.cos(angle) * step, z = node.z + Math.sin(angle) * step;
+          const ground = world.groundBelow(x, node.y + 1.3, z);
+          if (!Number.isFinite(ground) || ground - node.y > 0.62) continue;
+          if (world.bodyFree(x, ground + 0.02, z, BODY.radius, BODY.height)) return true;
+        }
+      }
+      return false;
+    };
+    const traps = groups.filter((group) => group.length <= 4 && !group.some(escapes)).map((group) => [group[0].x, group[0].y, group[0].z]);
+    assert.deepEqual(traps, [], 'a pilot could stand here with no way out');
   });
 
   test(`${id}: mirrored across z = 0`, () => {

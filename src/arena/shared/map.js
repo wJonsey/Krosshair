@@ -4,7 +4,7 @@
 // Kestrel Yard is mirrored across z = 0 so both sides play identically.
 
 import { buildIsland } from './maps/island.js';
-import { createBuilder, SYM, DECO } from './mapkit.js';
+import { createBuilder, SYM, DECO, deconflict } from './mapkit.js';
 import { buildAtrium } from './maps/atrium.js';
 import { buildCampanile } from './maps/campanile.js';
 import { buildFrostbite } from './maps/frostbite.js';
@@ -372,7 +372,8 @@ const BUILDERS = { island: buildIsland, yard: buildYard, range: buildRange, atri
 const cache = new Map();
 export function getMap(id = 'yard') {
   const key = BUILDERS[id] ? id : 'yard';
-  if (!cache.has(key)) cache.set(key, BUILDERS[key]());
+  // A few passes: nudging one box apart can leave it flush with a third.
+  if (!cache.has(key)) { const built = BUILDERS[key](); for (let pass = 0; pass < 4 && deconflict(built.boxes); pass += 1); cache.set(key, built); }
   return cache.get(key);
 }
 

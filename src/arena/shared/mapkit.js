@@ -5,6 +5,33 @@
 export const SYM = { sym: true };
 export const DECO = { deco: true, noShadow: true };
 
+// Two boxes whose faces sit in exactly the same plane both draw there, and the renderer flickers between
+// them as you move. This nudges the smaller one 6 mm proud so one surface clearly wins. The step is far
+// below anything a player can feel, and it leaves the decoration on top rather than burying it.
+const NUDGE = 0.006;
+export function deconflict(boxes) {
+  const solid = boxes.filter((box) => box.max[0] > box.min[0] && box.max[1] > box.min[1] && box.max[2] > box.min[2]);
+  const order = [...solid].sort((a, b) => a.min[0] - b.min[0]);
+  const size = (box) => (box.max[0] - box.min[0]) * (box.max[1] - box.min[1]) * (box.max[2] - box.min[2]);
+  let fixed = 0;
+  for (let i = 0; i < order.length; i += 1) {
+    const a = order[i];
+    for (let j = i + 1; j < order.length && order[j].min[0] < a.max[0]; j += 1) {
+      const b = order[j];
+      if (a.min[1] >= b.max[1] || b.min[1] >= a.max[1] || a.min[2] >= b.max[2] || b.min[2] >= a.max[2]) continue;
+      const small = size(a) <= size(b) ? a : b;
+      for (let axis = 0; axis < 3; axis += 1) {
+        const u = (axis + 1) % 3, v = (axis + 2) % 3;
+        const side = Math.min(Math.min(a.max[u], b.max[u]) - Math.max(a.min[u], b.min[u]), Math.min(a.max[v], b.max[v]) - Math.max(a.min[v], b.min[v]));
+        if (side <= 0.05) continue;                                   // a shared edge is not a shared face
+        if (Math.abs(a.max[axis] - b.max[axis]) < 0.002) { small.max[axis] += NUDGE; fixed += 1; }
+        else if (Math.abs(a.min[axis] - b.min[axis]) < 0.002) { small.min[axis] -= NUDGE; fixed += 1; }
+      }
+    }
+  }
+  return fixed;
+}
+
 export function createBuilder() {
   const boxes = [];
   let counter = 0;
