@@ -439,6 +439,33 @@ const FINISH_ART = {
     paint: (c) => { c.fillStyle = '#101218'; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = 'rgba(255,255,255,.04)'; for (let y = 0; y < SIZE; y += 8) c.fillRect(0, y, SIZE, 3); wrappedCircuit(c, '#262d3a', 3, 218); },
     emit: (c) => { c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE); const g = c.createLinearGradient(0, 0, SIZE, 0); ['#2040ff', '#c020ff', '#ff4010', '#ffd040', '#ffffff', '#ffd040', '#ff4010', '#c020ff', '#2040ff'].forEach((color, i) => g.addColorStop(i / 8, color)); wrappedCircuit(c, g, 1.6, 218); },
   },
+  devnull: {
+    rough: 0.45, metal: 0.15, shader: 'devnull',
+    paint: (c) => {
+      for (let x = 0; x < SIZE; x += 32) for (let y = 0; y < SIZE; y += 32) { c.fillStyle = (x + y) % 64 ? '#0a0a0e' : '#ff00d4'; c.fillRect(x, y, 32, 32); }
+      c.fillStyle = 'rgba(255,255,255,.05)'; for (let x = 0; x < SIZE; x += 16) for (let y = 0; y < SIZE; y += 16) if ((x + y) % 32) c.fillRect(x, y, 16, 16);
+      grain(c, 0.05, 227);
+    },
+    // Only the magenta squares carry emission, so the shader can wash and tear the checker without lifting the black.
+    emit: (c) => { c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE); for (let x = 0; x < SIZE; x += 32) for (let y = 0; y < SIZE; y += 32) if (!((x + y) % 64)) { c.fillStyle = '#ff2ee0'; c.fillRect(x, y, 32, 32); c.fillStyle = 'rgba(255,255,255,.18)'; c.fillRect(x, y, 32, 2); c.fillRect(x, y + 30, 32, 2); } },
+  },
+  compile: {
+    rough: 0.3, metal: 0.2, shader: 'compile',
+    paint: (c) => { c.fillStyle = '#0c1016'; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = 'rgba(255,255,255,.025)'; for (let y = 0; y < SIZE; y += 16) c.fillRect(0, y, SIZE, 1); c.fillStyle = 'rgba(40,120,90,.14)'; c.fillRect(0, 0, 14, SIZE); grain(c, 0.05, 228); },
+    // Sixteen rows of tokens in syntax colours on a 32 x 16 glyph grid; the sweep lights the rows as it passes.
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(229), ink = ['#ff6ec7', '#7ad7ff', '#ffd866', '#a9f06a', '#c39bff', '#8b98a8'];
+      c.font = 'bold 11px monospace'; c.textBaseline = 'middle';
+      const words = ['build', 'link', 'emit', 'pack', 'hash', 'opt', 'seed', 'net', 'aim', 'ok', '()', '{}', '=>', '::', '0x1f', '404', 'i++', 'ref', 'map', 'fn'];
+      for (let row = 0; row < 16; row += 1) {
+        if (r() < 0.1) continue;
+        let col = 1 + Math.floor(r() * 3);
+        while (col < 31) { const w = words[Math.floor(r() * words.length)]; c.fillStyle = ink[Math.floor(r() * ink.length)]; c.fillText(w, col * 8, row * 16 + 8); col += w.length + 1 + Math.floor(r() * 2); }
+        c.fillStyle = 'rgba(120,255,170,.5)'; c.fillRect(0, row * 16 + 6, 6, 4);
+      }
+    },
+  },
 };
 // Suit patterns are grey: they multiply the pilot's suit colour instead of replacing it.
 const PATTERN_ART = {
@@ -463,6 +490,23 @@ const PATTERN_ART = {
   dazzle: (c) => { const dirs = [[5, 5], [-4, 6], [7, -2], [2, 7], [-6, -3], [6, 1], [1, -6], [-5, 2], [3, 4]]; voronoi(c, 3, 225, (i, e, x, y) => { if (i % 4 === 3) return i % 8 === 3 ? [62, 62, 62] : [255, 255, 255]; const [m, n] = dirs[i % dirs.length], s = Math.sin(((m * x + n * y) / SIZE) * Math.PI * 2 + i * 1.7); if (s > 0.1) return [58, 58, 58]; return s > -0.35 && i % 3 === 0 ? [150, 150, 150] : [255, 255, 255]; }); },
   scales: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); for (let row = -2; row <= 17; row += 1) for (let col = -1; col <= 8; col += 1) { const x = col * 32 + (row % 2 ? 16 : 0), y = row * 16; const g = c.createRadialGradient(x, y - 8, 2, x, y, 17); g.addColorStop(0, '#ffffff'); g.addColorStop(0.7, '#d4d4d4'); g.addColorStop(1, '#8e8e8e'); c.fillStyle = g; c.beginPath(); c.arc(x, y, 16, 0, Math.PI * 2); c.fill(); c.strokeStyle = '#626262'; c.lineWidth = 1.6; c.stroke(); } },
   devcircuit: (c) => { c.fillStyle = '#8a8a8a'; c.fillRect(0, 0, SIZE, SIZE); wrappedCircuit(c, '#f2f2f2', 3, 226); for (const [x, y, w, h] of [[40, 40, 40, 28], [168, 104, 32, 40], [72, 192, 48, 32], [216, 224, 32, 24]]) wrapped((dx, dy) => { c.fillStyle = '#e6e6e6'; for (let k = 4; k < w; k += 8) c.fillRect(x + dx + k, y + dy - 5, 3, h + 10); for (let k = 4; k < h; k += 8) c.fillRect(x + dx - 5, y + dy + k, w + 10, 3); c.fillStyle = '#3a3a3a'; c.fillRect(x + dx, y + dy, w, h); c.fillStyle = '#5a5a5a'; c.fillRect(x + dx + 4, y + dy + 4, w - 8, h - 8); }); },
+  // Dev rain: 32 columns of glyphs on a 16-row grid, darkest at each column's head and fading down its tail.
+  // Rows wrap with the modulo, so a tail that runs off the bottom carries on at the top.
+  devmatrix: (c) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(230), glyphs = '01<>{}[]/\\|=+*#$%&?!:;abcdefKXZ7394';
+    c.font = 'bold 12px monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (let col = 0; col < 32; col += 1) {
+      if (r() < 0.14) continue;
+      const head = Math.floor(r() * 16), len = 5 + Math.floor(r() * 11);
+      for (let k = 0; k < len; k += 1) {
+        const fade = 1 - k / len, shade = Math.round(235 - fade * 205), row = (head + k) % 16;
+        c.fillStyle = `rgba(${shade},${shade},${shade},${0.35 + fade * 0.65})`;
+        c.fillText(glyphs[Math.floor(r() * glyphs.length)], col * 8 + 4, row * 16 + 8);
+      }
+      c.fillStyle = 'rgba(70,70,70,.5)'; c.fillRect(col * 8 + 1, head * 16 + 1, 6, 2);
+    }
+  },
 };
 
 const textures = new Map();
@@ -747,6 +791,40 @@ const EFFECTS = {
     float spark = step(0.993, skinHash(cell + vec3(0.0, 0.0, floor(uTime * 14.0)))) * smoothstep(0.55, 0.9, heat);
     diffuseColor.rgb = skinSampleAt(map, wobble).rgb * 0.3;
     totalEmissiveRadiance += thermal * (0.2 + heat * 1.3) + trace * mix(thermal, vec3(1.0), 0.35 + flare * 0.5) * (0.7 + heat * 2.6 + flare * 4.0) + vec3(1.0, 0.75, 0.4) * spark * 7.0 + thermal * fres * (0.6 + heat);`,
+  // Dev, Null Texture: the missing-texture checker, alive. The checker stays crisp; every few seconds a fault hits and
+  // rows tear sideways, a band of solid magenta washes down the gun, and a thin mint scanline crawls over the whole thing.
+  devnull: `
+    float beat = floor(uTime * 8.0);
+    float fault = step(0.66, skinHash(vec3(floor(uTime * 0.9), 21.0, 5.0)));
+    float row = floor(vSkinPos.y * 55.0);
+    float tear = step(0.78, skinHash(vec3(row, beat, 7.0))) * fault;
+    float jump = (skinHash(vec3(row, beat, 9.0)) - 0.5) * 0.4 * tear;
+    vec3 shift = vec3(jump, 0.0, jump * 0.7);
+    vec3 torn = skinSampleAt(map, shift).rgb;
+    float gate = step(0.55, skinHash(vec3(floor(uTime * 0.45), 13.0, 2.0)));
+    float wash = smoothstep(0.09, 0.0, abs(fract(vSkinPos.z * 0.55 - uTime * 0.33) - 0.5)) * gate;
+    float scan = smoothstep(0.93, 1.0, fract(vSkinPos.y * 34.0 - uTime * 0.6));
+    vec3 cell = skinSampleAt(emissiveMap, shift).rgb;
+    vec3 pink = vec3(1.0, 0.1, 0.85);
+    vec3 mint = vec3(0.35, 1.0, 0.8);
+    diffuseColor.rgb = mix(diffuseColor.rgb, torn, tear);
+    diffuseColor.rgb = mix(diffuseColor.rgb, pink * 0.8, wash * 0.85);
+    totalEmissiveRadiance += cell * pink * (0.22 + tear * 1.6 + wash * 2.2) + pink * wash * 0.5 + mint * scan * (0.35 + tear * 1.2) + pink * fres * 0.45;`,
+  // Dev, Compile: a build running up the gun. A sweep climbs from stock to muzzle and resets, code rows brighten
+  // behind it and flare white at the head, and a green pulse says the build passed before the next one starts.
+  compile: `
+    float u = fract(vSkinPos.z * 0.6 + vSkinPos.y * 0.04);
+    float cyc = fract(uTime * 0.2);
+    float prog = clamp(cyc * 1.25, 0.0, 1.0);
+    float fill = step(u, prog);
+    float edge = smoothstep(0.04, 0.0, abs(u - prog)) * (1.0 - step(0.999, prog));
+    float done = smoothstep(0.84, 1.0, prog) * (0.55 + 0.45 * sin(uTime * 9.0));
+    vec3 code = skinSample(emissiveMap).rgb;
+    float flick = 0.85 + 0.15 * sin(uTime * 7.0 + u * 44.0 + skinHash(vec3(floor(u * 64.0), 4.0, 8.0)) * 6.28);
+    float rail = smoothstep(0.035, 0.0, abs(fract(vSkinPos.y * 8.0) - 0.5));
+    vec3 green = vec3(0.24, 1.0, 0.46);
+    diffuseColor.rgb = diffuseColor.rgb * 0.55 + green * fill * 0.04;
+    totalEmissiveRadiance += code * (0.3 + fill * 0.95 + edge * 4.2) * flick + green * (edge * 1.4 + fill * rail * 0.55 + fill * 0.1 + done * 1.1) + green * fres * (0.25 + done * 0.7);`,
 };
 const NOISE_GLSL = `
 uniform float uTime;

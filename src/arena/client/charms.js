@@ -74,6 +74,20 @@ const MAKERS = {
   medal: (t) => { ['#2b5fd9', '#f4f2ea', '#d8263a', '#f4f2ea', '#2b5fd9'].forEach((c, i) => add(t, box(0.0018, 0.0086, 0.0008), M(c, 0.85, 0), [(i - 2) * 0.0018, -0.0053, 0])); const g = gold(); add(t, box(0.0102, 0.0016, 0.0018), g, [0, -0.0096, 0]); add(t, rod(0.0074, 0.0022, 28), g, [0, -0.0176, 0], [Math.PI / 2, 0, 0]); add(t, ring(0.0062, 0.0006, 24), M('#b38a22', 0.3, 0.7), [0, -0.0176, 0.0012]); add(t, flat(star(5, 0.0043, 0.0018), 0.0008, 0.0003), M('#f5d06a', 0.2, 0.8, '#6a4a08', 0.6), [0, -0.0176, 0.0014]); },
   trophy: (t) => { const g = gold(); add(t, new THREE.SphereGeometry(0.0068, 18, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), g, [0, -0.0035, 0], null, [1, 1.25, 1]).material.side = THREE.DoubleSide; add(t, ring(0.0068, 0.0006, 24), g, [0, -0.0035, 0], [Math.PI / 2, 0, 0]); for (const x of [-1, 1]) add(t, new THREE.TorusGeometry(0.0024, 0.0007, 6, 12, Math.PI), g, [x * 0.0058, -0.0062, 0], [0, 0, -x * Math.PI / 2]); add(t, rod(0.0011, 0.0042, 8), g, [0, -0.0139, 0]); add(t, new THREE.CylinderGeometry(0.003, 0.0042, 0.0014, 16), g, [0, -0.0166, 0]); add(t, box(0.0105, 0.0055, 0.0105), M('#2a1e16', 0.6, 0.1), [0, -0.0201, 0]); add(t, box(0.0052, 0.0022, 0.0004), M('#e2b646', 0.3, 0.75), [0, -0.0201, 0.0054]); add(t, flat(star(5, 0.0022, 0.0009), 0.0006, 0), M('#fff2c2', 0.3, 0.3, '#ffd96a', 0.8), [0, -0.0078, 0.0062], [0.5, 0, 0]); },
   emerald: (t) => { const gem = M('#1fbf5c', 0.08, 0.25, '#0b7a34', 0.9), stone = new THREE.Group(); gem.flatShading = true; for (const [front, back, h, z] of [[0.0058, 0.0066, 0.0009, 0.00045], [0.0044, 0.0058, 0.0013, 0.00155], [0.0066, 0.0048, 0.0018, -0.0009], [0.0048, 0.0022, 0.0026, -0.0031]]) add(stone, new THREE.CylinderGeometry(front, back, h, 8), gem, [0, 0, z], [Math.PI / 2, Math.PI / 8, 0]); stone.scale.set(1, 1.35, 1); stone.position.y = -0.0135; t.add(stone); add(t, ring(0.0017, 0.00055, 10), gold(), [0, -0.0033, 0], [0, Math.PI / 2, 0]); const glint = add(t, flat(star(4, 0.0026, 0.0006), 0.0005, 0), M('#ffffff', 0.2, 0, '#eafff2', 2.2), [0.0036, -0.0082, 0.0042]); return { spin: stone, rate: 0.6, update: (s) => { glint.scale.setScalar(0.25 + 0.75 * Math.max(0, Math.sin(s * 1.9)) ** 6); glint.rotation.z = s * 0.7; } }; },
+  // Developer only. The key to the box: a toothed blade, a round bow, and a mint stone set in it that beats.
+  devkey: (t) => {
+    const edge = M('#00ffc6', 0.25, 0.3, '#00ffc6', 1.5), shaft = M('#0f3a33', 0.3, 0.6, '#00ffc6', 0.45), stone = M('#eafff6', 0.1, 0.1, '#00ffc6', 2.4);
+    const key = new THREE.Group();
+    add(key, ring(0.006, 0.0015, 18), edge, [0, 0, 0]);
+    add(key, box(0.0034, 0.0022, 0.0018), edge, [0, -0.0078, 0]);                 // collar under the bow
+    add(key, box(0.0026, 0.0175, 0.0016), shaft, [0, -0.0168, 0]);                // blade
+    for (const [y, w] of [[-0.0185, 0.0048], [-0.0215, 0.0034], [-0.0245, 0.0052]]) add(key, box(w, 0.0022, 0.0016), edge, [0.0013 + w / 2, y, 0]);
+    add(key, cone(0.0016, 0.0035, 4), shaft, [0, -0.0272, 0], [Math.PI, 0, 0]);   // the tip that goes in first
+    const gem = add(key, new THREE.IcosahedronGeometry(0.0028, 0), stone, [0, 0, 0]);
+    key.position.y = -0.0085;
+    t.add(key);
+    return { spin: key, rate: 0.8, update: (s) => { const beat = Math.sin(s * 2.6); stone.emissiveIntensity = 2.2 + beat * 0.9; gem.scale.setScalar(1 + beat * 0.12); gem.rotation.set(s * 0.6, s * 0.9, 0); } };
+  },
   // Developer only. A tesseract: a mint edge cube and a solid core turning against each other, their
   // corners strung together, the whole thing drifting mint to cyan to violet and back.
   devcore: (t) => {

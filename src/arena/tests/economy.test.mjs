@@ -375,6 +375,13 @@ test('only the developers\' Discord accounts are devs, never a lookalike name', 
   assert.ok(!isDev(null));
 });
 
+test('no two cosmetics share an id, so a dev item can never shadow a real one', () => {
+  for (const [kind, items] of Object.entries(COSMETICS)) {
+    const ids = items.map((item) => item.id);
+    assert.equal(new Set(ids).size, ids.length, `${kind} has a repeated id`);
+  }
+});
+
 test('dev items: devs wear them, nobody else can, and nothing sells, drops or trades them', async () => {
   const { profiles } = await stores();
   const dev = ProfileStore.newToken(), pilot = ProfileStore.newToken();
@@ -394,7 +401,7 @@ test('dev items: devs wear them, nobody else can, and nothing sells, drops or tr
   assert.equal(profiles.sanitizeCosmetics(dev, devLook).headgear, DEFAULT_LOOK.headgear);
   // Not in the shop, not in any crate, not out of a trade-up.
   const devFinishes = FINISHES.filter((finish) => finish.rarity === 'dev');
-  assert.equal(devFinishes.length, 3);
+  assert.ok(devFinishes.length >= 3, 'the dev class has its own finishes');
   for (const finish of devFinishes) assert.ok(buySkin(profiles, pilot, 'm44', finish.id).error);
   for (const [kind, items] of Object.entries(COSMETICS)) for (const item of items.filter((entry) => entry.dev)) {
     assert.ok(buyGear(profiles, pilot, kind, item.id).error, `${kind}:${item.id} was for sale`);

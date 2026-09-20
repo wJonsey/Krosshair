@@ -124,7 +124,10 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const lens = mat('#0d1318', { rough: 0.08, metal: 0.8 }), steel = mat('#d3dae0', { rough: 0.22, metal: 0.5 }), shieldMat = mat('#3a434d', { rough: 0.45, metal: 0.3 });
   const starMat = mat('#fff1a6', { emissive: '#ffd84a', glow: 2.2 }), haloMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.6 }), pixelMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.4 });
   const mirror = new THREE.MeshStandardMaterial({ color: '#06080b', roughness: 0.12, metalness: 0.85 });
+  // The scanner visor and the orbit pack keep their own mint so they never fight the halo for one glow value.
+  const scanGlass = mat('#080d12', { rough: 0.14, metal: 0.7 }), scanMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.6 }), orbitMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.4 });
   lacquer.side = THREE.DoubleSide;
+  scanGlass.side = THREE.DoubleSide;
   // See-through ones stay out of that list: glass, and the additive light of the dev items.
   const glass = new THREE.MeshStandardMaterial({ color: '#dff1ff', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.25, depthWrite: false });
   const holo = (color, opacity) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
@@ -308,6 +311,25 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
     for (let k = 0; k < 3; k += 1) { feather(wing, k + 1, 0.06 + k * 0.07, 0.034 + k * 0.039, 0.1, 0.6, 0.012, 0.8); feather(hand, k + 6, 0.05 + k * 0.09, 0, 0.4 + k * 0.25, 0.65, 0.012, 0.8); }
     return { wing, hand, side };
   });
+  // Orbit pack (dev): a pulsing core on a small mount with pixel cubes running tilted rings around it,
+  // each on its own clock (animateCosmetics). An atom built out of blocks.
+  const devorbit = packGroup('devorbit');
+  block(devorbit, 'devOrbitMount', [0.12, 0.13, 0.05], gear, [0, 0.34, 0.185]);
+  block(devorbit, 'devOrbitStem', [0.04, 0.04, 0.04], plate, [0, 0.34, 0.215]);
+  const orbitGlow = holo('#7dffe6', 0.38), orbitHaze = holo('#00ffc6', 0.15);
+  const orbitCore = new THREE.Group();
+  orbitCore.position.set(0, 0.34, 0.245); devorbit.add(orbitCore);
+  const orbitHeart = gem(orbitCore, 'devOrbitCore', 0.028, orbitMat, [0, 0, 0]);
+  gem(orbitCore, 'devOrbitBloom', 0.052, orbitHaze, [0, 0, 0]);
+  const orbits = [[0.55, 0.25, 1.7], [-0.95, 0.7, -1.15], [0.35, -1.15, 2.3], [1.35, 0.95, -0.8]].map(([tiltX, tiltZ, rate], k) => {
+    const ring = new THREE.Group();
+    ring.rotation.set(tiltX, 0, tiltZ); orbitCore.add(ring);
+    add(ring, geo('devOrbitPath', () => new THREE.TorusGeometry(0.082, 0.0025, 4, 28)), orbitGlow, [0, 0, 0], [Math.PI / 2, 0, 0]);
+    const spin = new THREE.Group();
+    spin.rotation.y = k * 1.6; ring.add(spin);
+    const bit = block(spin, 'devOrbitBit', [0.022, 0.022, 0.022], orbitMat, [0.082, 0, 0]);
+    return { spin, bit, rate };
+  });
   // Team strips: chest, back and both shoulders, so a side is readable from any angle.
   block(chest, 'stripF', [0.18, 0.03, 0.012], teamMat, [0, 0.43, -0.176], [0.16, 0, 0]);
   block(chest, 'stripB', [0.22, 0.04, 0.015], teamMat, [0, 0.43, 0.3]);
@@ -482,6 +504,26 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   add(halo, geo('haloDisc', () => new THREE.RingGeometry(0.095, 0.165, 40)), haloHaze, [0, 0, 0], [-Math.PI / 2, 0, 0]);
   add(halo, geo('haloBloom', () => new THREE.TorusGeometry(0.125, 0.032, 8, 40)), haloHaze, [0, 0, 0], [Math.PI / 2, 0, 0]);
   const haloBits = [0, 1, 2, 3, 4, 5].map((k) => block(haloOrbit, 'haloBit', [0.013, 0.013, 0.013], haloMat, [Math.cos((k * Math.PI) / 3) * 0.168, 0, Math.sin((k * Math.PI) / 3) * 0.168]));
+  // Root crown (dev): shards of light in a ring over the head, nothing holding them up, a disc of haze under
+  // them. The front ones are longer and glow harder. Drifts, turns and breathes in animateCosmetics.
+  const devcrown = option(headgear, 'devcrown', false);
+  hairOn(devcrown);
+  const crownGlow = holo('#7dffe6', 0.4), crownHaze = holo('#00ffc6', 0.13);
+  const rootCrown = new THREE.Group();
+  rootCrown.position.y = 0.185; devcrown.add(rootCrown);
+  add(rootCrown, geo('devCrownDisc', () => new THREE.RingGeometry(0.06, 0.15, 32)), crownHaze, [0, -0.042, 0], [-Math.PI / 2, 0, 0]);
+  add(rootCrown, geo('devCrownRing', () => new THREE.TorusGeometry(0.118, 0.0035, 4, 32)), crownGlow, [0, -0.042, 0], [Math.PI / 2, 0, 0]);
+  const crownShards = [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
+    // k 0 sits at the face (-z); `front` is 1 there and 0 at the back.
+    const a = (k / 8) * Math.PI * 2 - Math.PI / 2, front = (1 - Math.sin(a)) / 2;
+    const shard = new THREE.Group();
+    shard.position.set(Math.cos(a) * 0.118, 0, Math.sin(a) * 0.118); shard.rotation.y = -a;
+    add(shard, geo('devShard', () => new THREE.ConeGeometry(0.017, 0.075, 4).translate(0, 0.0375, 0)), haloMat, [0, 0, 0], null, [1, 0.55 + front * 0.8, 1]);
+    add(shard, geo('devShardTip', () => new THREE.ConeGeometry(0.017, 0.028, 4)), haloMat, [0, 0.013, 0], [Math.PI, 0, 0]);
+    add(shard, geo('devShardBloom', () => new THREE.ConeGeometry(0.032, 0.1, 4).translate(0, 0.05, 0)), crownGlow, [0, -0.012, 0], null, [1, 0.5 + front * 0.9, 1]);
+    rootCrown.add(shard);
+    return { shard, a };
+  });
   // Faces. The visor is a wide wrap-around band.
   const visorFace = option(faces, 'visor', true);
   add(visorFace, geo('visor', () => new THREE.CylinderGeometry(0.139, 0.132, 0.07, 9, 1, true, Math.PI - 1.1, 2.2)), visorMat, [0, 0.022, 0]).material.side = THREE.DoubleSide;
@@ -573,6 +615,19 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   devmask.add(pixelFace.eyeRow, pixelFace.mouthRow);
   for (const [list, row, count] of [[pixelFace.left, pixelFace.eyeRow, 4], [pixelFace.right, pixelFace.eyeRow, 4], [pixelFace.mouth, pixelFace.mouthRow, 5]]) for (let k = 0; k < count; k += 1) list.push(block(row, 'pixel', [0.012, 0.012, 0.004], pixelMat, [0, 0, 0]));
   setPixelFace(pixelFace, 'open', 'smile');
+  // Scanner visor (dev): a dark wrap-around band with one emissive strip swept across it on a pivot, so the
+  // sweep costs a rotation and nothing else. Trail, edge ticks and a haze band ride with it.
+  const devscan = option(faces, 'devscan', false);
+  add(devscan, geo('devScanShell', () => new THREE.CylinderGeometry(0.141, 0.134, 0.076, 12, 1, true, Math.PI - 1.25, 2.5)), scanGlass, [0, 0.022, 0]);
+  add(devscan, geo('devScanBrow', () => new THREE.CylinderGeometry(0.143, 0.143, 0.01, 12, 1, true, Math.PI - 1.25, 2.5)), gear, [0, 0.062, 0]).material.side = THREE.DoubleSide;
+  const scanHaze = add(devscan, geo('devScanHaze', () => new THREE.CylinderGeometry(0.145, 0.139, 0.062, 12, 1, true, Math.PI - 1.2, 2.4)), holo('#00ffc6', 0.12), [0, 0.022, 0]);
+  const scanPivot = new THREE.Group();
+  scanPivot.position.y = 0.022; devscan.add(scanPivot);
+  block(scanPivot, 'devScanLine', [0.007, 0.06, 0.006], scanMat, [0, 0, -0.1375]);
+  const scanTrailMat = holo('#00ffc6', 0.3);
+  for (const [x, w] of [[0.012, 0.016], [0.03, 0.022]]) block(scanPivot, `devScanTrail${w}`, [w, 0.052, 0.004], scanTrailMat, [x, 0, -0.1365]);
+  // Readout ticks at the right edge of the band, always lit.
+  for (const [y, w] of [[0.036, 0.016], [0.02, 0.01], [0.004, 0.014]]) block(devscan, `devScanTick${w}`, [w, 0.006, 0.006], scanMat, [0.088, 0.022 + y - 0.02, -0.105], [0, -0.7, 0]);
   block(head, 'helmetLight', [0.05, 0.025, 0.02], teamMat, [0, 0.105, -0.183]);
   block(head, 'rearLight', [0.06, 0.025, 0.02], teamMat, [0, 0.06, 0.185]);
   spine.add(head);
@@ -596,13 +651,16 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
 
   root.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
   // Thin, glassy and glowing parts cast no shadow.
-  for (const part of [antenna, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow]) part.traverse((mesh) => { mesh.castShadow = false; });
+  for (const part of [antenna, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow, rootCrown, scanPivot, scanHaze, orbitCore]) part.traverse((mesh) => { mesh.castShadow = false; });
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
     guns: new Map(), held: null, skins: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
     charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
-    materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror],
+    materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror, scanGlass, scanMat, orbitMat],
     beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
+    devcrown: { group: rootCrown, shards: crownShards, material: haloMat, glow: crownGlow, haze: crownHaze },
+    devscan: { pivot: scanPivot, material: scanMat, trail: scanTrailMat, haze: scanHaze.material },
+    devorbit: { core: orbitCore, heart: orbitHeart, rings: orbits, material: orbitMat, glow: orbitGlow, haze: orbitHaze },
   };
   return root;
 }
@@ -681,6 +739,26 @@ function animateCosmetics(data, stride, sway) {
     halo.glow.opacity = 0.35 + Math.sin(t * 3.1 + 1) * 0.2;
     halo.haze.opacity = 0.16 + Math.sin(t * 3.1) * 0.06;
   }
+  if (data.headgear.devcrown.visible) {
+    // Every shard rides its own slow bob and turn; the ring itself breathes and drifts round the head.
+    const crown = data.devcrown, breath = Math.sin(t * 1.3);
+    crown.group.position.y = 0.185 + breath * 0.009;
+    crown.group.rotation.y = t * 0.3;
+    crown.group.scale.setScalar(1 + breath * 0.035);
+    crown.shards.forEach(({ shard, a }, k) => { shard.position.y = Math.sin(t * 1.9 + k * 0.85) * 0.014; shard.rotation.y = -a + Math.sin(t * 0.55 + k * 1.3) * 0.35; });
+    crown.material.emissiveIntensity = 2.6 + breath * 0.8;
+    crown.glow.opacity = 0.3 + Math.sin(t * 2.6) * 0.14;
+    crown.haze.opacity = 0.13 + breath * 0.05;
+  }
+  if (data.faces.devscan.visible) {
+    // One strip sweeps across every 2.4 s and rests off-screen between passes; the band itself just breathes.
+    const scan = data.devscan, beat = t % 2.4, run = Math.min(1, beat / 0.55);
+    scan.pivot.visible = beat < 0.55;
+    scan.pivot.rotation.y = (run - 0.5) * 1.9;
+    scan.trail.opacity = 0.3 * (1 - run) + 0.05;
+    scan.material.emissiveIntensity = 2.6 + Math.sin(t * 2.2) * 0.3;
+    scan.haze.opacity = 0.12 + Math.sin(t * 2.2) * 0.035;
+  }
   if (data.faces.devmask.visible) {
     // Blinks every 3.1 s. Every 9.7 s it glitches (rows tear sideways, the LEDs stutter) then grins ^ ^ for a moment.
     const face = data.pixelFace, beat = t % 9.7, glitch = beat < 0.16 || t % 4.3 < 0.06;
@@ -699,6 +777,15 @@ function animateCosmetics(data, stride, sway) {
       if (k) part.rotation.x = -drag * 0.18 + Math.sin(data.phase * 2 - k * 0.9) * 0.1 * stride + Math.sin(t * 1.3 - k * 0.8) * 0.03;
       else part.rotation.set(-Math.max(0, data.spine.rotation.x) * 0.9 - 0.08 - drag * 0.55 + Math.sin(data.phase * 2) * 0.04 * stride, 0, Math.sin(data.phase) * 0.07 * stride + sway * 0.04);
     });
+  }
+  if (data.packs.devorbit.visible) {
+    // Each cube keeps its own ring and its own speed, so they never line up; the core beats under them.
+    const orbit = data.devorbit, pulse = Math.sin(t * 2.7);
+    orbit.rings.forEach(({ spin, bit, rate }, k) => { spin.rotation.y = t * rate + k * 1.6; bit.rotation.set(t * rate * 1.5, t * 1.1 + k, 0); });
+    orbit.heart.scale.setScalar(1 + pulse * 0.12);
+    orbit.material.emissiveIntensity = 2.4 + pulse * 0.9;
+    orbit.glow.opacity = 0.32 + Math.sin(t * 1.6) * 0.1;
+    orbit.haze.opacity = 0.15 + pulse * 0.06;
   }
   if (data.packs.devwings.visible) {
     // A slow breath, bigger in the air; running folds them back and down. The opacity shimmer runs root to tip.

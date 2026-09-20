@@ -120,6 +120,8 @@ export const FINISHES = [
   { id: 'devsource', name: 'Source Code', rarity: 'dev' },
   { id: 'singularity', name: 'Singularity', rarity: 'dev' },
   { id: 'overclock', name: 'Overclock', rarity: 'dev' },
+  { id: 'devnull', name: 'Null Texture', rarity: 'dev' },
+  { id: 'compile', name: 'Compile', rarity: 'dev' },
 ];
 export const finishInfo = (id) => FINISHES.find((finish) => finish.id === id) || null;
 export const finishPrice = (id) => RARITY[finishInfo(id)?.rarity]?.price || 0;   // 0: not for sale

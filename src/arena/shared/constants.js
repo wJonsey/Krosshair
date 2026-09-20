@@ -449,7 +449,7 @@ export const COSMETICS = {
     { id: '#b8a4e3', name: 'Lavender', price: 450 }, { id: '#d9a21f', name: 'Mustard', price: 450 },
     { id: '#7cc4ff', name: 'Sky', price: 500 }, { id: '#ff6a2a', name: 'Tangerine', price: 600 },
     { id: '#bfe8ff', name: 'Ice', price: 700 }, { id: '#e0a48f', name: 'Rose Gold', price: 900 },
-    { id: '#04150f', name: 'Dev Void', dev: true },
+    { id: '#04150f', name: 'Dev Void', dev: true }, { id: '#2b0f3a', name: 'Dev Violet', dev: true },
   ],
   visor: [
     { id: '#6ce6d1', name: 'Mint', level: 1 }, { id: '#ff7148', name: 'Orange', level: 1 },
@@ -462,7 +462,7 @@ export const COSMETICS = {
     { id: '#ffd1a3', name: 'Peach', price: 450 }, { id: '#b0ff3a', name: 'Lime', price: 500 },
     { id: '#ff3a8a', name: 'Rose', price: 500 }, { id: '#40ffff', name: 'Cyan', price: 500 },
     { id: '#7a5cff', name: 'Indigo', price: 600 }, { id: '#e8e8e8', name: 'Chrome', price: 700 },
-    { id: '#7cffe8', name: 'Dev Glow', dev: true },
+    { id: '#7cffe8', name: 'Dev Glow', dev: true }, { id: '#ff2fd0', name: 'Dev Magenta', dev: true },
   ],
   tracer: [
     { id: '#ffc857', name: 'Brass', level: 1 }, { id: '#6ce6d1', name: 'Mint', level: 2 },
@@ -494,6 +494,7 @@ export const COSMETICS = {
     { id: 'Clutch King', name: 'Clutch King', price: 2500 }, { id: 'Coin Goblin', name: 'Coin Goblin', price: 3000 },
     { id: 'Warlord', name: 'Warlord', price: 5000 }, { id: 'Big Spender', name: 'Big Spender', price: 10000 },
     { id: 'Developer', name: 'Developer', dev: true }, { id: 'Founder', name: 'Founder', dev: true },
+    { id: 'Architect', name: 'Architect', dev: true }, { id: 'Root', name: 'Root', dev: true },
   ],
   headgear: [
     { id: 'helmet', name: 'Combat helmet', level: 1 }, { id: 'cap', name: 'Field cap', level: 1 },
@@ -506,7 +507,7 @@ export const COSMETICS = {
     { id: 'mohawk', name: 'Mohawk', price: 1600 }, { id: 'tophat', name: 'Top hat', price: 2200 },
     { id: 'viking', name: 'Viking helm', price: 3500 }, { id: 'wizard', name: 'Wizard hat', price: 4500 },
     { id: 'kabuto', name: 'Kabuto', price: 6000 }, { id: 'bubble', name: 'Space helmet', price: 7000 },
-    { id: 'devhalo', name: 'Dev halo', dev: true },
+    { id: 'devhalo', name: 'Dev halo', dev: true }, { id: 'devcrown', name: 'Root crown', dev: true },
   ],
   face: [
     { id: 'visor', name: 'Visor', level: 1 }, { id: 'none', name: 'Balaclava', level: 1 },
@@ -517,7 +518,7 @@ export const COSMETICS = {
     { id: 'bandit', name: 'Bandit mask', price: 700 }, { id: 'aviators', name: 'Aviators', price: 800 },
     { id: 'monocle', name: 'Monocle', price: 1500 }, { id: 'hockey', name: 'Hockey mask', price: 1800 },
     { id: 'oni', name: 'Oni mask', price: 5000 }, { id: 'plague', name: 'Plague mask', price: 6500 },
-    { id: 'devmask', name: 'Pixel mask', dev: true },
+    { id: 'devmask', name: 'Pixel mask', dev: true }, { id: 'devscan', name: 'Scanner visor', dev: true },
   ],
   pack: [
     { id: 'radio', name: 'Radio pack', level: 1 }, { id: 'none', name: 'No pack', level: 1 },
@@ -527,7 +528,7 @@ export const COSMETICS = {
     { id: 'scuba', name: 'Scuba tanks', price: 1200 }, { id: 'quiver', name: 'Quiver', price: 1600 },
     { id: 'riot', name: 'Riot shield', price: 2000 }, { id: 'banner', name: 'War banner', price: 2800 },
     { id: 'cape', name: 'Cape', price: 3000 }, { id: 'greatsword', name: 'Greatsword', price: 6000 },
-    { id: 'devwings', name: 'Data wings', dev: true },
+    { id: 'devwings', name: 'Data wings', dev: true }, { id: 'devorbit', name: 'Orbit pack', dev: true },
   ],
   pattern: [
     { id: 'solid', name: 'Solid', level: 1 }, { id: 'stripes', name: 'Stripes', level: 6 },
@@ -538,7 +539,7 @@ export const COSMETICS = {
     { id: 'multicam', name: 'Multicam', price: 700 }, { id: 'chevron', name: 'Chevron', price: 900 },
     { id: 'topo', name: 'Topo', price: 1100 }, { id: 'honeycomb', name: 'Honeycomb', price: 1200 },
     { id: 'dazzle', name: 'Dazzle', price: 1600 }, { id: 'scales', name: 'Scales', price: 2000 },
-    { id: 'devcircuit', name: 'Dev circuit', dev: true },
+    { id: 'devcircuit', name: 'Dev circuit', dev: true }, { id: 'devmatrix', name: 'Dev rain', dev: true },
   ],
   // Hangs off the side of your gun on a chain. It swings with recoil, reloads and every move you make.
   // The models are in client/charms.js: every id here needs a maker there.
@@ -554,7 +555,7 @@ export const COSMETICS = {
     { id: 'donut', name: 'Donut', price: 800 }, { id: 'pizza', name: 'Pizza slice', price: 900 }, { id: 'pumpkin', name: 'Pumpkin', price: 1000 }, { id: 'snowflake', name: 'Snowflake', price: 1200 },
     { id: 'cube', name: 'Puzzle cube', price: 1500 }, { id: 'gamepad', name: 'Gamepad', price: 1600 }, { id: 'cat', name: 'Cat', price: 1800 }, { id: 'bomb', name: 'Cartoon bomb', price: 2000 },
     { id: 'rocket', name: 'Rocket', price: 2200 }, { id: 'medal', name: 'Medal', price: 2500 }, { id: 'trophy', name: 'Trophy', price: 3500 }, { id: 'emerald', name: 'Emerald', price: 4500 },
-    { id: 'devcore', name: 'Dev core', dev: true },
+    { id: 'devcore', name: 'Dev core', dev: true }, { id: 'devkey', name: 'Root key', dev: true },
   ],
 };
 export const DEFAULT_LOOK = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {} };
