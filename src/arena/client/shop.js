@@ -9,7 +9,7 @@ import { game } from './state.js';
 import { net } from './net.js';
 import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
-import { buildCharm, buildWeapon } from './viewmodel.js';
+import { buildCharm, buildWeapon, stripHands } from './viewmodel.js';
 import { updateCharm } from './charms.js';
 import { CRATE_OPEN_TIME, buildCrate, poseCrate } from './cratebox.js';
 import { animateOperator, buildOperator, lookOf, styleOperator } from './characters.js';
@@ -293,11 +293,11 @@ function showOnStage(subject) {
     return;
   }
   const model = buildWeapon(subject.weapon, '#ffb547', subject.finish);
-  model.children.filter((child) => child.userData.arm).forEach((arm) => model.remove(arm));
+  stripHands(model);
   if (subject.charm) {
     // Hung where it hangs in hand, a little larger so it reads on the turntable.
     const charm = buildCharm(subject.charm);
-    if (charm) { const reach = Math.min(...model.children.filter((c) => c.isMesh).map((c) => c.position.z)); charm.position.set(-0.042, -0.028, Math.max(reach * 0.45, -0.32)); charm.scale.setScalar(4); model.add(charm); s.charm = charm; }
+    if (charm && model.userData.charmAt) { charm.position.set(...model.userData.charmAt); charm.scale.setScalar(model.userData.charmScale * 1.6); model.add(charm); s.charm = charm; }
   }
   const box = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());

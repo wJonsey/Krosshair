@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { BODY, FLAG, INTERP_DELAY, MATERIALS, WEAPONS } from '../shared/constants.js';
 import { bus, game, isEnemy } from './state.js';
 import { playFootstep, startLoop, loop } from './audio.js';
-import { TEAM_COLORS, animateOperator, buildOperator, styleOperator } from './operator.js';
+import { TEAM_COLORS, animateOperator, buildOperator, operatorAction, styleOperator } from './operator.js';
 
 export { animateOperator, buildOperator, styleOperator };
 
@@ -134,7 +134,7 @@ class Entity {
       this.move[1] += (-(vx * sin + vz * cos) - this.move[1]) * k;
     }
     this.last.x = sample.x; this.last.z = sample.z;
-    animateOperator(this.model, { speed: s.speed, crouch: Boolean(s.flags & FLAG.crouch), pitch: s.pitch, weapon: s.weapon, dt, move: this.move, air: !(s.flags & FLAG.ground) });
+    animateOperator(this.model, { speed: s.speed, crouch: Boolean(s.flags & FLAG.crouch), pitch: s.pitch, weapon: s.weapon, dt, move: this.move, air: !(s.flags & FLAG.ground), scoped: Boolean(s.flags & FLAG.scoped), reloading: Boolean(s.flags & FLAG.reloading) });
     // High in the air means the royale drop: they come down under a canopy.
     const dropping = !(s.flags & FLAG.ground) && s.y > 14;
     if (dropping && !this.chute) {
@@ -190,6 +190,9 @@ export class Operators {
     }
     return this.entities.get(id);
   }
+
+  // A pilot fired or swung: their model shows it.
+  act(id, action, amount = 1) { const entity = (this.replay?.entities.get(id)) || this.entities.get(id); if (entity) operatorAction(entity.model, action, amount); }
 
   remove(id) { const entity = this.entities.get(id); if (entity) { entity.dispose(); this.entities.delete(id); } }
   clear() { [...this.entities.keys()].forEach((id) => this.remove(id)); [...this.decoys.keys()].forEach((id) => this.removeDecoy(id)); [...this.drones.keys()].forEach((id) => this.removeDrone(id)); this.corpses.forEach((c) => this.scene.remove(c.root)); this.corpses = []; }

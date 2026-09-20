@@ -508,7 +508,9 @@ export class Hud {
     const aim = weapon.melee ? 0 : pov ? pov.scope : player.mode === 'play' ? player.scopeAmount : 0;
     const sight = weapon.sight || (weapon.scope && weapon.scope[0] < 40 ? 'scope' : 'iron');
     const scopedView = sight === 'scope' && aim > 0.7;
-    const sightView = (sight === 'dot' || sight === 'holo' || sight === 'prism') && aim > 0.55;
+    // The prism's reticle is in its glass now, like the scopes; dots and holos still get a HUD reticle.
+    // Dots and holos project their own reticle inside the window now (viewmodel.js).
+    const sightView = false;
     dom.sight.classList.toggle('hidden', !sightView);
     if (sightView) {
       const kind = `sight sight-${sight}`;
@@ -526,6 +528,7 @@ export class Hud {
     }
     if (pov && player.mode === 'spectate') { const text = weapon.name.toUpperCase(); if (dom.spectateWeapon.textContent !== text) dom.spectateWeapon.textContent = text; }
     dom.scope.classList.toggle('hidden', !scopedView);
+    dom.scope.classList.add('glass');
     if (scopedView) {
       const zoom = weapon.scope[pov ? 0 : Math.min(player.zoomIndex, weapon.scope.length - 1)];
       dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !pov ? ' · WHEEL TO ZOOM' : ''}`;

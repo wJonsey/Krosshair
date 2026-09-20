@@ -9,6 +9,7 @@ import { bus, game } from './state.js';
 import { net } from './net.js';
 import { bindLabel, held } from './input.js';
 import { play } from './audio.js';
+import { buildWeapon, stripHands } from './guns.js';
 
 const TOP_GUNS = new Set(LOOT_TABLE[2].pool), MID_GUNS = new Set(LOOT_TABLE[1].pool);
 const LOOT_COLOURS = { common: '#c9d3db', mid: '#5fa8ff', top: '#ffb547', armor: '#6ce6d1', helmet: '#6ce6d1', heal: '#7dff8a', gadget: '#b07cff', ammo: '#ff9a3a', power: '#ff5fd2' };
@@ -88,19 +89,66 @@ export function initRoyale({ arena, hud, player }) {
   const way = root.querySelector('#royale-way'), swap = root.querySelector('#royale-swap'), card = root.querySelector('#royale-card');
   const alt = root.querySelector('#royale-alt'), powersBox = root.querySelector('#royale-powers');
   const dropScreen = root.querySelector('#royale-drop'), dropMap = dropScreen.querySelector('canvas'), dropClock = root.querySelector('#royale-drop-clock'), dropFoot = root.querySelector('#royale-drop-foot');
-  const state = { storm: null, alive: 0, loot: new Map(), group: null, wall: null, airdrops: new Map(), drop: null, look: null, fWas: false, powers: new Map(), pads: null, padsMap: null, cardUntil: 0, layer: null, layerMap: null };
+  const state = { storm: null, alive: 0, loot: new Map(), group: null, wall: null, beamsDirty: true, airdrops: new Map(), drop: null, look: null, fWas: false, powers: new Map(), pads: null, padsMap: null, cardUntil: 0, layer: null, layerMap: null };
   const active = () => Boolean(game.room?.royale) && arena.map?.royale;
 
-  // ---- loot in the world: a spinning gem and a beam of light, a label when you're close
-  const gem = new THREE.OctahedronGeometry(0.32);
-  const ringGeometry = new THREE.RingGeometry(0.45, 0.62, 24).rotateX(-Math.PI / 2);
-  const beamGeometry = new THREE.CylinderGeometry(0.1, 0.1, 7, 8, 1, true);
-  const materials = {};
-  const materialFor = (kind) => (materials[kind] ||= {
-    gem: new THREE.MeshStandardMaterial({ color: LOOT_COLOURS[kind], emissive: LOOT_COLOURS[kind], emissiveIntensity: 0.9, roughness: 0.3 }),
-    beam: new THREE.MeshBasicMaterial({ color: LOOT_COLOURS[kind], transparent: true, opacity: 0.4, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
-    ring: new THREE.MeshBasicMaterial({ color: LOOT_COLOURS[kind], transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }),
-  });
+  // ---- loot in the world. Up close every pickup is the real thing: the gun itself lying on its side, a plate
+  // carrier, a helmet, a medkit, an ammo tin. Building and drawing those for 400 items would be slow, so a
+  // model only exists while you are within NEAR metres of it. Further out, every pickup is one instance in a
+  // single batch of coloured light beams: the whole island's loot in one draw call.
+  const NEAR = 42, MAX_LOOT = 1200;
+  const flat = (color, rough = 0.6, metal = 0.2, glow = 0) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: glow ? color : '#000000', emissiveIntensity: glow, flatShading: true });
+  const PROP = { olive: flat('#4d5a3a', 0.85, 0.05), dark: flat('#1c2228', 0.7, 0.2), steel: flat('#7a8793', 0.35, 0.7), white: flat('#e8ecef', 0.6, 0.05), red: flat('#d8343a', 0.5, 0.1, 0.35), brass: flat('#c19a3c', 0.3, 0.8), tan: flat('#9a8960', 0.9, 0), violet: flat('#b07cff', 0.4, 0.3, 0.5), pink: flat('#ff5fd2', 0.4, 0.2, 0.7), teal: flat('#6ce6d1', 0.4, 0.2, 0.6) };
+  const bit = (group, geometry, material, position, rotation) => { const mesh = new THREE.Mesh(geometry, material); mesh.position.set(...position); if (rotation) mesh.rotation.set(...rotation); group.add(mesh); return mesh; };
+  const cube = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+  const PROPS = {
+    armor: (item) => { const g = new THREE.Group(), heavy = item.id === 'heavy', cloth = heavy ? PROP.dark : PROP.olive; bit(g, cube(0.4, 0.46, 0.14), cloth, [0, 0.25, 0]); bit(g, cube(0.3, 0.26, 0.05), PROP.steel, [0, 0.29, -0.09]); for (const x of [-0.13, 0.13]) bit(g, cube(0.09, 0.12, 0.1), cloth, [x, 0.52, 0]); for (const x of [-0.1, 0, 0.1]) bit(g, cube(0.08, 0.12, 0.05), heavy ? PROP.olive : PROP.tan, [x, 0.1, -0.095]); g.rotation.x = -0.35; return g; },
+    helmet: () => { const g = new THREE.Group(); bit(g, new THREE.SphereGeometry(0.19, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.56), PROP.olive, [0, 0.06, 0]); bit(g, cube(0.22, 0.03, 0.08), PROP.olive, [0, 0.12, -0.18], [0.3, 0, 0]); bit(g, cube(0.05, 0.03, 0.3), PROP.dark, [0, 0.245, 0]); for (const x of [-0.17, 0.17]) bit(g, cube(0.03, 0.12, 0.13), PROP.dark, [x, 0.06, 0.02]); return g; },
+    heal: () => { const g = new THREE.Group(); bit(g, cube(0.42, 0.26, 0.28), PROP.white, [0, 0.13, 0]); bit(g, cube(0.44, 0.05, 0.3), PROP.red, [0, 0.2, 0]); bit(g, cube(0.16, 0.05, 0.005), PROP.red, [0, 0.1, -0.142]); bit(g, cube(0.05, 0.16, 0.005), PROP.red, [0, 0.1, -0.142]); bit(g, cube(0.14, 0.03, 0.04), PROP.dark, [0, 0.285, 0]); return g; },
+    ammo: () => { const g = new THREE.Group(); bit(g, cube(0.36, 0.22, 0.2), PROP.olive, [0, 0.11, 0]); bit(g, cube(0.38, 0.04, 0.22), PROP.dark, [0, 0.235, 0]); bit(g, cube(0.12, 0.03, 0.03), PROP.steel, [0, 0.275, 0]); for (let i = 0; i < 4; i += 1) bit(g, new THREE.CylinderGeometry(0.014, 0.014, 0.1, 6), PROP.brass, [0.26 + (i % 2) * 0.04, 0.015, -0.06 + i * 0.04], [0, 0, Math.PI / 2]); return g; },
+    gadget: () => { const g = new THREE.Group(); bit(g, cube(0.34, 0.12, 0.26), PROP.dark, [0, 0.06, 0]); bit(g, cube(0.3, 0.02, 0.22), PROP.steel, [0, 0.13, 0]); bit(g, cube(0.1, 0.03, 0.06), PROP.violet, [0, 0.15, 0]); bit(g, new THREE.CylinderGeometry(0.008, 0.008, 0.22, 5), PROP.steel, [0.13, 0.24, 0.09]); return g; },
+    power: (item) => { const g = new THREE.Group(), glow = item.id === 'jump' ? PROP.teal : PROP.pink; if (item.id === 'jump') { for (const x of [-0.1, 0.1]) { bit(g, cube(0.13, 0.2, 0.18), PROP.dark, [x, 0.12, 0.04]); bit(g, cube(0.13, 0.09, 0.3), PROP.dark, [x, 0.045, -0.04]); bit(g, cube(0.135, 0.025, 0.31), glow, [x, 0.012, -0.04]); } } else { bit(g, new THREE.CylinderGeometry(0.045, 0.045, 0.3, 8), PROP.white, [0, 0.12, 0], [0, 0, Math.PI / 2 - 0.3]); bit(g, new THREE.CylinderGeometry(0.037, 0.037, 0.18, 8), glow, [0.01, 0.123, 0], [0, 0, Math.PI / 2 - 0.3]); bit(g, new THREE.CylinderGeometry(0.006, 0.006, 0.14, 5), PROP.steel, [0.2, 0.18, 0], [0, 0, Math.PI / 2 - 0.3]); } return g; },
+  };
+  // One template per kind of thing; every copy on the floor shares its geometry and materials.
+  const templates = new Map();
+  function modelFor(item) {
+    const key = item.kind === 'weapon' || item.kind === 'armor' || item.kind === 'power' ? `${item.kind}:${item.id}` : item.kind;
+    if (!templates.has(key)) {
+      let model;
+      if (item.kind === 'weapon') {
+        model = stripHands(buildWeapon(item.id, LOOT_COLOURS[lootKind(item)]));
+        model.userData = {};
+        model.traverse((node) => { node.userData = {}; node.frustumCulled = true; });
+        // Lying on its side, centred on its own length.
+        const box = new THREE.Box3().setFromObject(model), centre = box.getCenter(new THREE.Vector3());
+        const wrap = new THREE.Group(); model.position.sub(centre); wrap.add(model); wrap.rotation.z = Math.PI / 2; wrap.position.y = 0.06;
+        const outer = new THREE.Group(); outer.add(wrap); outer.scale.setScalar(1.25);
+        model = outer;
+      } else model = (PROPS[item.kind] || PROPS.ammo)(item);
+      templates.set(key, model);
+    }
+    return templates.get(key).clone(true);
+  }
+  const ringGeometry = new THREE.RingGeometry(0.5, 0.64, 24).rotateX(-Math.PI / 2);
+  const ringMaterials = {};
+  const ringFor = (kind) => (ringMaterials[kind] ||= new THREE.MeshBasicMaterial({ color: LOOT_COLOURS[kind], transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+  // The far batch: a thin column of light per pickup, coloured by what it is.
+  const beams = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.09, 0.09, 6, 6, 1, true).translate(0, 3.2, 0), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.42, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }), MAX_LOOT);
+  beams.count = 0; beams.frustumCulled = false;
+  const beamColour = new THREE.Color(), beamAt = new THREE.Matrix4();
+  function rebuildBeams() {
+    let index = 0;
+    for (const loot of state.loot.values()) {
+      if (index >= MAX_LOOT) break;
+      beams.setMatrixAt(index, beamAt.makeTranslation(loot.entry.x, loot.entry.y, loot.entry.z));
+      beams.setColorAt(index, beamColour.set(LOOT_COLOURS[lootKind(loot.entry.item)]));
+      index += 1;
+    }
+    beams.count = index;
+    beams.instanceMatrix.needsUpdate = true;
+    if (beams.instanceColor) beams.instanceColor.needsUpdate = true;
+    state.beamsDirty = false;
+  }
   const labels = new Map();
   function labelSprite(text, colour) {
     const key = `${text}|${colour}`;
@@ -124,29 +172,36 @@ export function initRoyale({ arena, hud, player }) {
   function ensureGroup() {
     if (state.group && state.group.parent === arena.scene) return state.group;
     state.group = new THREE.Group();
+    state.group.add(beams);
     arena.scene.add(state.group);
     return state.group;
   }
   function addLoot(entry) {
     if (state.loot.has(entry.id)) return;
-    const kind = lootKind(entry.item), mats = materialFor(kind);
-    const holder = new THREE.Group();
-    holder.position.set(entry.x, entry.y, entry.z);
-    const mesh = new THREE.Mesh(gem, mats.gem); mesh.position.y = 0.6;
-    const beam = new THREE.Mesh(beamGeometry, mats.beam); beam.position.y = 3.6;
-    const ring = new THREE.Mesh(ringGeometry, mats.ring); ring.position.y = 0.04;
-    const label = labelSprite(lootLabel(entry.item) || '?', LOOT_COLOURS[kind]); label.position.y = 1.2; label.visible = false;
-    holder.add(mesh, beam, ring, label);
-    ensureGroup().add(holder);
-    state.loot.set(entry.id, { entry, holder, mesh, label, phase: Math.random() * 6 });
+    state.loot.set(entry.id, { entry, holder: null, mesh: null, label: null, phase: Math.random() * 6 });
+    state.beamsDirty = true;
   }
+  // Built when you come near, thrown away when you leave.
+  function showNear(loot) {
+    const kind = lootKind(loot.entry.item);
+    const holder = new THREE.Group();
+    holder.position.set(loot.entry.x, loot.entry.y, loot.entry.z);
+    const mesh = new THREE.Group(); mesh.add(modelFor(loot.entry.item)); mesh.position.y = 0.32;
+    const ring = new THREE.Mesh(ringGeometry, ringFor(kind)); ring.position.y = 0.04;
+    const label = labelSprite(lootLabel(loot.entry.item) || '?', LOOT_COLOURS[kind]); label.position.y = 1.15; label.visible = false;
+    holder.add(mesh, ring, label);
+    ensureGroup().add(holder);
+    Object.assign(loot, { holder, mesh, label });
+  }
+  function hideNear(loot) { loot.holder?.parent?.remove(loot.holder); loot.holder = null; loot.mesh = null; loot.label = null; }
   function removeLoot(id) {
     const loot = state.loot.get(id);
     if (!loot) return;
-    loot.holder.parent?.remove(loot.holder);
+    hideNear(loot);
     state.loot.delete(id);
+    state.beamsDirty = true;
   }
-  function clearLoot() { for (const id of [...state.loot.keys()]) removeLoot(id); }
+  function clearLoot() { for (const id of [...state.loot.keys()]) removeLoot(id); beams.count = 0; state.beamsDirty = true; }
 
   // ---- the storm: a tall glowing wall at the edge of the safe circle
   function ensureWall() {
@@ -338,7 +393,7 @@ export function initRoyale({ arena, hud, player }) {
       if (roomName !== noteRoom) { noteRoom = roomName; if (roomName) showNote(); else note.classList.remove('on'); }
       document.body.classList.toggle('royale-mode', on);
       root.classList.toggle('hidden', !on || game.screen !== 'game');
-      if (!on) { if (state.loot.size) clearLoot(); if (state.airdrops.size) clearAirdrops(); if (state.wall) state.wall.visible = false; dropScreen.classList.remove('on'); card.classList.remove('on'); return; }
+      if (!on) { if (state.loot.size || beams.count) clearLoot(); if (state.airdrops.size) clearAirdrops(); if (state.wall) state.wall.visible = false; dropScreen.classList.remove('on'); card.classList.remove('on'); return; }
       if (game.room.phase !== lastPhase) {
         if (game.room.phase === 'live') hud.banner('KESTREL ISLAND', 'Steer to your mark. You land with a blade and nothing else.', 'ROYALE', 'go', 3600);
         if (game.room.phase === 'drop') { state.powers.clear(); state.drop = null; state.storm = null; clearLoot(); clearAirdrops(); card.classList.remove('on'); document.exitPointerLock?.(); }
@@ -358,13 +413,16 @@ export function initRoyale({ arena, hud, player }) {
       }
       if (card.classList.contains('on') && performance.now() > state.cardUntil) card.classList.remove('on');
       const t = net.time(), me = player.camera.position;
-      // Loot: spin, bob, and show labels up close.
+      // Loot: models for what is near, the beam batch for the rest.
+      ensureGroup();
+      if (state.beamsDirty) rebuildBeams();
       for (const loot of state.loot.values()) {
+        const dx = loot.entry.x - me.x, dz = loot.entry.z - me.z, near = dx * dx + dz * dz < NEAR * NEAR;
+        if (near && !loot.holder) showNear(loot); else if (!near && loot.holder && dx * dx + dz * dz > (NEAR + 6) ** 2) hideNear(loot);
+        if (!loot.holder) continue;
         loot.phase += dt;
-        loot.mesh.rotation.y = loot.phase * 1.6;
-        loot.mesh.position.y = 0.6 + Math.sin(loot.phase * 2) * 0.08;
-        const dx = loot.entry.x - me.x, dz = loot.entry.z - me.z;
-        loot.holder.visible = Math.abs(dx) < 180 && Math.abs(dz) < 180;
+        loot.mesh.rotation.y = loot.phase * 0.9;
+        loot.mesh.position.y = 0.32 + Math.sin(loot.phase * 2) * 0.05;
         loot.label.visible = dx * dx + dz * dz < 18 * 18;
       }
       // Airdrops: down under the chute, then sitting there until the loot around them is gone.
@@ -395,7 +453,7 @@ export function initRoyale({ arena, hud, player }) {
         swap.classList.toggle('on', Boolean(look));
         if (look) { const cardInfo = lootCard(look.entry.item); swap.innerHTML = cardInfo.html; swap.style.setProperty('--tier', cardInfo.colour); }
       }
-      for (const loot of state.loot.values()) loot.mesh.scale.setScalar(loot === look ? 1.35 : 1);
+      for (const loot of state.loot.values()) if (loot.mesh) loot.mesh.scale.setScalar(loot === look ? 1.25 : 1);
       const fDown = held(player.keys || new Set(), 'interact');
       if (fDown && !state.fWas && look && player.alive) { net.send({ type: 'royale-take', id: look.entry.id }); state.look = null; }
       state.fWas = fDown;

@@ -12,7 +12,7 @@ import { getMap, zoneAt } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
 import { World, makeBody } from '../shared/physics.js';
-import { SpreadTracker, applySpread, damageFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
+import { SpreadTracker, applySpread, ballisticsFor, damageFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { createBot, createDummy, updateBot, resetBot, botBuy, botOnHurt, botOnSound } from './bots.js';
 
 export const now = () => performance.now() / 1000;
@@ -877,7 +877,7 @@ export class Room {
     let registered = false;
     for (let pellet = 0; pellet < weapon.pellets; pellet += 1) {
       const shotDir = applySpread(dir, angle, rng);
-      const trace = traceShot(this.world, origin, shotDir, weapon, targets);
+      const trace = traceShot(this.world, origin, shotDir, weapon, targets, 260, ballisticsFor(weapon, this.map));
       ends.push(trace.end.map(round2));
       trace.impacts.slice(0, 3).forEach((impact) => impacts.push([...impact.point.map(round2), ...impact.normal, impact.mat, impact.exit ? 1 : 0]));
       for (const id of trace.glass) this.breakGlass(id);

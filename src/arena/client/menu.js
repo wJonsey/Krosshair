@@ -714,7 +714,7 @@ const SETTINGS_TABS = [['aim', 'Aim'], ['graphics', 'Graphics'], ['audio', 'Audi
 let settingsTab = 'aim';
 let listening = null; // { action, slot } while a bind button waits for a key
 const FORMATS = { x2: (v) => Number(v).toFixed(2), x1: (v) => Number(v).toFixed(1), deg: (v) => `${v}°`, pct: (v) => `${Math.round(v * 100)}%`, px: (v) => `${v} px`, int: (v) => String(v) };
-const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights'];
+const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights', 'viewDistance'];
 
 function settingsBodyHtml(tab) {
   const s = game.settings, g = graphics();
@@ -729,12 +729,14 @@ function settingsBodyHtml(tab) {
         <p class="eyebrow sub">Detail</p>
         ${slider('renderScale', 'Render scale', 0.5, 2, 0.05, 'pct', g.renderScale, 'Biggest effect on frame rate.')}
         ${select('shadows', 'Shadows', [['off', 'Off'], ['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']], g.shadows)}
+        ${select('viewDistance', 'View distance', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], g.viewDistance, 'Battle royale. Ultra shows the whole island.')}
         ${toggle('streetLights', 'Street and interior lights', '', g.streetLights)}</div>
       <div class="panel"><p class="eyebrow">View</p>
         ${slider('fov', 'Field of view', 60, 105, 1, 'deg')}
         ${slider('brightness', 'Brightness', 0.6, 1.6, 0.05, 'pct', s.brightness, 'Helps on night maps.')}
         <p class="eyebrow sub">Performance</p>
         ${select('fpsCap', 'Frame rate cap', [[0, 'Unlimited'], [30, '30 FPS'], [60, '60 FPS'], [120, '120 FPS'], [144, '144 FPS'], [240, '240 FPS']], s.fpsCap, 'Saves battery.')}
+        ${toggle('aimBlur', 'Blur the gun when aiming', 'Your eye focuses on the target, not the sight.')}
         ${toggle('showFps', 'Show FPS counter')}
         ${toggle('autoQuality', 'Lower graphics automatically', 'Drops the preset if FPS stays under 38.')}</div></div>`;
   }

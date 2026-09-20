@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { WEAPONS } from '../shared/constants.js';
 import { applyPattern } from './skins.js';
-import { buildWeapon } from './viewmodel.js';
+import { buildWeapon, stripHands } from './viewmodel.js';
 import { buildCharm, updateCharm } from './charms.js';
 
 const TEAM_COLORS = { friend: '#6ce6d1', foe: '#ff4d3d' };
@@ -599,7 +599,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   for (const part of [antenna, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow]) part.traverse((mesh) => { mesh.castShadow = false; });
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
-    guns: new Map(), held: null, skins: {}, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
+    guns: new Map(), held: null, skins: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
     charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
     materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror],
     beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
@@ -636,13 +636,13 @@ function heldGun(data, weapon) {
   let entry = data.guns.get(key);
   if (!entry) {
     const model = buildWeapon(weapon.id, data.accent || '#ffb547', finish);
-    for (const child of [...model.children]) if (child.userData.arm) model.remove(child);
+    stripHands(model);
     model.scale.setScalar(GUN_SCALE);
     model.traverse((part) => { if (part.isMesh) part.castShadow = true; });
-    const front = Math.min(-0.2, ...model.children.filter((child) => child.isMesh).map((child) => child.position.z));
+    const front = Math.min(-0.2, model.userData.front ?? -0.4);
     // The charm hangs off the left of the receiver, the same place it hangs in your own hands.
     const charm = buildCharm(data.charm);
-    if (charm) { charm.position.set(-0.05, -0.03, Math.max(front * 0.45, -0.32)); charm.scale.setScalar(1.6); charm.traverse((part) => { if (part.isMesh) part.castShadow = false; }); model.add(charm); }
+    if (charm && model.userData.charmAt) { charm.position.set(...model.userData.charmAt); charm.scale.setScalar(model.userData.charmScale * 1.15); charm.traverse((part) => { if (part.isMesh) part.castShadow = false; }); model.add(charm); }
     entry = { key, model, charm, reach: -front * GUN_SCALE };
     data.guns.set(key, entry);
     data.gun.add(model);
@@ -708,7 +708,8 @@ function animateCosmetics(data, stride, sway) {
 
 const target = new THREE.Vector3(), shoulder = new THREE.Vector3(), grip = new THREE.Vector3(), euler = new THREE.Euler();
 const POLE_R = new THREE.Vector3(0.75, -0.65, 0.25), POLE_L = new THREE.Vector3(-0.55, -0.8, 0.1);
-// pose: { speed, crouch, pitch, weapon, dt, move?: [right, forward] in the operator's own frame, air?, dead?: 0..1 }
+// pose: { speed, crouch, pitch, weapon, dt, move?: [right, forward] in the operator's own frame, air?, dead?: 0..1,
+//         scoped?, reloading? }. One-off actions come through operatorAction (a shot, a knife swing).
 export function animateOperator(root, pose) {
   const data = root.userData;
   const dt = pose.dt, ease = (rate) => Math.min(1, dt * rate);
@@ -716,6 +717,21 @@ export function animateOperator(root, pose) {
   data.crouch += ((pose.crouch ? 1 : 0) - data.crouch) * ease(12);
   data.air += ((pose.air ? 1 : 0) - data.air) * ease(pose.air ? 9 : 14);
   const c = data.crouch, air = data.air;
+  // Timed actions: recoil decays, a knife swing plays out, a reload runs while the flag is up.
+  data.recoil += (0 - data.recoil) * ease(10);
+  if (data.swing >= 0) { data.swing += dt / 0.4; if (data.swing >= 1) data.swing = -1; }
+  data.reload += ((pose.reloading ? 1 : 0) - data.reload) * ease(9);
+  data.reloadK = pose.reloading ? data.reloadK + dt : 0;
+  data.ads += ((pose.scoped ? 1 : 0) - data.ads) * ease(11);
+  if (pose.weapon !== data.lastWeapon) { if (data.lastWeapon) data.swap = 1; data.lastWeapon = pose.weapon; }
+  data.swap += (0 - data.swap) * ease(7);
+  if (data.wasAir && !pose.air) data.landDip = 1;
+  data.wasAir = Boolean(pose.air);
+  data.landDip += (0 - data.landDip) * ease(7);
+  // Turning on the spot: the feet shuffle round instead of sliding.
+  const yaw = root.rotation.y;
+  if (data.lastYaw !== null && dt > 0) { const spin = Math.atan2(Math.sin(yaw - data.lastYaw), Math.cos(yaw - data.lastYaw)) / dt; data.turn += (Math.min(1, Math.abs(spin) / 2.5) - data.turn) * ease(8); }
+  data.lastYaw = yaw;
   // Which way the legs are taking them: forwards, sideways, or backwards with the stride reversed.
   let heading = pose.move && pose.speed > 0.6 ? Math.atan2(pose.move[0], pose.move[1]) : 0;
   const backwards = Math.abs(heading) > 1.95;
@@ -726,12 +742,14 @@ export function animateOperator(root, pose) {
   data.idle += dt;
   const stride = Math.min(1, pose.speed / 5) * (1 - c * 0.4) * (1 - air);
   data.lean += ((backwards ? -0.5 : 1) * stride - data.lean) * ease(8);
-  const swing = Math.sin(data.phase) * 0.8 * stride;
+  const shuffle = data.turn * (1 - Math.min(1, pose.speed / 1.5)) * (1 - c * 0.5);
+  data.phase += dt * shuffle * 7;
+  const swing = Math.sin(data.phase) * (0.8 * stride + 0.22 * shuffle);
   const breath = Math.sin(data.idle * 1.7) * (1 - stride);
   const sway = Math.sin(data.idle * 0.6) * (1 - stride) * (1 - c);
 
   // Hips: bob twice per stride, sway side to side, and drop for the crouch.
-  data.hips.position.y = 0.96 - c * 0.42 + Math.abs(Math.cos(data.phase)) * 0.045 * stride + air * 0.03;
+  data.hips.position.y = 0.96 - c * 0.42 + Math.abs(Math.cos(data.phase)) * 0.045 * stride + air * 0.03 - data.landDip * 0.12 * (1 - c);
   data.hips.position.x = Math.sin(data.phase) * 0.02 * stride + sway * 0.012;
   data.hips.rotation.y = data.legYaw + Math.sin(data.phase) * 0.17 * stride;
   data.hips.rotation.z = Math.sin(data.phase) * 0.035 * stride + sway * 0.02;
@@ -740,9 +758,9 @@ export function animateOperator(root, pose) {
     // Standing still, the feet are set apart: support leg forward, the other back and turned out.
     const stance = (1 - stride) * (1 - c) * (1 - air) * (index === 0 ? -0.16 : 0.12);
     const tuck = air * (index === 0 ? 0.75 : 0.25);
-    pivot.rotation.x = s - c * 1.15 + stance - tuck - dead * (index === 0 ? 0.5 : 0.1);
+    pivot.rotation.x = -data.landDip * 0.22 * (1 - c) + s - c * 1.15 + stance - tuck - dead * (index === 0 ? 0.5 : 0.1);
     pivot.rotation.z = (index === 0 ? -1 : 1) * (0.035 + (1 - stride) * 0.06 + c * 0.1 + dead * 0.2);
-    knee.rotation.x = Math.max(0, -s) * 1.1 + c * 1.9 + stride * 0.24 + Math.abs(stance) * 0.5 + air * (index === 0 ? 1.2 : 0.7) + dead * (index === 0 ? 1.1 : 0.3);
+    knee.rotation.x = data.landDip * 0.45 * (1 - c) + Math.max(0, -s) * 1.1 + c * 1.9 + stride * 0.24 + Math.abs(stance) * 0.5 + air * (index === 0 ? 1.2 : 0.7) + dead * (index === 0 ? 1.1 : 0.3);
     // Heel strike and toe-off, flat on the ground when crouched, toes down in the air.
     foot.rotation.x = -(pivot.rotation.x + knee.rotation.x) * (c > 0.5 ? 1 : 0.4) * (1 - air) + Math.max(0, s) * 0.3 * stride + air * 0.5;
   });
@@ -755,14 +773,27 @@ export function animateOperator(root, pose) {
   data.gunPos.lerp(target.set(...hold.gun), ease(10));
   data.gunRot.lerp(target.set(...hold.rot), ease(10));
   const bob = Math.sin(data.phase * 2) * 0.012 * stride;
-  data.gun.position.copy(data.gunPos); data.gun.position.y += bob + breath * 0.003;
-  data.gun.rotation.set(data.gunRot.x + stride * 0.05, data.gunRot.y, data.gunRot.z);
+  // Sprinting lowers the muzzle, aiming brings the sights up to the eye, a reload tips the gun in and down,
+  // a swap dips it out of sight and back, a shot shoves it into the shoulder.
+  const run = Math.max(0, Math.min(1, (pose.speed - 4.6) / 1.2)) * (1 - data.ads) * (weapon.melee ? 0 : 1);
+  const rel = data.reload, relBeat = Math.sin(data.reloadK * 5.5) * rel;
+  data.gun.position.copy(data.gunPos);
+  data.gun.position.y += bob + breath * 0.003 + data.ads * 0.03 - run * 0.07 - rel * 0.09 - data.swap * 0.22;
+  data.gun.position.x -= data.ads * 0.025 - rel * 0.03;
+  data.gun.position.z += data.recoil * 0.05 + data.ads * 0.03 + rel * 0.05;
+  data.gun.rotation.set(data.gunRot.x + stride * 0.05 + data.recoil * 0.12 - run * 0.5 + rel * 0.45 + data.swap * 0.9, data.gunRot.y + run * 0.35 + rel * 0.25, data.gunRot.z + rel * 0.5 + relBeat * 0.05);
+  if (data.swing >= 0) {
+    // The blade: wind up across the body, cut through, recover.
+    const k = data.swing, wind = Math.sin(Math.min(1, k / 0.25) * Math.PI) * (k < 0.25 ? 1 : 0), cut = Math.sin(Math.max(0, Math.min(1, (k - 0.2) / 0.6)) * Math.PI);
+    data.gun.position.x -= data.swingDir * (cut * 0.34 - wind * 0.08); data.gun.position.z -= cut * 0.22; data.gun.position.y += cut * 0.1;
+    data.gun.rotation.y += data.swingDir * cut * 1.1; data.gun.rotation.z += data.swingDir * cut * 0.8;
+  }
   data.gun.visible = !dead;
 
   // The spine takes part of the pitch so the arms never have to fold through the chest; shoulders
   // counter-rotate against the hips; the torso leans into a run and breathes when still.
   const pitch = THREE.MathUtils.clamp(pose.pitch, -1.45, 1.45);
-  data.spine.rotation.x = c * 0.28 + data.lean * 0.13 + pitch * 0.35 + dead * 0.35;
+  data.spine.rotation.x = c * 0.28 + data.lean * 0.13 + pitch * 0.35 + dead * 0.35 + data.landDip * 0.12 - data.recoil * 0.04 + rel * 0.08;
   data.spine.rotation.y = -data.legYaw - Math.sin(data.phase) * 0.22 * stride;
   data.spine.rotation.z = -sway * 0.02 + dead * 0.2;
   data.spine.position.y = 0.1 + breath * 0.004;
@@ -773,7 +804,8 @@ export function animateOperator(root, pose) {
   data.aim.position.y = 0.44 + breath * 0.004;
   data.head.rotation.x = pitch * 0.85 - data.spine.rotation.x + c * 0.1 + dead * 0.5;
   data.head.rotation.y = Math.sin(data.phase) * 0.08 * stride + sway * 0.06;
-  data.head.rotation.z = dead * 0.4 - Math.max(0, data.blade) * 0.16;
+  data.head.rotation.z = dead * 0.4 - Math.max(0, data.blade) * (0.16 + data.ads * 0.12);
+  data.head.rotation.x += rel * 0.28;
   if (data.packs.jetpack.visible) for (const flame of data.flames) flame.scale.y = 0.8 + Math.sin(data.idle * 31 + flame.position.x * 40) * 0.25 + air * 1.2;
   // The charm swings off the gun for everyone watching, not just the pilot holding it.
   if (held.charm && dt > 0) updateCharm(held.charm, dt, { scale: GUN_SCALE });
@@ -786,9 +818,17 @@ export function animateOperator(root, pose) {
     const right = arm.side > 0;
     if (dead) target.set(arm.side * 0.34, -0.42, right ? 0.05 : -0.12);
     else if (right) target.copy(grip);
+    else if (hold.support && rel > 0.05) { const beat = 0.5 + 0.5 * Math.sin(data.reloadK * 5.5); target.set(0, -0.03 - beat * 0.16, -0.12).applyEuler(euler).add(grip).lerp(shoulder.set(hold.support[0], hold.support[1], Math.max(hold.support[2], -held.reach * 0.62)).applyEuler(euler).add(grip), 1 - rel); }
     else if (hold.support) target.set(hold.support[0], hold.support[1], Math.max(hold.support[2], -held.reach * 0.62)).applyEuler(euler).add(grip);
     else target.set(...REST.left).setY(REST.left[1] + breath * 0.004);
     arm.at.lerp(target, ease(dead ? 5 : 14));
     solveArm(arm, shoulderAt(arm.side, data.blade, shoulder), arm.at, right ? POLE_R : POLE_L);
   });
+}
+
+// One-off actions seen on other pilots: a shot kicks the gun, a melee swings the blade (alternating sides).
+export function operatorAction(root, action, amount = 1) {
+  const data = root.userData;
+  if (action === 'fire') data.recoil = Math.min(1.4, data.recoil + 0.55 * amount);
+  if (action === 'melee') { data.swing = 0; data.swingDir = -data.swingDir; }
 }

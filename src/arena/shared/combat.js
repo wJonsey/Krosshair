@@ -135,7 +135,39 @@ export function damageFor(weapon, zone, distance, powerScale = 1) {
 // Traces one projectile through the world.
 // targets: [{ id, kind: 'player'|'drone'|'decoy', x, y, z, crouch }]
 // Returns { end, distance, impacts: [{ point, normal, mat, exit }], hits: [{ id, kind, zone, distance, scale, wallbang }], glass: [id], shields: [{ id, distance }] }
-export function traceShot(world, origin, dir, weapon, targets, maxDist = 260) {
+// Muzzle velocities (m/s) by family, for bullet drop on maps big enough for it to matter.
+const MUZZLE_VELOCITY = { sniper: 860, marksman: 790, rifle: 720, lmg: 740, smg: 390, shotgun: 360, pistol: 350 };
+const GRAVITY = 9.81;
+const ARC_STEP = 40;
+// ballistics for a weapon on a map that has bullet drop, or null where shots fly straight (the arenas).
+export function ballisticsFor(weapon, map) {
+  if (!map?.royale || !weapon || weapon.melee) return null;
+  return { velocity: MUZZLE_VELOCITY[weapon.family] || 600, reach: 650 };
+}
+// How far a shot has fallen by `distance` metres (the HUD and the bots use it too).
+export const bulletDrop = (ballistics, distance) => (ballistics ? 0.5 * GRAVITY * (distance / ballistics.velocity) ** 2 : 0);
+
+export function traceShot(world, origin, dir, weapon, targets, maxDist = 260, ballistics = null) {
+  const state = { power: weapon.pen, wallbang: false };
+  if (!ballistics) return traceSegment(world, origin, dir, weapon, targets, maxDist, state, 0);
+  // The arc is flown as straight 40 m legs, each tipped down by what gravity has done by its midpoint.
+  const reach = Math.max(maxDist, ballistics.reach || maxDist);
+  const total = { end: null, distance: reach, impacts: [], hits: [], glass: [], shields: [] };
+  let from = origin;
+  for (let flown = 0; flown < reach; flown += ARC_STEP) {
+    const slope = (GRAVITY * (flown + ARC_STEP / 2)) / (ballistics.velocity * ballistics.velocity);
+    const leg = normalize([dir[0], dir[1] - slope, dir[2]]);
+    const length = Math.min(ARC_STEP, reach - flown);
+    const part = traceSegment(world, from, leg, weapon, targets, length, state, flown);
+    total.impacts.push(...part.impacts); total.hits.push(...part.hits); total.glass.push(...part.glass); total.shields.push(...part.shields);
+    total.end = part.end;
+    if (part.stopped) { total.distance = flown + part.distance; return total; }
+    from = part.end;
+  }
+  return total;
+}
+
+function traceSegment(world, origin, dir, weapon, targets, maxDist, state, flown) {
   const events = [];
   for (const hit of world.raycast(origin, dir, maxDist)) events.push({ t: hit.t0, world: hit });
   for (const target of targets) {
@@ -143,30 +175,29 @@ export function traceShot(world, origin, dir, weapon, targets, maxDist = 260) {
     if (hit && hit.t <= maxDist) events.push({ t: hit.t, target, zone: hit.zone });
   }
   events.sort((a, b) => a.t - b.t);
-  const result = { end: null, distance: maxDist, impacts: [], hits: [], glass: [], shields: [] };
-  let power = weapon.pen;
-  let wallbang = false;
+  const result = { end: null, distance: maxDist, impacts: [], hits: [], glass: [], shields: [], stopped: false };
   const at = (t) => [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
+  const stop = (t) => { result.distance = t; result.stopped = true; };
   for (const event of events) {
     if (event.world) {
       const { box, t0, t1, normal } = event.world;
-      if (box.glass) { result.glass.push(box.id); result.impacts.push({ point: at(t0), normal, mat: 'glass' }); power -= 0.04; continue; }
-      if (box.barrier) { result.impacts.push({ point: at(t0), normal, mat: box.mat }); result.distance = t0; break; }
-      if (box.shield) { result.shields.push({ id: box.id, distance: t0 }); result.impacts.push({ point: at(t0), normal, mat: 'shield' }); result.distance = t0; break; }
+      if (box.glass) { result.glass.push(box.id); result.impacts.push({ point: at(t0), normal, mat: 'glass' }); state.power -= 0.04; continue; }
+      if (box.barrier) { result.impacts.push({ point: at(t0), normal, mat: box.mat }); stop(t0); break; }
+      if (box.shield) { result.shields.push({ id: box.id, distance: flown + t0 }); result.impacts.push({ point: at(t0), normal, mat: 'shield' }); stop(t0); break; }
       const resist = MATERIALS[box.mat]?.resist ?? 99;
       const cost = (t1 - t0) * resist;
       result.impacts.push({ point: at(t0), normal, mat: box.mat });
-      if (t0 <= 0 || cost >= power) { result.distance = t0; break; }
-      power -= cost;
-      wallbang = true;
+      if ((t0 <= 0 && flown === 0) || cost >= state.power) { stop(Math.max(0, t0)); break; }
+      state.power -= cost;
+      state.wallbang = true;
       result.impacts.push({ point: at(t1), normal: [-normal[0], -normal[1], -normal[2]], mat: box.mat, exit: true });
     } else {
-      const scale = clamp(power / weapon.pen, 0.3, 1);
-      result.hits.push({ id: event.target.id, kind: event.target.kind, zone: event.zone, distance: event.t, scale, wallbang });
+      const scale = clamp(state.power / weapon.pen, 0.3, 1);
+      result.hits.push({ id: event.target.id, kind: event.target.kind, zone: event.zone, distance: flown + event.t, scale, wallbang: state.wallbang });
       // Only the long rifle carries enough energy to pass through a body.
-      if (!weapon.pierce || event.target.kind !== 'player') { result.distance = event.t; break; }
-      power -= 0.45;
-      if (power <= 0.1) { result.distance = event.t; break; }
+      if (!weapon.pierce || event.target.kind !== 'player') { stop(event.t); break; }
+      state.power -= 0.45;
+      if (state.power <= 0.1) { stop(event.t); break; }
     }
   }
   result.end = at(result.distance);

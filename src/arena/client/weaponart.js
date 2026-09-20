@@ -1,7 +1,7 @@
 // Spec renders of each weapon for the armoury and killcam card: the first-person
 // model, arms removed, drawn as a lit silhouette with its edges traced in frost.
 import * as THREE from 'three';
-import { buildWeapon } from './viewmodel.js';
+import { buildWeapon, stripHands } from './viewmodel.js';
 
 const cache = new Map();
 let stage = null;
@@ -48,7 +48,7 @@ export function skinArt(id, finish) {
   let url = '';
   try {
     const model = buildWeapon(id, '#ffb547', finish);
-    model.children.filter((child) => child.userData.arm).forEach((arm) => model.remove(arm));
+    stripHands(model);
     url = shoot(model);
   } catch { url = ''; }
   cache.set(key, url);
@@ -60,7 +60,7 @@ export function weaponArt(id) {
   let url = '';
   try {
     const model = buildWeapon(id, '#ffb547');
-    model.children.filter((child) => child.userData.arm).forEach((arm) => model.remove(arm));
+    stripHands(model);
     const fill = new THREE.MeshStandardMaterial({ color: '#4a5864', roughness: 0.5, metalness: 0.3 });
     const edge = new THREE.LineBasicMaterial({ color: '#e6edf1', transparent: true, opacity: 0.85 });
     model.traverse((mesh) => {

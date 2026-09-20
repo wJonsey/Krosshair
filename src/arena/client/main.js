@@ -263,6 +263,7 @@ net.on('shot', (message) => {
   const weapon = WEAPONS[message.w];
   const shooter = game.roster.get(message.id);
   const origin = message.o;
+  if (message.id !== game.id) operators.act(message.id, weapon?.melee ? 'melee' : 'fire', Math.min(1.5, (weapon?.recoil?.kick || 0.6)));
   const muzzle = [origin[0], origin[1] - 0.12, origin[2]];
   // Spectating the shooter: the tracer leaves the gun we are looking down.
   if (player.mode === 'spectate' && player.pov?.owner === message.id) player.povShot({ weapon: message.w, ends: message.e }, { quiet: true });
@@ -280,7 +281,7 @@ net.on('shot', (message) => {
   if (isEnemy(message.id) && distance < weapon.loud * 0.9) hud.blip(message.id, origin[0], origin[2], 2.5);
 });
 
-net.on('swing', (message) => { const pose = operators.poseOf(message.id); if (player.mode === 'spectate' && player.pov?.owner === message.id) viewmodel.melee(); if (pose) { play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); bus.emit('sound', { kind: 'swing', id: message.id, pos: [pose.x, pose.y, pose.z] }); } });
+net.on('swing', (message) => { operators.act(message.id, 'melee'); const pose = operators.poseOf(message.id); if (player.mode === 'spectate' && player.pov?.owner === message.id) viewmodel.melee(); if (pose) { play(message.hit ? 'stab' : 'swing', { pos: [pose.x, pose.y + 1.2, pose.z] }); bus.emit('sound', { kind: 'swing', id: message.id, pos: [pose.x, pose.y, pose.z] }); } });
 
 net.on('hit', (message) => {
   if (message.blocked) { hud.hitmarker('blocked'); play('deny', { volume: 0.5 }); return; }
@@ -424,6 +425,56 @@ function countFrame(rawDt) {
 
 let firstFrame = false;
 let lastFrameAt = 0;
+// Aiming, your eye focuses on the target, so the gun and the sight housing go soft (and what you look
+// THROUGH, the scope picture and the reticles, stays sharp). The gun is drawn into its own buffer, blurred
+// by how far you are into the aim, and laid over the world; the sharp parts (layer 1) go on top.
+const gunTarget = new THREE.WebGLRenderTarget(2, 2, { samples: 4, type: THREE.HalfFloatType });
+const blurMaterial = new THREE.ShaderMaterial({
+  uniforms: { uGun: { value: gunTarget.texture }, uStep: { value: new THREE.Vector2() }, uRadius: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `
+    uniform sampler2D uGun; uniform vec2 uStep; uniform float uRadius; varying vec2 vUv;
+    void main() {
+      vec4 sum = texture2D(uGun, vUv) * 0.16;
+      for (int ring = 1; ring <= 2; ring++) {
+        float reach = uRadius * float(ring) * 0.5;
+        for (int k = 0; k < 8; k++) { float a = float(k) * 0.7854 + float(ring) * 0.39; sum += texture2D(uGun, vUv + vec2(cos(a), sin(a)) * uStep * reach) * 0.0525; }
+      }
+      gl_FragColor = sum;
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`,
+  transparent: true, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, premultipliedAlpha: true,
+});
+const blurScene = new THREE.Scene();
+blurScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMaterial));
+blurScene.children[0].frustumCulled = false;
+const blurCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const bufferSize = new THREE.Vector2(), clearWas = new THREE.Color();
+function drawViewmodel() {
+  const amount = game.settings.aimBlur === false ? 0 : viewmodel.ads;
+  renderer.clearDepth();
+  if (amount < 0.03) { viewmodel.camera.layers.enableAll(); renderer.render(viewmodel.scene, viewmodel.camera); return; }
+  renderer.getDrawingBufferSize(bufferSize);
+  if (gunTarget.width !== bufferSize.x || gunTarget.height !== bufferSize.y) gunTarget.setSize(bufferSize.x, bufferSize.y);
+  const alphaWas = renderer.getClearAlpha(); renderer.getClearColor(clearWas);
+  viewmodel.camera.layers.set(0);
+  renderer.setRenderTarget(gunTarget);
+  renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(viewmodel.scene, viewmodel.camera);
+  renderer.setRenderTarget(null);
+  renderer.setClearColor(clearWas, alphaWas);
+  blurMaterial.uniforms.uStep.value.set(1 / bufferSize.x, 1 / bufferSize.y);
+  // About 9 pixels at 1080p fully aimed; open sights a touch less than a scope's eyepiece an inch from the eye.
+  blurMaterial.uniforms.uRadius.value = amount * amount * (bufferSize.y / 1080) * (viewmodel.current?.userData.lens ? 11 : 8);
+  renderer.render(blurScene, blurCamera);
+  viewmodel.camera.layers.set(1);
+  renderer.clearDepth();
+  renderer.render(viewmodel.scene, viewmodel.camera);
+  viewmodel.camera.layers.enableAll();
+}
+const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
+const scopeTilt = new THREE.Quaternion();
 const royale = initRoyale({ arena, hud, player });
 const devtools = initDevTools({ player, operators, camera });
 function frame(now = 0) {
@@ -463,9 +514,29 @@ function frame(now = 0) {
   // Music follows the screen: full in the menus, lower between rounds, out of the way while a round is live.
   setMusicScene(game.screen !== 'game' ? 'menu' : game.room?.phase === 'live' || game.room?.phase === 'overtime' || game.room?.phase === 'range' ? 'combat' : 'match');
   soundViz.update();
+  // Magnified scopes are real: the world is drawn again through the glass, at the scope's own zoom.
+  if (game.screen === 'game' && (player.mode === 'play' || player.pov) && viewmodel.scopeWanted()) {
+    // It looks where the scope points, not where the head does, so a tilted or lowered gun shows it.
+    scopeCamera.position.copy(camera.position); scopeCamera.quaternion.copy(camera.quaternion);
+    // At the hip it looks where the gun points. Up at the eye the crosshair must mark where the shot goes, so it follows the view.
+    if (viewmodel.ads < 0.98) scopeCamera.quaternion.multiply(scopeTilt.identity().slerp(viewmodel.scopeAim, 1 - viewmodel.ads));
+    // Real magnification: whatever angle the glass covers on screen shows 1/M of that angle of the world,
+    // so things are M times bigger inside the lens than beside it, however near or far the lens is.
+    const covers = 2 * Math.atan(viewmodel.lensFraction * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+    const fov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(covers) / viewmodel.scopeMag, 0.4, 60);
+    if (Math.abs(scopeCamera.fov - fov) > 0.01) { scopeCamera.fov = fov; scopeCamera.updateProjectionMatrix(); }
+    scopeCamera.updateMatrixWorld();
+    const skyPass = arena.sky?.material.uniforms.scopePass;
+    if (skyPass) skyPass.value = 1;
+    renderer.setRenderTarget(viewmodel.scopeTarget);
+    renderer.clear();
+    renderer.render(arena.scene, scopeCamera);
+    renderer.setRenderTarget(null);
+    if (skyPass) skyPass.value = 0;
+  }
   renderer.clear();
   renderer.render(arena.scene, camera);
-  if (game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden) { renderer.clearDepth(); renderer.render(viewmodel.scene, viewmodel.camera); }
+  if (game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden) drawViewmodel();
   renderPreview();
   if (!firstFrame) { firstFrame = true; boot?.ready(); }
 }

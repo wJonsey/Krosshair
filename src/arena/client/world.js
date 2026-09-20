@@ -8,6 +8,8 @@ import { World } from '../shared/physics.js';
 
 const PATTERNS = { noise: 0, panels: 1, bricks: 2, planks: 3, ribs: 4, tiles: 5, stripes: 6, windows: 7, strata: 8 };
 
+// Battle royale view distance: a multiple of the weather's own fog. Ultra shows the island end to end.
+export const VIEW_DISTANCE = { low: 0.7, medium: 1, high: 1.7, ultra: 3.2 };
 const VARIANTS = {
   dusk: { top: '#1d2a4a', horizon: '#f0a35e', fog: '#c58a66', fogNear: 45, fogFar: 210, sun: '#ffb070', sunPower: 2.6, sunDir: [-0.5, 0.5, 0.42], hemiSky: '#a9b6d6', hemiGround: '#6b5447', hemi: 1.7, lamps: 0.7, exposure: 1.05, stars: 0.15, windows: 0.5 },
   night: { top: '#03050a', horizon: '#142036', fog: '#0a111b', fogNear: 10, fogFar: 100, sun: '#9db9ff', sunPower: 1.1, sunDir: [0.35, 0.7, -0.3], hemiSky: '#5a78ad', hemiGround: '#2c3a52', hemi: 1.7, lamps: 1.6, exposure: 1.2, stars: 1, windows: 1, haze: 0.8 },
@@ -157,9 +159,9 @@ export class Arena {
 
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 } },
+      uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 }, scopePass: { value: 0 } },
       vertexShader: 'varying vec3 dir; void main() { dir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float stars; uniform float flash; varying vec3 dir;
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float stars; uniform float flash; uniform float scopePass; varying vec3 dir;
         float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         void main() { vec3 d = normalize(dir); float h = max(d.y, 0.0);
           vec3 color = mix(horizon, top, pow(smoothstep(0.0, 0.65, h), 0.7));
@@ -167,6 +169,8 @@ export class Arena {
           color += sunColor * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.28);
           vec3 cell = floor(d * 220.0); float star = step(0.9975, h31(cell)) * smoothstep(0.02, 0.25, h);
           color += vec3(star) * stars; color += vec3(0.75, 0.8, 1.0) * flash * (0.35 + 0.65 * (1.0 - h));
+          // The scope's picture is stored linear and tone mapped by the eyepiece, so undo both here.
+          if (scopePass > 0.5) color = pow(clamp(color, 0.0, 1.0), vec3(2.2)) * 1.55;
           gl_FragColor = vec4(color, 1.0); }`,
     }));
     this.sky.renderOrder = -10;
@@ -209,6 +213,7 @@ export class Arena {
     if (this.map?.id === id) { this.resetRound(); return; }
     if (this.mapGroup) { this.scene.remove(this.mapGroup); this.mapGroup.traverse((o) => o.geometry?.dispose()); }
     this.map = getMap(id);
+    this.applyViewDistance();
     this.physics = new World(this.map.boxes);
     this.glass.clear(); this.shields.clear(); this.barrierMeshes = []; this.lamps = []; this.glows = [];
     const group = new THREE.Group();
@@ -363,7 +368,7 @@ export class Arena {
   setVariant(name) {
     const v = VARIANTS[name] || VARIANTS.dusk;
     this.variant = v; this.variantName = name;
-    this.scene.fog.color.set(v.fog); this.scene.fog.near = v.fogNear; this.scene.fog.far = v.fogFar;
+    this.scene.fog.color.set(v.fog); this.applyViewDistance();
     this.hemi.color.set(v.hemiSky); this.hemi.groundColor.set(v.hemiGround); this.hemi.intensity = v.hemi;
     this.sun.color.set(v.sun); this.sun.intensity = v.sunPower;
     const u = this.sky.material.uniforms;
@@ -385,7 +390,16 @@ export class Arena {
   }
 
   // g: { renderScale, shadows: off|low|high|ultra, streetLights, brightness }. See graphics() in state.js.
+  // How far you can see on the big maps. Arenas keep the fog their weather was designed with.
+  applyViewDistance() {
+    const v = this.variant;
+    if (!v) return;
+    const reach = this.map?.royale ? VIEW_DISTANCE[this.viewDistance] || 1 : 1;
+    this.scene.fog.near = v.fogNear * Math.max(1, reach * 0.8); this.scene.fog.far = v.fogFar * reach;
+    this.viewReach = reach;
+  }
   setGraphics(g) {
+    this.viewDistance = g.viewDistance || 'high'; this.applyViewDistance();
     const size = { low: 1024, high: 2048, ultra: 4096 }[g.shadows] || 0;
     this.sun.castShadow = size > 0;
     if (size && this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }

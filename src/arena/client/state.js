@@ -29,7 +29,7 @@ try {
 export const DEFAULT_SETTINGS = {
   sensitivity: 1, scopeSensitivity: 0.7, fov: 78, volume: 0.8, ambience: 0.6, music: 0.9, musicInMatch: true, announcer: true, invertY: false, padSensitivity: 1, toggleScope: false, toggleCrouch: false, visualizeSound: true,
   // Graphics: `quality` is a preset; touching any of the fine controls below turns it into 'custom'.
-  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
+  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', aimBlur: true, brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
   binds: {},        // action → [primary, secondary]; anything missing falls back to DEFAULT_BINDS (input.js)
   crosshair: null,  // null = the default in crosshair.js
   settingsVersion: 4,
@@ -46,12 +46,12 @@ export function migrateSettings(settings) {
 }
 // What each graphics preset means. 'custom' leaves the fine controls alone.
 export const GRAPHICS_PRESETS = {
-  low: { renderScale: 0.75, shadows: 'off', streetLights: false },
-  medium: { renderScale: 0.85, shadows: 'low', streetLights: true },
-  high: { renderScale: 1, shadows: 'high', streetLights: true },
-  ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true },
+  low: { renderScale: 0.75, shadows: 'off', streetLights: false, viewDistance: 'low' },
+  medium: { renderScale: 0.85, shadows: 'low', streetLights: true, viewDistance: 'medium' },
+  high: { renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high' },
+  ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true, viewDistance: 'ultra' },
 };
-export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
+export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, viewDistance: settings.viewDistance || 'high', brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
   name: tabStored('name', ''),

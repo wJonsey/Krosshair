@@ -6,7 +6,7 @@ export const ROYALE = {
   lobbyWait: 20,      // seconds before a lobby starts (sooner once it is full)
   pickupRange: 1.7,   // metres from a floor item for a bot to pick it up, or for anyone to collect ammo
   reach: 3.6,         // how far away a pilot can pick up what they are looking at
-  viewRange: 260,     // players further away than this are left out of your snapshots
+  viewRange: 520,     // players further away than this are left out of your snapshots
   spread: 26,         // minimum distance between two starting points
   dropTime: 14,       // seconds on the drop map, choosing where to land
   airdropFall: 14,    // seconds an airdrop takes to come down once it is called

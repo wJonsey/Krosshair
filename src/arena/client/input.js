@@ -7,7 +7,7 @@ export const ACTIONS = [
   ['jump', 'Jump', 'Movement'], ['crouch', 'Crouch (silent)', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
   ['fire', 'Fire', 'Weapons'], ['scope', 'Aim / scope', 'Weapons'], ['reload', 'Reload', 'Weapons'],
   ['primary', 'Primary weapon', 'Weapons'], ['sidearm', 'Sidearm', 'Weapons'], ['melee', 'Blade', 'Weapons'],
-  ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'],
+  ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'], ['inspect', 'Inspect weapon', 'Weapons'],
   ['ping', 'Ping location', 'Team'], ['radio', 'Radio commands', 'Team'], ['chat', 'Chat to all', 'Team'], ['teamChat', 'Chat to team', 'Team'], ['scoreboard', 'Scoreboard', 'Team'],
 ].map(([id, label, group]) => ({ id, label, group }));
 
@@ -16,7 +16,7 @@ export const DEFAULT_BINDS = {
   jump: ['Space', null], crouch: ['ControlLeft', 'KeyC'], walk: ['ShiftLeft', 'ShiftRight'],
   fire: ['Mouse0', null], scope: ['Mouse2', null], reload: ['KeyR', null],
   primary: ['Digit1', null], sidearm: ['Digit2', null], melee: ['Digit3', null],
-  gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null],
+  gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null], inspect: ['KeyV', null],
   ping: ['KeyZ', 'Mouse1'], radio: ['KeyX', null], chat: ['Enter', null], teamChat: ['KeyY', null], scoreboard: ['Tab', null],
 };
 // Keys the game keeps for itself.

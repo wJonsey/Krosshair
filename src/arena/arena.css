@@ -1448,3 +1448,6 @@ button.cash-out .coins { color: var(--void); }
 .killfeed .gun.art { display: inline-flex; align-items: center; }
 .killfeed .gun.art img { display: block; height: 20px; width: auto; max-width: 92px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .8)); }
 .killfeed .gun.art.skinned img { filter: drop-shadow(0 0 4px rgba(255, 181, 71, .35)) drop-shadow(0 1px 2px rgba(0, 0, 0, .8)); }
+
+/* Scopes are real glass on the gun now: the HUD keeps only the zoom label and the breath meter. */
+.scope-overlay.glass::before, .scope-overlay.glass .scope-crosshair, .scope-overlay.glass .scope-mil { display: none; }

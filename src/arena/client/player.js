@@ -2,7 +2,7 @@
 // handling, scope sway + breath, gadgets, drone piloting, spectating, killcam.
 import * as THREE from 'three';
 import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '../shared/constants.js';
-import { SpreadTracker, applySpread, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
+import { SpreadTracker, applySpread, ballisticsFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
@@ -39,6 +39,7 @@ export class LocalPlayer {
     this.spectateId = null; this.pendingKillcam = null; this.drone = null;
     this.uiBlocked = () => false;
     this.gravityScale = 1;
+    this.wallCheck = 0; this.wallAmount = 0;
     this.drop = null;                 // royale: { chute } while coming down from the sky
     this.boost = { speed: 1, speedUntil: 0, jump: 1, jumpUntil: 0 }; // timed pickups, performance.now() clock
     this.bind();
@@ -60,6 +61,7 @@ export class LocalPlayer {
       if (action === 'fire') this.fireHeld = false;
       if (action === 'scope' && game.settings.toggleScope) this.scopeToggle = !this.scopeToggle;
       if (action === 'reload') this.reload();
+      if (action === 'inspect' && this.alive && this.scopeAmount < 0.1) this.viewmodel.inspect();
       if (action === 'primary' || action === 'sidearm' || action === 'melee') this.switchTo(action);
       if (action === 'gadget1') this.useGadget(0);
       if (action === 'gadget2') this.useGadget(1);
@@ -351,7 +353,7 @@ export class LocalPlayer {
     const tracerColor = game.look.tracer || '#ffc857';
     for (let pellet = 0; pellet < weapon.pellets; pellet += 1) {
       const shotDir = applySpread(dir, angle, rng);
-      const trace = traceShot(this.arena.physics, origin, shotDir, weapon, this.operators.targets());
+      const trace = traceShot(this.arena.physics, origin, shotDir, weapon, this.operators.targets(), 260, ballisticsFor(weapon, this.arena.map));
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], trace.end, tracerColor, 0.012 + weapon.tracer * 0.012);
       if (weapon.trail) this.effects.trail([muzzle.x, muzzle.y, muzzle.z], trace.end);
       trace.impacts.slice(0, 3).forEach((impact) => { this.effects.impact(impact.point, impact.normal, impact.mat, impact.exit); if (!impact.exit && pellet < 2) playImpact(MATERIAL_SOUND(impact.mat), impact.point, 0.5); });
@@ -518,10 +520,19 @@ export class LocalPlayer {
     this.recoilYaw += (0 - this.recoilYaw) * Math.min(1, dt * 7);
     const scopedOptic = weapon.scope && weapon.scope[0] < 40;
     this.swayTime += dt;
-    let swayScale = scopedOptic ? this.scopeAmount * 0.0042 : 0;
-    swayScale *= (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.1 : 1) * (this.winded ? 2.1 : 1) * (weapon.sway || 1);
-    this.swayX = Math.sin(this.swayTime * 1.13) * swayScale + Math.sin(this.swayTime * 2.71) * swayScale * 0.35;
-    this.swayY = Math.sin(this.swayTime * 1.7 + 1.3) * swayScale * 0.8 + Math.cos(this.swayTime * 0.83) * swayScale * 0.3;
+    // Sway is what a held rifle really does: a slow figure of eight from breathing, a faster small tremor from
+    // the muscles, a wander that never quite repeats. Most of it is the gun moving in your hands (the sights
+    // drift around the target); only a little reaches the point of aim, so it nudges accuracy rather than ruling it.
+    const st = this.swayTime;
+    const breatheX = Math.sin(st * 0.95), breatheY = Math.sin(st * 1.9 + 0.6) * 0.6;
+    const tremorX = Math.sin(st * 7.3) * 0.12 + Math.sin(st * 11.1 + 2) * 0.07, tremorY = Math.sin(st * 8.7 + 1) * 0.12 + Math.sin(st * 12.9) * 0.07;
+    const wanderX = Math.sin(st * 0.37 + 4) * 0.5, wanderY = Math.sin(st * 0.29 + 1.7) * 0.4;
+    const effort = (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.12 : 1) * (this.winded ? 2.1 : 1) * (weapon.sway || 1);
+    const patternX = (breatheX + tremorX + wanderX) * effort, patternY = (breatheY + tremorY + wanderY) * effort;
+    // Magnified glass shows it most; irons and dots barely move the aim at all.
+    const aimShare = (scopedOptic ? 0.0011 : 0.00035) * this.scopeAmount;
+    this.swayX = patternX * aimShare; this.swayY = patternY * aimShare;
+    this.gunSway = [patternX * this.scopeAmount, patternY * this.scopeAmount];
     const eye = THREE.MathUtils.lerp(BODY.eye, BODY.crouchEye, this.crouchAmount);
     const dy = body.y - this.viewY;
     if (Math.abs(dy) > 0.7 || !body.onGround) this.viewY = body.y; else this.viewY += dy * Math.min(1, dt * 16);
@@ -533,9 +544,27 @@ export class LocalPlayer {
     const baseFov = game.settings.fov;
     const zoomFov = weapon.scope ? weapon.scope[Math.min(this.zoomIndex, weapon.scope.length - 1)] : baseFov;
     const eased = this.scopeAmount * this.scopeAmount * (3 - 2 * this.scopeAmount);
-    const fov = THREE.MathUtils.lerp(baseFov, Math.min(baseFov, zoomFov), eased);
+    // A magnified scope does its own zooming through the glass; the view around it only tightens a little.
+    const glass = weapon.sight === 'scope' || weapon.sight === 'prism';
+    if (glass) this.viewmodel.scopeMag = Math.tan(THREE.MathUtils.degToRad(baseFov) / 2) / Math.tan(THREE.MathUtils.degToRad(Math.min(baseFov, zoomFov)) / 2);
+    // Irons, beads, dots and holos do not magnify: aiming only tightens the view a little.
+    const fov = THREE.MathUtils.lerp(baseFov, glass ? baseFov * 0.8 : Math.max(Math.min(baseFov, zoomFov), baseFov * 0.8), eased);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
-    this.viewmodel.update(dt, { speed: this.speed, onGround: body.onGround, scoped: eased, lookX: this.lookX, lookY: this.lookY, crouch: this.crouching, pitch: this.pitch });
+    // How far the gun would poke into whatever is in front of it (0 none → 1 muzzle fully blocked).
+    this.wallCheck = (this.wallCheck + 1) % 2;
+    if (this.wallCheck === 0) {
+      const length = weapon.melee ? 0 : Math.min(1.25, 0.34 - (this.viewmodel.current?.userData.front ?? -0.5));
+      let wall = 0;
+      if (length > 0) {
+        const cp = Math.cos(this.pitch), dir = [-Math.sin(this.yaw) * cp, Math.sin(this.pitch), -Math.cos(this.yaw) * cp];
+        const hit = this.arena.physics.raycast([this.camera.position.x, this.camera.position.y - 0.1, this.camera.position.z], dir, length, (box) => !box.deco)[0];
+        if (hit) wall = 1 - Math.max(0.25, hit.t0) / length;
+      }
+      this.wallAmount = wall;
+    }
+    // Shoved right back, the sights are no use: the aim comes off until there is room again.
+    const room = 1 - THREE.MathUtils.clamp((this.wallAmount - 0.25) / 0.35, 0, 1);
+    this.viewmodel.update(dt, { aimSway: this.gunSway, wall: this.wallAmount, speed: this.speed, onGround: body.onGround, scoped: eased * room, lookX: this.lookX, lookY: this.lookY, crouch: this.crouching, pitch: this.pitch, strafe: (this.vel.x * Math.cos(this.yaw) - this.vel.z * Math.sin(this.yaw)) / 6 });
   }
 
   updateDrone(dt, pad) {
@@ -604,7 +633,9 @@ export class LocalPlayer {
     this.camera.rotation.set(s.pitch, s.yaw, 0, 'YXZ');
     const baseFov = game.settings.fov;
     const zoomFov = weapon.scope ? Math.min(baseFov, weapon.scope[0]) : baseFov;
-    const fov = THREE.MathUtils.lerp(baseFov, zoomFov, eased);
+    const glass = weapon.sight === 'scope' || weapon.sight === 'prism';
+    if (glass) this.viewmodel.scopeMag = Math.tan(THREE.MathUtils.degToRad(baseFov) / 2) / Math.tan(THREE.MathUtils.degToRad(zoomFov) / 2);
+    const fov = THREE.MathUtils.lerp(baseFov, glass ? baseFov * 0.8 : Math.max(zoomFov, baseFov * 0.8), eased);
     if (Math.abs(this.camera.fov - fov) > 0.01) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     // Turn speed drives the weapon sway like mouse movement does.
     const lookX = pov.lastYaw === null ? 0 : -((s.yaw - pov.lastYaw + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 600;
