@@ -13,7 +13,8 @@ import { Webhooks } from './server/webhooks.js';
 import { Room, now } from './server/room.js';
 import { RoyaleRoom } from './server/royale.js';
 import { ROYALE } from './shared/royale.js';
-import { buyGear, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
+import { installCatalogue, publicCatalogue } from './server/itemsets.js';
+import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { WAGER } from './shared/economy.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -152,7 +153,9 @@ function handleCoins(socket, message) {
     result = action === 'crate' ? openCrate(profiles, socket.token, String(message.crate || ''), message.count, message.free === true)
       : action === 'scrap' ? scrapSkin(profiles, socket.token, String(message.finish || ''))
       : action === 'tradeup' ? tradeUp(profiles, socket.token, message.items)
-      : action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id) : buySkin(profiles, socket.token, String(message.finish || ''));
+      : action === 'gear' ? buyGear(profiles, socket.token, message.kind, message.id)
+      : action === 'item' ? buyItemShop(profiles, socket.token, String(message.set || ''), String(message.kind || ''), String(message.id || ''))
+      : buySkin(profiles, socket.token, String(message.finish || ''));
     if (result.unboxed) announceDrops(socket.name, result.unboxed.drops);
     if (result.traded) announceDrops(socket.name, [result.traded]);
   }
@@ -342,6 +345,7 @@ function newestChange(dir) {
   }
   return newest;
 }
+installCatalogue();
 const BUILD = Math.round(newestChange(path.join(root, 'src', 'arena'))).toString(36);
 
 // Menus stay live: anyone not in a room gets the online count and the public room list whenever they change.
@@ -505,7 +509,8 @@ function enter(socket, message) {
 
 wss.on('connection', (socket) => {
   sockets.add(socket);
-  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE });
+  // Only the sets that have already been out. A set still to come is not described to anyone.
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: publicCatalogue(dateKey()) });
   socket.identified = false;
   socket.room = null;
   socket.player = null;

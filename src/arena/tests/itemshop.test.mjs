@@ -1,0 +1,178 @@
+// The Item Shop: the same four sets for everyone on a given day, nothing sold off-day, nothing
+// unreleased leaked, and no other route to an exclusive.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { readFileSync } from 'node:fs';
+import { ProfileStore } from '../server/profiles.js';
+import { buyItemShop, buySkin, scrapSkin, tradeUp } from '../server/economy.js';
+import { CRATES, FINISHES, crateFinishes, finishInfo } from '../shared/economy.js';
+import { COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
+import { ALL_SETS as ITEM_SETS, EXCLUSIVE_COSMETICS, EXCLUSIVE_FINISHES, installCatalogue, publicCatalogue } from '../server/itemsets.js';
+import { SHOP_SETS_PER_DAY, bundleOn, bundlePrice, bundleSet, inShop, itemPrice, lastSeen, released, runway, seenLine, setValue, shopFor } from '../shared/itemshop.js';
+
+// The catalogue lives server side now, so a test installs it the way the server does at boot.
+installCatalogue();
+
+const store = async () => new ProfileStore(path.join(await mkdtemp(path.join(tmpdir(), 'krosshair-items-')), 'profiles.json'));
+const dayAfter = (key, days) => new Date(Date.parse(`${key}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+
+test('every day deals the same four sets to everyone, and only released ones', () => {
+  for (let i = 0; i < 120; i += 1) {
+    const key = dayAfter('2026-03-01', i * 3);
+    const sets = shopFor(key);
+    assert.deepEqual(sets.map((set) => set.id), shopFor(key).map((set) => set.id), `${key} is not stable`);
+    assert.ok(sets.length <= SHOP_SETS_PER_DAY, `${key} put out ${sets.length} sets`);
+    for (const set of sets) assert.ok(released(set, key), `${key} sold ${set.name} before its debut`);
+    assert.equal(new Set(sets.map((s) => s.id)).size, sets.length, `${key} listed a set twice`);
+  }
+});
+
+test('a set is always in the shop on its own debut day, and gets back round in a season', () => {
+  for (const set of ITEM_SETS) assert.ok(inShop(set.id, set.debut), `${set.name} missed its own launch`);
+  // Over a long enough run every released set comes back, so nothing is stranded forever.
+  const year = dayAfter('2026-08-04', 200);
+  for (const set of ITEM_SETS.filter((s) => released(s, '2026-08-04'))) {
+    assert.ok(lastSeen(set.id, year), `${set.name} never came back`);
+  }
+});
+
+// A day part way through the run, so some sets are out and some are still to come.
+const midSeason = () => { const days = ITEM_SETS.map((set) => set.debut).sort(); return days[Math.floor(days.length / 2)]; };
+
+test('nothing unreleased leaves the server, in the catalogue a client is sent', () => {
+  const key = midSeason();
+  const out = publicCatalogue(key);
+  const secret = ITEM_SETS.filter((set) => set.debut > key);
+  assert.ok(secret.length >= 3, 'no secret sets left to test');
+  const wire = JSON.stringify(out);
+  for (const set of secret) {
+    assert.ok(!out.sets.some((s) => s.id === set.id), `${set.name} was sent to the client`);
+    assert.ok(!wire.includes(set.name), `${set.name} is named in the client payload`);
+    for (const [kind, id] of set.items) assert.ok(!wire.includes(`"${id}"`), `${kind}:${id} is in the client payload`);
+  }
+  // And a released set is sent, with the pieces the wall needs to draw it.
+  const shown = out.sets[0];
+  assert.ok(shown && out.finishes.length, 'nothing public was sent');
+  for (const [kind, id] of shown.items) assert.ok(wire.includes(id), `${kind}:${id} missing from the payload`);
+});
+
+test('nothing unreleased is named anywhere a pilot can look', () => {
+  const key = midSeason();
+  const future = ITEM_SETS.filter((set) => !released(set, key));
+  assert.ok(future.length >= 3, 'no secret sets left to test');
+  for (const set of future) {
+    assert.ok(!inShop(set.id, key));
+    assert.equal(lastSeen(set.id, key), null, `${set.name} has a last seen date before it launched`);
+    for (const [kind, id] of set.items) assert.equal(seenLine(kind, id, key), null, `${kind}:${id} leaked`);
+  }
+  // And a released one does answer, so the skins wall can grey it out and say when.
+  const out = ITEM_SETS.find((set) => released(set, key));
+  for (const [kind, id] of out.items) assert.ok(seenLine(kind, id, key), `${kind}:${id} should be public`);
+});
+
+test('a bundle always beats buying the set piece by piece', () => {
+  for (const set of ITEM_SETS) {
+    assert.ok(bundlePrice(set) < setValue(set), `${set.name} bundle is not a saving`);
+    for (const [kind, id] of set.items) assert.ok(itemPrice(kind, id) > 0, `${kind}:${id} has no price`);
+  }
+});
+
+test('exclusives have no other way in: no crate, no trade-up, no shelf, no scrap', async () => {
+  const exclusive = FINISHES.filter((finish) => finish.shop === 'item');
+  assert.ok(exclusive.length >= 20, `only ${exclusive.length} exclusives`);
+  for (const crate of Object.values(CRATES)) {
+    assert.equal(crateFinishes(crate).filter((finish) => finish.shop === 'item').length, 0, 'a crate can drop an exclusive');
+  }
+  const profiles = await store();
+  const token = ProfileStore.newToken();
+  const profile = profiles.wallet(token);
+  profiles.credit(token, 999999, 'test', 'test');
+  // The normal shelf refuses one.
+  assert.ok(buySkin(profiles, token, exclusive[0].id).error, 'the normal shop sold an exclusive');
+  // Owning one, it cannot be scrapped or fed to a trade-up.
+  profile.finishes.push(exclusive[0].id);
+  assert.ok(scrapSkin(profiles, token, exclusive[0].id).error, 'an exclusive was scrapped');
+  const five = exclusive.filter((finish) => finish.rarity === exclusive[0].rarity).slice(0, 5).map((finish) => finish.id);
+  for (const id of five) if (!profile.finishes.includes(id)) profile.finishes.push(id);
+  if (five.length === 5) assert.ok(tradeUp(profiles, token, five).error, 'an exclusive was traded up');
+});
+
+test('the shop sells only what is out today, and only one bundle a day', async () => {
+  const profiles = await store();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 999999, 'test', 'test');
+  // The shop is empty until the first set lands, so this runs on a day it is open.
+  const day = ITEM_SETS.map((set) => set.debut).sort()[0];
+  const sets = shopFor(day);
+  assert.ok(sets.length, 'the shop never opens');
+  // Exactly one set is sold whole on any given day.
+  for (let i = 0; i < 60; i += 1) {
+    const key = dayAfter(day, i * 5);
+    const open = shopFor(key);
+    if (!open.length) continue;
+    assert.equal(open.filter((set) => bundleOn(set.id, key)).length, 1, `${key} sold ${open.filter((set) => bundleOn(set.id, key)).length} bundles`);
+    assert.ok(open.some((set) => set.id === bundleSet(key).id), `${key} featured a set that is not out`);
+  }
+  const shut = ITEM_SETS.find((set) => !inShop(set.id));
+  if (shut) assert.ok(buyItemShop(profiles, token, shut.id, ...shut.items[0]).error, 'sold a set that is not out today');
+});
+
+test('the runway says how long the shop can run before it needs more sets', () => {
+  const now = runway('2026-09-20');
+  assert.equal(now.left, ITEM_SETS.length, 'some sets have already landed');
+  assert.ok(now.days > 180, `only ${now.days} days of sets`);
+  assert.equal(now.last, ITEM_SETS.map((set) => set.debut).sort().pop());
+  // Past the last debut there is nothing new left to land.
+  assert.equal(runway(dayAfter(now.last, 10)).days, 0);
+  assert.equal(runway(dayAfter(now.last, 10)).left, 0);
+});
+
+test('nothing is in the shop until the first set lands', () => {
+  const first = ITEM_SETS.map((set) => set.debut).sort()[0];
+  assert.equal(shopFor(dayAfter(first, -1)).length, 0, 'the shop was open before its first set');
+  assert.ok(shopFor(first).length, 'the first set did not open the shop');
+});
+
+test('an item shop cosmetic is worn only by owning it, never by levelling', () => {
+  const exclusive = Object.entries(COSMETICS).flatMap(([kind, list]) => list.filter((item) => item.shop === 'item').map((item) => [kind, item]));
+  assert.ok(exclusive.length >= 15, `only ${exclusive.length} exclusive cosmetics`);
+  for (const [kind, item] of exclusive) {
+    assert.ok(!item.price, `${kind}:${item.id} has a shelf price`);
+    assert.equal(cosmeticUnlocked(kind, item.id, 99, [], false), false, `${kind}:${item.id} unlocked by level`);
+    assert.equal(cosmeticUnlocked(kind, item.id, 1, [`${kind}:${item.id}`], false), true, `${kind}:${item.id} cannot be worn when owned`);
+  }
+});
+
+test('finish ids are unique, so an exclusive never shadows a shelf skin', () => {
+  const ids = FINISHES.map((finish) => finish.id);
+  assert.equal(new Set(ids).size, ids.length, 'two finishes share an id');
+  for (const set of ITEM_SETS) for (const [kind, id] of set.items) {
+    if (kind === 'finish') assert.equal(finishInfo(id)?.shop, 'item', `${id} is in a set but not flagged`);
+    else assert.ok(COSMETICS[kind]?.some((item) => item.id === id && item.shop === 'item'), `${kind}:${id} is in a set but not flagged`);
+  }
+});
+
+// The exclusives left the shared bundle, so the coverage that used to run over FINISHES no longer sees
+// them. It runs here instead, where the catalogue is installed.
+test('every exclusive has its art, and none of them animate', () => {
+  const read = (file) => readFileSync(new URL(`../client/${file}`, import.meta.url), 'utf8');
+  const skins = read('skins.js');
+  const art = skins.slice(skins.indexOf('const FINISH_ART = {'), skins.indexOf('\n};', skins.indexOf('const FINISH_ART = {')));
+  const entries = Object.fromEntries(art.split(/\n {2}(?=[a-z]+: \{)/).slice(1).map((chunk) => [chunk.match(/^([a-z]+):/)[1], /shader: '/.test(chunk)]));
+  for (const finish of EXCLUSIVE_FINISHES) {
+    assert.ok(finish.id in entries, `${finish.id} has no painter`);
+    assert.equal(entries[finish.id], false, `${finish.id} animates, but only Mythics and the Dev class do`);
+  }
+  const operator = read('operator.js'), charms = read('charms.js');
+  for (const [kind, items] of Object.entries(EXCLUSIVE_COSMETICS)) {
+    for (const item of items) {
+      if (kind === 'charm') assert.match(charms, new RegExp(`\\n  ${item.id}: \\(`), `charm ${item.id} has no maker`);
+      else if (kind === 'headgear' || kind === 'face') assert.ok(operator.includes(`'${item.id}'`), `${kind} ${item.id} has no model`);
+      else if (kind === 'pack') assert.ok(operator.includes(`packGroup('${item.id}')`), `pack ${item.id} has no model`);
+      else if (kind === 'pattern') assert.ok(read('skins.js').includes(`${item.id}:`), `pattern ${item.id} has no painter`);
+    }
+  }
+});

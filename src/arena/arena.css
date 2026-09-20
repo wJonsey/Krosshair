@@ -1627,3 +1627,77 @@ button.cash-out .coins { color: var(--void); }
 .notice-card.hot .notice-go { background: #ff9d3d !important; }
 .notice-go:hover { filter: brightness(1.1); }
 @keyframes notice-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* A page a guest cannot open yet, and the nav marks that before they click. Centred: there is one thing
+   to do on this screen, so it sits in the middle rather than hugging the left edge. */
+.locked-page { display: grid; place-items: center; min-height: calc(100vh - 68px - 59px - 81px); text-align: center; }
+.locked-page .eyebrow, .locked-page .page-title { text-align: center; }
+.locked-gate { width: min(560px, 100%); margin: 0; }
+.locked-gate > p { margin-bottom: 20px; color: var(--haze); font-size: 14px; line-height: 1.6; }
+.locked-gate .discord-button { width: 100%; justify-content: center; }
+.locked-gate .link-row { justify-content: center; margin-top: 16px; }
+.menu-nav button.shut, .group-tabs button.shut { opacity: .45; }
+.menu-nav button.shut::after, .group-tabs button.shut::after { content: '·'; margin-left: 6px; color: var(--signal); }
+
+/* ---- Item Shop: the day's sets, with a turntable so you see what you are buying ---- */
+.item-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 14px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--hairline); }
+.item-head h2 { margin-top: 4px; font: 400 clamp(20px, 2.2vw, 30px)/1 var(--display); text-transform: uppercase; }
+.item-timer { text-align: right; }
+.item-timer small { display: block; color: var(--haze); font: 500 9px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.item-timer b { font: 500 19px var(--mono); letter-spacing: .08em; color: var(--signal); }
+.item-shop { display: grid; grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); gap: 14px; align-items: start; }
+.item-preview { position: sticky; top: 14px; margin: 0; padding: 0 !important; overflow: hidden; }
+.item-preview .skin-stage { height: clamp(240px, 34vh, 340px); }
+.item-preview > div:last-child { padding: 16px 18px 18px; }
+.item-preview small { color: var(--signal); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.item-preview h3 { margin: 4px 0 6px; font: 400 clamp(18px, 1.7vw, 24px)/1.1 var(--display); text-transform: uppercase; }
+.item-preview span { color: var(--haze); font-size: 12px; }
+.item-preview .skin-price { margin-top: 10px; font: 500 14px var(--mono); }
+.item-sets { min-width: 0; }
+.item-set { margin-bottom: 12px; }
+.item-set .block-head { grid-template-columns: 1fr auto; }
+.item-bundle { grid-column: 2; grid-row: 1 / span 2; padding: 10px 14px !important; background: var(--signal) !important; color: var(--void) !important; border: 0 !important; font: 500 10px var(--mono) !important; letter-spacing: .1em; white-space: nowrap; }
+.item-bundle:hover { filter: brightness(1.1); }
+.item-part { grid-column: 2; grid-row: 1 / span 2; font-size: 11px; }
+.item-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.item-card { display: flex; flex-direction: column; background: rgba(230, 237, 241, .04); border-top: 2px solid var(--rarity, var(--hairline-strong)); text-align: center; transition: background .15s, transform .15s var(--ease); }
+.item-card:hover { background: rgba(230, 237, 241, .08); transform: translateY(-2px); }
+.item-card.showing { background: color-mix(in srgb, var(--rarity, var(--signal)) 14%, transparent); box-shadow: inset 0 0 0 1px var(--rarity, var(--signal)); }
+.item-look { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; padding: 12px 8px 8px !important; background: none !important; border: 0 !important; color: var(--frost) !important; text-transform: none !important; letter-spacing: 0 !important; }
+.item-card b { font: 400 12px var(--display); text-transform: uppercase; letter-spacing: .03em; }
+.item-card small { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .12em; }
+.item-art { width: 100%; height: 74px; object-fit: contain; }
+.item-art.paint { display: flex; align-items: center; justify-content: center; background-size: 96px; overflow: hidden; }
+.item-art.paint::after { content: ''; position: absolute; inset: 0; background: linear-gradient(rgba(8, 11, 15, .35), rgba(8, 11, 15, .62)); }
+.item-art.paint { position: relative; }
+.item-art.paint img { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .6)); }
+.item-art.gear { display: flex; align-items: center; justify-content: center; width: 100%; height: 74px; overflow: hidden; }
+/* The locker's own thumbs are 168px: cut them to the card rather than letting them spill over it. */
+.item-art.gear .gear-thumb, .item-art.gear .charm-thumb { display: block; width: auto; max-width: 100%; max-height: 74px; margin: 0 auto; }
+.item-art.gear .gear-swatch { display: block; width: 38px !important; height: 38px !important; margin: 0 auto; border-radius: 50%; }
+.item-art.gear .gear-title { font-size: 11px; }
+.item-buy { margin: 0 8px 8px; padding: 8px !important; background: transparent !important; color: var(--frost) !important; border: 1px solid var(--hairline-strong) !important; font-size: 10px !important; }
+.item-buy:hover { border-color: var(--signal) !important; color: var(--signal) !important; }
+.item-buy.armed, .item-bundle.armed { background: var(--signal) !important; color: var(--void) !important; border-color: var(--signal) !important; }
+.item-owned { margin: 0 8px 10px; color: var(--ally); font: 500 9px var(--mono); font-style: normal; letter-spacing: .14em; }
+/* Crates and the Item Shop share one page, so it scrolls as a whole rather than holding one screen:
+   the crates no longer claim the full viewport height or the sets below them would never be reachable. */
+.shop-market .shop-crates { height: auto !important; }
+/* The panel no longer claims a whole screen, so the Open button sits in view under the crate. */
+.shop-market .crate-panel { min-height: 0 !important; }
+.shop-market .skin-stage.crate-stage { flex: none; height: clamp(220px, 32vh, 360px) !important; min-height: 0; }
+.market-sets { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--hairline); }
+.market-head { margin-bottom: 12px; }
+.item-set.featured { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--signal) 45%, transparent); }
+/* The thing you came to press. It should not look like the buttons beside it. */
+.shop-market .crate-panel .button-row { gap: 10px; align-items: center; }
+.shop-market .crate-panel .button-row button:first-child { flex: 1; min-width: 180px; padding: 16px 20px !important; background: var(--signal) !important; color: var(--void) !important; border: 0 !important; font: 700 14px var(--mono) !important; letter-spacing: .14em; box-shadow: 0 0 26px color-mix(in srgb, var(--signal) 32%, transparent); }
+.shop-market .crate-panel .button-row button:first-child:hover:not(:disabled) { filter: brightness(1.12); transform: translateY(-1px); }
+.shop-market .crate-panel .button-row button:first-child:disabled { opacity: .4; box-shadow: none; }
+.item-runway { margin-top: 8px; color: #00ffc6; font: 500 10px var(--mono); letter-spacing: .1em; }
+.item-runway.low { color: #ff9d3d; }
+.item-empty { text-align: center; padding: 40px 20px !important; }
+/* A finish that only the Item Shop sells, on a day it is not out: there, but not for sale. */
+.finish-card.away { opacity: .45; }
+.finish-card.away:hover { opacity: .75; }
+.state.item-only { color: var(--haze); font-size: 9px; letter-spacing: .08em; }

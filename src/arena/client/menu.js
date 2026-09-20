@@ -90,11 +90,11 @@ function discordHtml() {
   const login = net.sameOrigin ? `<a class="discord-button" href="/auth/discord">${DISCORD_MARK}<span>Log in / sign up with Discord</span></a><small class="hint">${required ? 'Login required. ' : ''}Keeps your progress and rank on any device. Adds you to the Krosshair Discord.${game.discord.enabled || !net.connected ? '' : ' <b class="warn">Discord login is down. Try again shortly.</b>'}</small>` : '<p class="muted">Discord login only works on krosshair.online.</p>';
   return `<div class="discord-block${required ? ' required' : ''}">${login}<a class="discord-link" href="${DISCORD_INVITE}" target="_blank" rel="noopener noreferrer">Join the Discord →</a></div>`;
 }
-function authHtml() {
+function authHtml({ guestOption = true } = {}) {
   if (game.username) return accountRowHtml();
   if (!net.connected && !game.discord.enabled) return '<p class="muted">Connecting…</p>';
   if (game.loginRequired && !ACCOUNTS_ENABLED) return discordHtml();
-  if (!ACCOUNTS_ENABLED) return `${discordHtml()}<div class="or-rule"><span>or play as a guest</span></div><label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label><small class="hint guest-note">Guest progress is gone when you close the tab. No ranked.${game.profile?.xp ? ' Sign up with Discord to keep it.' : ''}</small>`;
+  if (!ACCOUNTS_ENABLED) return guestOption ? `${discordHtml()}<div class="or-rule"><span>or play as a guest</span></div><label class="callsign-field">Callsign<input id="name-input" maxlength="16" placeholder="Enter a callsign" autocomplete="nickname" value="${escapeHtml(game.name)}" /></label><small class="hint guest-note">Guest progress is gone when you close the tab. No ranked.${game.profile?.xp ? ' Sign up with Discord to keep it.' : ''}</small>` : discordHtml();
   const signup = authMode === 'signup';
   return `<form class="auth" id="auth-form" novalidate>
     <div class="segmented" role="tablist" aria-label="Account">${[['login', 'Log in'], ['signup', 'Sign up']].map(([id, label]) => `<button type="button" role="tab" aria-selected="${id === authMode}" class="${id === authMode ? 'active' : ''}" data-auth-mode="${id}">${label}</button>`).join('')}</div>
@@ -276,6 +276,10 @@ const NAV = [
 ];
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
 const PAGE_ALIAS = { operator: 'locker' }; // old links
+// A guest gets the game and the settings. Everything that belongs to an account stays shut until there
+// is an account to hang it on: a locker with nothing saved in it is worse than no locker at all.
+const GUEST_PAGES = new Set(['play', 'settings', 'controls', 'feedback']);
+const guestLocked = (page) => !game.username && !GUEST_PAGES.has(page);
 const ALL_PAGES = [...NAV.flatMap(([, pages]) => pages), ...TOOL_PAGES].map(([id]) => id);
 const pageFromHash = () => { const id = PAGE_ALIAS[location.hash.slice(1)] || location.hash.slice(1); return ALL_PAGES.includes(id) ? id : 'play'; };
 const groupOf = (page) => NAV.find(([, pages]) => pages.some(([id]) => id === page));
@@ -283,7 +287,7 @@ const groupOf = (page) => NAV.find(([, pages]) => pages.some(([id]) => id === pa
 function groupTabsHtml(page) {
   const pages = groupOf(page)?.[1] || [];
   if (pages.length < 2) return '';
-  return `<div class="segmented group-tabs" role="tablist">${pages.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" class="${id === page ? 'active' : ''}" aria-selected="${id === page}">${label}${id === 'rooms' && game.publicRooms.length ? ` <i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</div>`;
+  return `<div class="segmented group-tabs" role="tablist">${pages.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" class="${id === page ? 'active' : ''}${guestLocked(id) ? ' shut' : ''}" aria-selected="${id === page}">${label}${id === 'rooms' && game.publicRooms.length ? ` <i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</div>`;
 }
 let homePage = pageFromHash();
 let pageEntering = true;
@@ -452,6 +456,18 @@ function rankedPageHtml() {
   </section>`;
 }
 
+function lockedPageHtml(page) {
+  const label = (NAV.flatMap(([, pages]) => pages).find(([id]) => id === page) || [, 'That page'])[1];
+  return `<section class="page-wide locked-page">
+    <p class="eyebrow">Account needed</p><h1 class="page-title">${escapeHtml(label)} is <em>locked.</em></h1>
+    <div class="panel locked-gate">
+      <p>Your locker, your coins and your record all hang off an account. Guests get the game itself: jump in, play, come back and sign in when you want to keep anything.</p>
+      ${authHtml({ guestOption: false })}
+      <div class="link-row"><button type="button" class="ghost-button" data-page="play">Back to play</button></div>
+    </div>
+  </section>`;
+}
+
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
   const profile = game.profile;
@@ -558,13 +574,13 @@ export function renderHome() {
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') { listening = null; padListening = null; }
-  const pageHtml = SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = guestLocked(homePage) ? lockedPageHtml(homePage) : SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
-        <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
+        <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); const shut = guestLocked(pages[0][0]); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}${shut ? ' shut' : ''}" ${on ? 'aria-current="page"' : ''}${shut ? ' title="Needs an account"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
         <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>

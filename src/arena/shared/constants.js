@@ -572,6 +572,8 @@ export function cosmeticUnlocked(kind, id, level, owned = [], dev = false) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
   if (!item) return false;
   if (item.dev) return Boolean(dev);
+  // Item Shop pieces have no price and no level: being there on the day is the only way in.
+  if (item.shop === 'item') return owned.includes(`${kind}:${id}`);
   return item.price ? owned.includes(`${kind}:${id}`) : level >= item.level;
 }
 // The developers' own class. Items in it can't be bought, won or traded.

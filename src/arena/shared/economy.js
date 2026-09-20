@@ -122,11 +122,15 @@ export const FINISHES = [
   { id: 'overclock', name: 'Overclock', rarity: 'dev' },
   { id: 'devnull', name: 'Null Texture', rarity: 'dev' },
   { id: 'compile', name: 'Compile', rarity: 'dev' },
+  // Item Shop exclusives are added at boot from server/itemsets.js, so nothing unreleased ships to a
+  // browser. `shop: 'item'` is what every check reads once they are in.
 ];
 export const finishInfo = (id) => FINISHES.find((finish) => finish.id === id) || null;
 export const finishPrice = (id) => RARITY[finishInfo(id)?.rarity]?.price || 0;   // 0: not for sale
 export const devFinish = (id) => finishInfo(id)?.rarity === 'dev';
 export const PUBLIC_FINISHES = FINISHES.filter((finish) => !RARITY[finish.rarity].secret);
+// Sold only in the Item Shop, so the crates, the trade-up and the normal shelf all leave them alone.
+export const shopOnly = (id) => finishInfo(id)?.shop === 'item';
 export const finishValue = (id) => RARITY[finishInfo(id)?.rarity]?.value || 0;
 
 // Crates: a random finish for a random gun. `weights` are per rarity; `pool` limits the finishes a crate
@@ -150,7 +154,7 @@ export const CRATES = {
   cosmic: { id: 'cosmic', name: 'Cosmic crate', cost: 1200, color: '#8a5cff', blurb: 'Epic or better. Best Mythic odds.', weights: { epic: 70, legendary: 22, mythic: 8 },
     pool: ['stained', 'vaporwave', 'tide', 'abyss', 'pearl', 'blueprint', 'void', 'nebula', 'aurora', 'prism', 'hologram', 'plasma', 'synthwave', 'glitch'] },
 };
-export const crateFinishes = (crate) => FINISHES.filter((finish) => (!crate.pool || crate.pool.includes(finish.id)) && crate.weights[finish.rarity]);
+export const crateFinishes = (crate) => FINISHES.filter((finish) => !shopOnly(finish.id) && (!crate.pool || crate.pool.includes(finish.id)) && crate.weights[finish.rarity]);
 // Rarities that can actually drop, with their weights.
 export function crateOdds(crate) {
   const present = new Set(crateFinishes(crate).map((finish) => finish.rarity));

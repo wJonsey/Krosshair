@@ -122,6 +122,9 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const iron = mat('#5b6168', { rough: 0.45, metal: 0.55 }), bone = mat('#e6d9bb', { rough: 0.6 }), lacquer = mat('#1c1418', { rough: 0.25, metal: 0.25 });
   const white = mat('#eeebe2', { rough: 0.5 }), red = mat('#c01c24', { rough: 0.5 }), leather = mat('#6b4526', { rough: 0.85 }), hide = mat('#2e231c', { rough: 0.8 });
   const lens = mat('#0d1318', { rough: 0.08, metal: 0.8 }), steel = mat('#d3dae0', { rough: 0.22, metal: 0.5 }), shieldMat = mat('#3a434d', { rough: 0.45, metal: 0.3 });
+  // Item Shop materials. All opaque, so they fade with the rest when a decoy goes see-through.
+  const knit = mat('#141619', { rough: 0.95, metal: 0 }), hiVis = mat('#ff7a1f', { rough: 0.7, metal: 0.05 });
+  const rime = mat('#dcf3ff', { rough: 0.6, metal: 0.1 }), canvas = mat('#3a382f', { rough: 0.95, metal: 0 });
   const starMat = mat('#fff1a6', { emissive: '#ffd84a', glow: 2.2 }), haloMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.6 }), pixelMat = mat('#00ffc6', { emissive: '#00ffc6', glow: 2.4 });
   const mirror = new THREE.MeshStandardMaterial({ color: '#06080b', roughness: 0.12, metalness: 0.85 });
   // The scanner visor and the orbit pack keep their own mint so they never fight the halo for one glow value.
@@ -293,6 +296,34 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   for (let k = 0; k < 5; k += 1) add(sword, geo('swordWrap', () => new THREE.CylinderGeometry(0.023, 0.023, 0.016, 6)), suit, [0, 0.26 + k * 0.05, 0], [0, 0, 0.25]);
   gem(sword, 'swordPommel', 0.034, gold, [0, 0.525, 0]);
   for (const y of [-0.3, 0.05]) block(sword, 'swordStrap', [0.11, 0.03, 0.06], dark, [0, y, -0.025]);
+  // Grimoire: a chained tome riding just off the back, never quite touching it.
+  const grimoire = packGroup('grimoire');
+  block(grimoire, 'tomeMount', [0.16, 0.1, 0.07], gear, [0, 0.43, 0.2]);
+  const tome = new THREE.Group();
+  tome.position.set(0, 0.34, 0.31); tome.rotation.set(0.1, 0, -0.16); grimoire.add(tome);
+  for (const z of [-0.054, 0.054]) block(tome, 'tomeCover', [0.3, 0.38, 0.032], hide, [0, 0, z]);
+  block(tome, 'tomePages', [0.278, 0.352, 0.076], bone, [0.01, 0, 0]);
+  add(tome, geo('tomeSpine', () => new THREE.CylinderGeometry(0.048, 0.048, 0.382, 10)), hide, [-0.145, 0, 0]);
+  for (const y of [-0.105, 0.105]) block(tome, 'tomeClasp', [0.05, 0.055, 0.15], gold, [0.148, y, 0]);
+  for (const x of [-1, 1]) for (const y of [-1, 1]) block(tome, 'tomeCorner', [0.055, 0.055, 0.04], gold, [x * 0.12, y * 0.16, 0.058]);
+  gem(tome, 'tomeSigil', 0.045, gold, [0.015, 0.015, 0.075], [1, 1, 0.4]);
+  for (const y of [-0.06, 0.09]) add(tome, geo('tomeBand', () => new THREE.TorusGeometry(0.1, 0.008, 4, 16)), metal, [0.005, y, 0], [Math.PI / 2, 0, 0], [1.55, 0.85, 1]);
+  for (const side of [-1, 1]) add(grimoire, geo('tomeChain', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0.05, 0.47, 0.2], [0.1, 0.43, 0.26], [0.13, 0.37, 0.3]].map((p) => new THREE.Vector3(...p))), 12, 0.009, 5)), metal, [0, 0, 0], null, [side, 1, 1]);
+  // Jammer: a hard case with two whips and a readout, lights on the face of it.
+  const jammer = packGroup('jammer');
+  block(jammer, 'jamCase', [0.3, 0.34, 0.16], gear, [0, 0.3, 0.245]);
+  block(jammer, 'jamLid', [0.312, 0.05, 0.172], dark, [0, 0.49, 0.245]);
+  block(jammer, 'jamFoot', [0.312, 0.035, 0.172], dark, [0, 0.125, 0.245]);
+  for (const x of [-0.105, 0.105]) block(jammer, 'jamLatch', [0.05, 0.03, 0.022], plate, [x, 0.455, 0.332]);
+  block(jammer, 'jamPanel', [0.17, 0.1, 0.02], dark, [0, 0.36, 0.332]);
+  block(jammer, 'jamDial', [0.055, 0.055, 0.022], plate, [0.09, 0.24, 0.332]);
+  for (const x of [-0.05, 0, 0.05]) gem(jammer, 'jamLed', 0.012, visorMat, [x, 0.375, 0.345]);
+  const whips = [];
+  for (const side of [-1, 1]) {
+    block(jammer, 'jamBase', [0.05, 0.05, 0.05], dark, [side * 0.1, 0.51, 0.245]);
+    whips.push(add(jammer, geo('jamWhip', () => new THREE.CylinderGeometry(0.004, 0.011, 0.55, 5).translate(0, 0.275, 0)), dark, [side * 0.1, 0.53, 0.245], [0.1, 0, -side * 0.18]));
+    whips.push(gem(jammer, 'jamTip', 0.013, visorMat, [side * 0.199, 1.068, 0.299]));
+  }
   // Data wings (dev): additive feather panels on two hinged bones. Flap, fold and shimmer in animateCosmetics.
   const devwings = packGroup('devwings');
   const wingMats = [0, 1, 2, 3, 4].map((k) => holo(new THREE.Color('#00ffc6').lerp(new THREE.Color('#2ad4ff'), k / 4), 0.45)), spar = holo('#7df5e0', 0.55);
@@ -492,6 +523,47 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   block(bubble, 'bubbleMount', [0.03, 0.03, 0.03], gear, [-0.19, -0.02, 0.07]);
   add(bubble, geo('bubbleAerial', () => new THREE.CylinderGeometry(0.004, 0.006, 0.17, 5).translate(0, 0.085, 0)), dark, [-0.19, -0.01, 0.07], [0, 0, 0.16]);
   const beacon = gem(bubble, 'beacon', 0.013, ruby, [-0.217, 0.158, 0.07]);
+  // Balaclava: knit pulled down over the whole head, one slit left open for the eyes.
+  const balaclava = option(headgear, 'balaclava', false);
+  add(balaclava, geo('balaHood', () => new THREE.SphereGeometry(0.139, 12, 7)), knit, [0, 0.004, 0], null, [0.97, 1.06, 1.02]);
+  add(balaclava, geo('balaNeck', () => new THREE.CylinderGeometry(0.068, 0.082, 0.1, 10)), knit, [0, -0.105, 0.006]);
+  add(balaclava, geo('balaSlit', () => new THREE.CylinderGeometry(0.138, 0.134, 0.046, 14, 1, true, Math.PI - 0.95, 1.9)), lens, [0, 0.032, 0], null, [1, 1, 1.04]).material.side = THREE.DoubleSide;
+  const balaLip = () => geo('balaLip', () => new THREE.CylinderGeometry(0.141, 0.141, 0.013, 14, 1, true, Math.PI - 1.05, 2.1));
+  for (const y of [0.061, 0.003]) add(balaclava, balaLip(), knit, [0, y, 0], null, [1, 1, 1.04]).material.side = THREE.DoubleSide;
+  block(balaclava, 'balaSeam', [0.014, 0.012, 0.13], knit, [0, 0.126, 0.012]);
+  // Welding mask: a flipped-down front on a head cradle, one dark window in it.
+  const weldmask = option(headgear, 'weldmask', false);
+  add(weldmask, geo('weldCradle', () => new THREE.SphereGeometry(0.152, 12, 5, 0, Math.PI * 2, 0, Math.PI * 0.45)), gear, [0, 0.045, 0], null, [1, 0.92, 1.06]);
+  add(weldmask, geo('weldBand', () => new THREE.CylinderGeometry(0.15, 0.15, 0.046, 12, 1, true)), dark, [0, 0.055, 0]).material.side = THREE.DoubleSide;
+  const weldFront = new THREE.Group();
+  weldFront.position.set(0, 0.05, 0); weldFront.rotation.x = -0.07; weldmask.add(weldFront);
+  add(weldFront, geo('weldShell', () => new THREE.CylinderGeometry(0.153, 0.134, 0.22, 10, 1, true, Math.PI - 1.4, 2.8)), shieldMat, [0, -0.055, 0], null, [1, 1, 1.05]).material.side = THREE.DoubleSide;
+  block(weldFront, 'weldChin', [0.175, 0.055, 0.075], shieldMat, [0, -0.175, -0.075], [0.6, 0, 0]);
+  block(weldFront, 'weldRim', [0.17, 0.068, 0.014], iron, [0, -0.012, -0.136]);
+  block(weldFront, 'weldWindow', [0.152, 0.05, 0.012], lens, [0, -0.012, -0.143]);
+  for (const side of [-1, 1]) { block(weldFront, 'weldRib', [0.016, 0.17, 0.014], shieldMat, [side * 0.088, -0.07, -0.118], [0, -side * 0.55, 0]); gem(weldmask, 'weldHinge', 0.019, iron, [side * 0.152, 0.048, -0.012]); }
+  // Hi-vis hard hat, reflective tape round the shell and over the ridge.
+  const hivis = option(headgear, 'hivis', false);
+  hairOn(hivis, false);
+  add(hivis, geo('hardDome', () => new THREE.SphereGeometry(0.162, 12, 5, 0, Math.PI * 2, 0, Math.PI / 2)), hiVis, [0, 0.03, 0], null, [1, 1, 1.1]);
+  add(hivis, geo('hardRim', () => new THREE.CylinderGeometry(0.174, 0.178, 0.014, 12)), hiVis, [0, 0.032, 0], null, [1, 1, 1.1]);
+  add(hivis, geo('hardRidge', () => new THREE.TorusGeometry(0.162, 0.016, 4, 12, Math.PI)), hiVis, [0, 0.03, 0], [0, Math.PI / 2, 0], [1.1, 1, 1]);
+  block(hivis, 'hardPeak', [0.2, 0.014, 0.075], hiVis, [0, 0.035, -0.215], [-0.1, 0, 0]);
+  add(hivis, geo('hiVisTape', () => new THREE.CylinderGeometry(0.166, 0.17, 0.03, 12)), steel, [0, 0.072, 0], null, [1, 1, 1.1]);
+  add(hivis, geo('hiVisRidgeTape', () => new THREE.TorusGeometry(0.165, 0.008, 4, 12, Math.PI)), steel, [0, 0.03, 0], [0, Math.PI / 2, 0], [1.1, 1, 1]);
+  for (const side of [-1, 1]) block(hivis, 'hiVisStrap', [0.011, 0.15, 0.011], dark, [side * 0.132, -0.04, -0.012], [0, 0, side * 0.08]);
+  block(hivis, 'hiVisChin', [0.27, 0.011, 0.011], dark, [0, -0.112, -0.032]);
+  // Racing helmet: one shell, a chin bar, and a tinted strip across the eyes.
+  const racehelm = option(headgear, 'racehelm', false);
+  add(racehelm, geo('raceShell', () => new THREE.SphereGeometry(0.171, 14, 8)), suit, [0, 0.018, 0], null, [1, 1.01, 1.07]);
+  block(racehelm, 'raceChinBar', [0.2, 0.062, 0.085], suit, [0, -0.085, -0.145], [0.25, 0, 0]);
+  add(racehelm, geo('raceVisor', () => new THREE.CylinderGeometry(0.169, 0.164, 0.062, 14, 1, true, Math.PI - 1.15, 2.3)), lens, [0, 0.03, 0], null, [1, 1, 1.05]).material.side = THREE.DoubleSide;
+  const raceTrim = () => geo('raceTrim', () => new THREE.CylinderGeometry(0.172, 0.172, 0.012, 14, 1, true, Math.PI - 1.22, 2.44));
+  for (const y of [0.067, -0.006]) add(racehelm, raceTrim(), white, [0, y, 0], null, [1, 1, 1.05]).material.side = THREE.DoubleSide;
+  add(racehelm, geo('raceCrest', () => new THREE.TorusGeometry(0.172, 0.011, 4, 16, Math.PI)), white, [0, 0.018, 0], [0, Math.PI / 2, 0], [1.07, 1.01, 1]);
+  for (const side of [-1, 1]) block(racehelm, 'raceVent', [0.032, 0.022, 0.05], dark, [side * 0.05, 0.133, -0.132], [0.5, 0, 0]);
+  block(racehelm, 'raceIntake', [0.08, 0.026, 0.03], dark, [0, -0.086, -0.192], [0.25, 0, 0]);
+  block(racehelm, 'raceSpoiler', [0.13, 0.022, 0.06], plate, [0, 0.055, 0.183], [-0.35, 0, 0]);
   // Dev halo: a ring of light over the head with pixels in orbit. Spins, bobs and pulses in animateCosmetics.
   const devhalo = option(headgear, 'devhalo', false);
   hairOn(devhalo);
@@ -608,6 +680,37 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
     onMask(add(plague, geo('plagueEye', () => new THREE.CylinderGeometry(0.027, 0.027, 0.018, 12).rotateX(Math.PI / 2)), visorMat), side * 0.05, 0.038, 0.004);
     onMask(add(plague, geo('plagueRim', () => new THREE.TorusGeometry(0.029, 0.006, 5, 14)), gold), side * 0.05, 0.038, 0.012);
   }
+  // Frost mask: a filtered lower-face cover, rime creeping up off the vent.
+  const frostmask = option(faces, 'frostmask', false);
+  add(frostmask, geo('frostShell', () => new THREE.SphereGeometry(0.136, 12, 7, Math.PI * 1.12, Math.PI * 0.76, Math.PI * 0.46, Math.PI * 0.44)), gear, [0, 0, 0], null, [0.99, 1.1, 1.05]);
+  add(frostmask, geo('frostSeam', () => new THREE.CylinderGeometry(0.14, 0.14, 0.012, 14, 1, true, Math.PI - 1.3, 2.6)), iron, [0, -0.012, 0], null, [1, 1, 1.06]).material.side = THREE.DoubleSide;
+  onMask(add(frostmask, geo('frostVent', () => new THREE.CylinderGeometry(0.03, 0.03, 0.018, 8).rotateX(Math.PI / 2)), dark), 0, -0.072, 0.004);
+  onMask(add(frostmask, geo('frostVentRim', () => new THREE.TorusGeometry(0.032, 0.006, 5, 12)), iron), 0, -0.072, 0.009);
+  for (const [x, y, s] of [[-0.062, -0.02, 1], [0.058, -0.036, 0.85], [-0.03, -0.062, 0.7], [0.036, -0.058, 0.9], [-0.076, -0.048, 0.6], [0.072, -0.012, 0.75], [0.004, -0.028, 0.65]]) onMask(gem(frostmask, 'frostShard', 0.016, rime, [0, 0, 0], [s, s * 1.5, s * 0.45]), x, y, 0.003, x * 6);
+  // Shroud: torn cloth hung off the brow, dark behind it, ragged along the hem.
+  const shroud = option(faces, 'shroud', false);
+  add(shroud, geo('shroudBar', () => new THREE.CylinderGeometry(0.145, 0.145, 0.024, 14, 1, true, Math.PI - 1.5, 3)), canvas, [0, 0.064, 0], null, [1, 1, 1.05]).material.side = THREE.DoubleSide;
+  add(shroud, geo('shroudVoid', () => new THREE.CylinderGeometry(0.138, 0.131, 0.09, 12, 1, true, Math.PI - 1.35, 2.7)), socket, [0, 0.008, 0]).material.side = THREE.DoubleSide;
+  for (let k = 0; k < 7; k += 1) {
+    const a = (k / 6 - 0.5) * 2.05, drop = [0.15, 0.19, 0.16, 0.205, 0.145, 0.185, 0.13][k];
+    const strip = new THREE.Group();
+    strip.position.set(Math.sin(a) * 0.143, 0.058, -Math.cos(a) * 0.143);
+    strip.rotation.set(0.05, a, k % 2 ? 0.06 : -0.05);
+    shroud.add(strip);
+    add(strip, geo('shroudStrip', () => new THREE.BoxGeometry(0.05, 1, 0.008).translate(0, -0.5, 0)), canvas, [0, 0, 0], null, [1, drop, 1]);
+    add(strip, geo('shroudFray', () => new THREE.ConeGeometry(0.023, 0.035, 3)), canvas, [0, -drop, 0], [Math.PI, 0, 0]);
+  }
+  // Rebreather: a moulded mouthpiece with twin scrubber cans, hoses running back to the ears.
+  const rebreather = option(faces, 'rebreather', false);
+  add(rebreather, geo('rebShell', () => new THREE.SphereGeometry(0.133, 12, 7, Math.PI * 1.16, Math.PI * 0.68, Math.PI * 0.48, Math.PI * 0.42)), dark, [0, 0, 0], null, [1, 1.1, 1.04]);
+  block(rebreather, 'rebBlock', [0.102, 0.072, 0.05], gear, [0, -0.052, -0.115], [0.18, 0, 0]);
+  add(rebreather, geo('rebGauge', () => new THREE.CylinderGeometry(0.016, 0.016, 0.01, 10)), visorMat, [0, -0.026, -0.146], [Math.PI / 2 + 0.18, 0, 0]);
+  for (const side of [-1, 1]) {
+    add(rebreather, geo('rebCan', () => new THREE.CylinderGeometry(0.031, 0.031, 0.105, 10)), steel, [side * 0.05, -0.064, -0.175], [Math.PI / 2, 0, 0]);
+    add(rebreather, geo('rebCap', () => new THREE.CylinderGeometry(0.034, 0.034, 0.014, 10)), iron, [side * 0.05, -0.064, -0.232], [Math.PI / 2, 0, 0]);
+    add(rebreather, geo('rebCollar', () => new THREE.CylinderGeometry(0.034, 0.034, 0.012, 10)), iron, [side * 0.05, -0.064, -0.128], [Math.PI / 2, 0, 0]);
+    add(rebreather, geo('rebHose', () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3([[0.078, -0.062, -0.185], [0.115, -0.048, -0.12], [0.132, -0.022, -0.022], [0.118, 0.004, 0.068]].map((p) => new THREE.Vector3(...p))), 16, 0.011, 5)), dark, [0, 0, 0], null, [side, 1, 1]);
+  }
   // Pixel mask (dev): a black mirror plate with an LED face that blinks and glitches (animateCosmetics).
   const devmask = option(faces, 'devmask', false);
   maskOn(devmask, mirror);
@@ -651,7 +754,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
 
   root.traverse((part) => { if (part.isMesh) { part.castShadow = true; part.receiveShadow = true; } });
   // Thin, glassy and glowing parts cast no shadow.
-  for (const part of [antenna, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow, rootCrown, scanPivot, scanHaze, orbitCore]) part.traverse((mesh) => { mesh.castShadow = false; });
+  for (const part of [antenna, ...whips, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow, rootCrown, scanPivot, scanHaze, orbitCore]) part.traverse((mesh) => { mesh.castShadow = false; });
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
     guns: new Map(), held: null, skins: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
@@ -666,7 +769,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
 }
 
 // Faces that cover the chin: the jaw block would poke through them, so it hides.
-const CHIN_COVERED = new Set(['bandit', 'hockey', 'oni', 'plague', 'devmask']);
+const CHIN_COVERED = new Set(['bandit', 'hockey', 'oni', 'plague', 'devmask', 'frostmask', 'shroud', 'rebreather']);
 // look: any of { color, accent, team, headgear, face, pack, pattern, skins }; missing keys are left alone.
 export function styleOperator(root, look) {
   const data = root.userData;

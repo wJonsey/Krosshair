@@ -466,6 +466,503 @@ const FINISH_ART = {
       }
     },
   },
+  // Item Shop: sold in pairs, so the two in a set share a palette and a trick without sharing a look.
+  // Deep Cover: black that does not want to be read. Wear only along the rub lines, no markings at all.
+  nightwork: { rough: 0.9, metal: 0.12, paint: (c) => { c.fillStyle = '#0c0d10'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(26,29,34,.6)', 'rgba(3,3,5,.5)'], 22, 18, 46, 240); lines(c, 'rgba(150,156,168,.09)', 3, 14, 241, [40, 120]); lines(c, 'rgba(178,184,196,.16)', 0.8, 26, 242, [8, 34]); grain(c, 0.05, 243); } },
+  blackbox: { rough: 0.85, metal: 0.12, paint: (c) => {
+    c.fillStyle = '#0c0d10'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(26,29,34,.55)', 'rgba(3,3,5,.45)'], 20, 18, 44, 244); lines(c, 'rgba(178,184,196,.13)', 0.8, 22, 245, [8, 34]);
+    // The stencil is drawn once, not wrapped: one serial on the gun reads as a serial, four reads as wallpaper.
+    c.strokeStyle = 'rgba(198,202,210,.6)'; c.lineWidth = 1.4; c.strokeRect(78, 92, 100, 78);
+    c.fillStyle = 'rgba(216,220,228,.85)'; c.font = 'bold 15px monospace'; c.textBaseline = 'middle';
+    c.fillText('BX 04', 88, 110); c.fillText('772219', 88, 132);
+    const r = rng(246); for (let k = 0; k < 28; k += 1) { c.fillStyle = `rgba(212,216,224,${r() < 0.5 ? 0.75 : 0.2})`; c.fillRect(88 + k * 3, 146, 2, 16); }
+    grain(c, 0.05, 247);
+  } },
+  // Neon Wake: the reflections run down the tile so they pour along the barrel instead of ringing it.
+  // Both halves of the set keep their streaks clear of the tile edges, so the wet look never seams.
+  neonwake: {
+    rough: 0.2, metal: 0.25, glow: 1.15,
+    paint: (c) => {
+      c.fillStyle = '#0d1014'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(32,36,44,.5)', 'rgba(4,5,7,.5)'], 26, 14, 40, 248); grain(c, 0.12, 249);
+      const r = rng(250);
+      for (let i = 0; i < 9; i += 1) { const x = 24 + r() * 180, w = 8 + r() * 16, col = ['255,60,160', '60,220,255', '255,190,60'][i % 3], g = c.createLinearGradient(x - 14, 0, x + w + 14, 0); g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},.34)`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.beginPath(); for (let y = 0; y <= SIZE; y += 8) c.lineTo(x + Math.sin((y / SIZE) * Math.PI * 2 + i) * 6, y); for (let y = SIZE; y >= 0; y -= 8) c.lineTo(x + w + Math.sin((y / SIZE) * Math.PI * 2 + i) * 6, y); c.fill(); }
+      c.fillStyle = 'rgba(190,210,230,.06)'; for (let y = 0; y < SIZE; y += 9) c.fillRect(0, y, SIZE, 2);
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(250);
+      for (let i = 0; i < 9; i += 1) { const x = 24 + r() * 180, w = 8 + r() * 16, col = ['255,60,160', '60,220,255', '255,190,60'][i % 3], g = c.createLinearGradient(x - 14, 0, x + w + 14, 0); g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.5, `rgba(${col},.8)`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.beginPath(); for (let y = 0; y <= SIZE; y += 8) c.lineTo(x + Math.sin((y / SIZE) * Math.PI * 2 + i) * 6, y); for (let y = SIZE; y >= 0; y -= 8) c.lineTo(x + w + Math.sin((y / SIZE) * Math.PI * 2 + i) * 6, y); c.fill(); }
+    },
+  },
+  wetstreet: { rough: 0.25, metal: 0.2, paint: (c) => {
+    c.fillStyle = '#4c5158'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(92,99,108,.5)', 'rgba(28,31,36,.45)'], 26, 16, 44, 251); grain(c, 0.1, 252);
+    const r = rng(253);
+    for (let i = 0; i < 12; i += 1) { const x = 24 + r() * 180, w = 5 + r() * 14, a = 0.12 + r() * 0.3, g = c.createLinearGradient(x - 12, 0, x + w + 12, 0); g.addColorStop(0, 'rgba(226,236,246,0)'); g.addColorStop(0.5, `rgba(226,236,246,${a})`); g.addColorStop(1, 'rgba(226,236,246,0)'); c.fillStyle = g; c.beginPath(); for (let y = 0; y <= SIZE; y += 8) c.lineTo(x + Math.sin((y / SIZE) * Math.PI * 2 + i) * 7, y); for (let y = SIZE; y >= 0; y -= 8) c.lineTo(x + w + Math.sin((y / SIZE) * Math.PI * 2 + i) * 7, y); c.fill(); }
+    lines(c, 'rgba(14,16,20,.3)', 2, 18, 254, [20, 80]); lines(c, 'rgba(226,236,246,.15)', 1, 14, 255, [30, 110]);
+  } },
+  // Saltmarsh: salt dries in the low spots, so the crust goes on last and small.
+  saltmarsh: { rough: 0.95, metal: 0.05, paint: (c) => { c.fillStyle = '#6d7658'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(150,160,124,.5)', 'rgba(74,84,60,.45)', 'rgba(108,120,88,.4)'], 28, 16, 44, 256); lines(c, 'rgba(58,66,44,.28)', 1.6, 18, 257, [20, 70]); blobs(c, ['rgba(236,240,230,.6)', 'rgba(206,212,196,.45)'], 150, 2, 7, 258); grain(c, 0.16, 259); } },
+  brackish: { rough: 0.85, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#3d4632'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(88,78,48,.45)', 'rgba(26,32,22,.5)', 'rgba(66,80,58,.4)'], 30, 18, 50, 260);
+    const r = rng(261);
+    for (let i = 0; i < 16; i += 1) { const x = 20 + r() * 190, w = 6 + r() * 18, g = c.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, 'rgba(48,40,22,0)'); g.addColorStop(0.5, `rgba(48,40,22,${0.2 + r() * 0.3})`); g.addColorStop(1, 'rgba(48,40,22,0)'); c.fillStyle = g; c.fillRect(x, 0, w, SIZE); }
+    blobs(c, ['rgba(120,132,86,.3)', 'rgba(38,46,30,.35)'], 40, 4, 12, 262); grain(c, 0.14, 263);
+  } },
+  // Ironworks: seams run to the tile edges and meet across the wrap, so the plates carry on around the gun.
+  ironworks: { rough: 0.45, metal: 0.6, paint: (c) => {
+    const seams = [[0, 86, SIZE, 86], [0, 170, SIZE, 170], [64, 0, 64, 86], [64, 170, 64, SIZE], [190, 0, 190, 86], [190, 170, 190, SIZE], [128, 86, 128, 170]];
+    for (const [x, y, w, h, tone] of [[0, 0, 64, 86, 0], [64, 0, 126, 86, 8], [190, 0, 66, 86, -6], [0, 86, 128, 84, -4], [128, 86, 128, 84, 6], [0, 170, 64, 86, 5], [64, 170, 126, 86, -8], [190, 170, 66, 86, 2]]) {
+      const g = c.createLinearGradient(x, y, x + w, y + h); g.addColorStop(0, `rgb(${94 + tone},${101 + tone},${110 + tone})`); g.addColorStop(0.55, `rgb(${66 + tone},${72 + tone},${80 + tone})`); g.addColorStop(1, `rgb(${86 + tone},${93 + tone},${102 + tone})`); c.fillStyle = g; c.fillRect(x, y, w, h);
+    }
+    lines(c, 'rgba(210,218,228,.1)', 1, 30, 264, [20, 90]);
+    c.strokeStyle = 'rgba(12,14,18,.8)'; c.lineWidth = 4; for (const [ax, ay, bx, by] of seams) { c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); }
+    for (const [ax, ay, bx, by] of seams) { const len = Math.hypot(bx - ax, by - ay), a = Math.atan2(by - ay, bx - ax); for (let k = 0; k * 5 <= len; k += 1) { const t = (k * 5) / len; c.fillStyle = k % 2 ? '#9aa1a9' : '#6f767d'; c.beginPath(); c.ellipse(ax + (bx - ax) * t, ay + (by - ay) * t, 5.5, 3.2, a + 0.6, 0, Math.PI * 2); c.fill(); } }
+    blobs(c, ['rgba(118,66,30,.22)'], 16, 4, 14, 265); grain(c, 0.08, 266);
+  } },
+  millscale: { rough: 0.55, metal: 0.6, paint: (c) => {
+    c.fillStyle = '#727982'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(267); for (let y = 0; y < SIZE; y += 1) { c.fillStyle = `rgba(${r() < 0.5 ? '26,30,38' : '186,196,208'},${r() * 0.12})`; c.fillRect(0, y, SIZE, 1); }
+    blobs(c, ['rgba(28,38,66,.75)', 'rgba(52,44,78,.6)', 'rgba(18,26,46,.7)'], 34, 14, 42, 268);
+    blobs(c, ['rgba(140,158,196,.25)', 'rgba(94,110,150,.3)'], 60, 3, 10, 269);
+    grain(c, 0.07, 270);
+  } },
+  // Bloom: painted by hand, so the stem and leaf go down first and the petals sit over them.
+  bloom: { rough: 0.3, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#f0e8db'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(255,255,255,.4)', 'rgba(208,198,182,.3)'], 16, 20, 50, 271);
+    const r = rng(272);
+    for (let i = 0; i < 16; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, s = 7 + r() * 7, turn = r() * 6.28, petal = ['#d2506c', '#dd8a36', '#7a5fb0', '#c8468a'][i % 4];
+      wrapped((dx, dy) => {
+        c.strokeStyle = '#4f7a3e'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(x + dx, y + dy + s * 2.6); c.quadraticCurveTo(x + dx - s * 0.7, y + dy + s, x + dx, y + dy); c.stroke();
+        c.fillStyle = '#4f7a3e'; c.beginPath(); c.ellipse(x + dx - s * 0.9, y + dy + s * 1.6, s * 0.72, s * 0.3, -0.5, 0, Math.PI * 2); c.fill();
+        c.fillStyle = petal; for (let k = 0; k < 5; k += 1) { const a = turn + (k * Math.PI * 2) / 5; c.beginPath(); c.ellipse(x + dx + Math.cos(a) * s * 0.8, y + dy + Math.sin(a) * s * 0.8, s * 0.62, s * 0.42, a, 0, Math.PI * 2); c.fill(); }
+        c.fillStyle = '#f3d24e'; c.beginPath(); c.arc(x + dx, y + dy, s * 0.3, 0, Math.PI * 2); c.fill();
+      });
+    }
+    grain(c, 0.05, 273);
+  } },
+  // Night Garden: same seed as Bloom, so it is the same flowers after dark.
+  nightgarden: {
+    rough: 0.35, metal: 0.12, glow: 1,
+    paint: (c) => {
+      c.fillStyle = '#0e1730'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(22,36,70,.6)', 'rgba(5,8,18,.5)'], 18, 20, 50, 274);
+      const r = rng(272);
+      for (let i = 0; i < 16; i += 1) {
+        const x = r() * SIZE, y = r() * SIZE, s = 7 + r() * 7, turn = r() * 6.28, petal = ['#ef7ba0', '#f0a75a', '#9d86e8', '#e26aa8'][i % 4];
+        wrapped((dx, dy) => {
+          c.strokeStyle = '#2f6a54'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(x + dx, y + dy + s * 2.6); c.quadraticCurveTo(x + dx - s * 0.7, y + dy + s, x + dx, y + dy); c.stroke();
+          c.fillStyle = '#2f6a54'; c.beginPath(); c.ellipse(x + dx - s * 0.9, y + dy + s * 1.6, s * 0.72, s * 0.3, -0.5, 0, Math.PI * 2); c.fill();
+          c.fillStyle = petal; for (let k = 0; k < 5; k += 1) { const a = turn + (k * Math.PI * 2) / 5; c.beginPath(); c.ellipse(x + dx + Math.cos(a) * s * 0.8, y + dy + Math.sin(a) * s * 0.8, s * 0.62, s * 0.42, a, 0, Math.PI * 2); c.fill(); }
+          c.fillStyle = '#ffe98a'; c.beginPath(); c.arc(x + dx, y + dy, s * 0.32, 0, Math.PI * 2); c.fill();
+        });
+      }
+      grain(c, 0.05, 275);
+    },
+    emit: (c) => { c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE); const r = rng(276); for (let i = 0; i < 110; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 1 + r() * 2.4, col = r() < 0.7 ? '255,224,120' : '180,255,210', a = 0.45 + r() * 0.55; wrapped((dx, dy) => { const g = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, s * 3.5); g.addColorStop(0, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.fillRect(x + dx - s * 3.5, y + dy - s * 3.5, s * 7, s * 7); }); } },
+  },
+  // Cold Snap: both finishes fracture on the same seeds, so the crack runs the same way under either colour.
+  coldsnap: { rough: 0.3, metal: 0.15, paint: (c) => { const g = c.createLinearGradient(0, 0, SIZE, SIZE); g.addColorStop(0, '#eff6f9'); g.addColorStop(0.5, '#dae8f0'); g.addColorStop(1, '#eff6f9'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(255,255,255,.55)', 'rgba(172,198,214,.35)'], 22, 16, 44, 277); veins(c, 'rgba(255,255,255,.9)', 2.4, 5, 278); veins(c, 'rgba(138,172,196,.45)', 1, 6, 279); crystals(c, 'rgba(255,255,255,.9)', 280, 12); grain(c, 0.05, 281); } },
+  blackice: { rough: 0.06, metal: 0.3, paint: (c) => { const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#080b10'); g.addColorStop(0.45, '#111a26'); g.addColorStop(1, '#080b10'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(24,42,62,.6)', 'rgba(2,3,6,.55)'], 20, 20, 52, 282); veins(c, 'rgba(120,176,212,.3)', 2.4, 5, 278); veins(c, 'rgba(206,236,255,.5)', 0.9, 6, 279); lines(c, 'rgba(210,235,255,.12)', 5, 7, 283, [70, 190]); } },
+  // Hex: every mark is cut twice, a pale highlight then the dark line over it, so it reads as carved and not inked.
+  hex: { rough: 0.7, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#ded5bd'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(186,172,140,.3)', 'rgba(250,246,232,.35)'], 24, 14, 40, 284); lines(c, 'rgba(120,104,72,.2)', 0.8, 16, 285, [10, 40]);
+    const r = rng(286);
+    for (let i = 0; i < 14; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, s = 8 + r() * 10, turn = r() * 6.28, arms = 3 + Math.floor(r() * 4);
+      wrapped((dx, dy) => { for (const [color, off, w] of [['rgba(248,244,230,.7)', 1.4, 2.4], ['rgba(44,32,18,.85)', 0, 1.8]]) {
+        c.strokeStyle = color; c.lineWidth = w;
+        c.beginPath(); for (let k = 0; k < arms; k += 1) { const a = turn + (k * Math.PI * 2) / arms; c.moveTo(x + dx + off, y + dy + off); c.lineTo(x + dx + off + Math.cos(a) * s, y + dy + off + Math.sin(a) * s); } c.stroke();
+        c.beginPath(); c.arc(x + dx + off, y + dy + off, s * 0.45, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); for (let k = 0; k < arms; k += 1) { const a = turn + (k * Math.PI * 2) / arms; c.lineTo(x + dx + off + Math.cos(a) * s * 0.85, y + dy + off + Math.sin(a) * s * 0.85); } c.closePath(); c.stroke();
+      } });
+    }
+    grain(c, 0.08, 287);
+  } },
+  // Sigil: one mark, centred and never wrapped, so the gun carries a single sign instead of a repeat.
+  sigil: {
+    rough: 0.5, metal: 0.15, glow: 1.25,
+    paint: (c) => {
+      c.fillStyle = '#15100e'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(44,32,26,.55)', 'rgba(5,4,4,.5)'], 20, 18, 48, 288); grain(c, 0.1, 289);
+      c.strokeStyle = 'rgba(158,96,44,.8)'; c.lineWidth = 3;
+      for (const rr of [104, 88]) { c.beginPath(); c.arc(128, 128, rr, 0, Math.PI * 2); c.stroke(); }
+      c.beginPath(); for (let k = 0; k <= 7; k += 1) { const a = -Math.PI / 2 + (k * 3 * Math.PI * 2) / 7; c.lineTo(128 + Math.cos(a) * 84, 128 + Math.sin(a) * 84); } c.stroke();
+      for (let k = 0; k < 14; k += 1) { const a = (k / 14) * Math.PI * 2; c.beginPath(); c.moveTo(128 + Math.cos(a) * 104, 128 + Math.sin(a) * 104); c.lineTo(128 + Math.cos(a) * 118, 128 + Math.sin(a) * 118); c.stroke(); }
+      c.beginPath(); c.arc(128, 128, 22, 0, Math.PI * 2); c.stroke();
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const halo = c.createRadialGradient(128, 128, 10, 128, 128, 128); halo.addColorStop(0, 'rgba(255,120,20,.35)'); halo.addColorStop(1, 'rgba(255,60,10,0)'); c.fillStyle = halo; c.fillRect(0, 0, SIZE, SIZE);
+      for (const [color, w] of [['rgba(255,90,20,.7)', 6], ['#ffd38a', 2.5]]) {
+        c.strokeStyle = color; c.lineWidth = w;
+        for (const rr of [104, 88]) { c.beginPath(); c.arc(128, 128, rr, 0, Math.PI * 2); c.stroke(); }
+        c.beginPath(); for (let k = 0; k <= 7; k += 1) { const a = -Math.PI / 2 + (k * 3 * Math.PI * 2) / 7; c.lineTo(128 + Math.cos(a) * 84, 128 + Math.sin(a) * 84); } c.stroke();
+        for (let k = 0; k < 14; k += 1) { const a = (k / 14) * Math.PI * 2; c.beginPath(); c.moveTo(128 + Math.cos(a) * 104, 128 + Math.sin(a) * 104); c.lineTo(128 + Math.cos(a) * 118, 128 + Math.sin(a) * 118); c.stroke(); }
+        c.beginPath(); c.arc(128, 128, 22, 0, Math.PI * 2); c.stroke();
+      }
+    },
+  },
+  // Roadwork: the bands are retroreflective tape, so they get glass beads rather than a flat grey.
+  roadwork: { rough: 0.6, metal: 0.15, paint: (c) => {
+    c.fillStyle = '#f2690f'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(255,150,60,.3)', 'rgba(184,76,8,.28)'], 22, 18, 46, 290);
+    for (const y of [56, 164]) { c.fillStyle = 'rgba(28,24,20,.55)'; c.fillRect(0, y - 5, SIZE, 38); const g = c.createLinearGradient(0, y, 0, y + 28); g.addColorStop(0, '#c2c8ce'); g.addColorStop(0.45, '#f2f6f9'); g.addColorStop(1, '#a3aab2'); c.fillStyle = g; c.fillRect(0, y, SIZE, 28); }
+    const r = rng(291); for (let i = 0; i < 520; i += 1) { const y = (r() < 0.5 ? 56 : 164) + r() * 28; c.fillStyle = `rgba(255,255,255,${0.25 + r() * 0.55})`; c.fillRect(r() * SIZE, y, 1.5, 1.5); }
+    grain(c, 0.08, 292);
+  } },
+  chevron: { rough: 0.55, metal: 0.2, paint: (c) => { c.fillStyle = '#17181b'; c.fillRect(0, 0, SIZE, SIZE); c.strokeStyle = '#f4c518'; c.lineWidth = 14; c.lineJoin = 'miter'; for (let row = -1; row <= 8; row += 1) { c.beginPath(); for (let x = -32; x <= SIZE + 32; x += 32) c.lineTo(x, row * 32 + (x % 64 ? 16 : -4)); c.stroke(); } blobs(c, ['rgba(20,20,22,.35)', 'rgba(255,255,255,.07)'], 26, 8, 26, 293); grain(c, 0.11, 294); } },
+  // Apparition: no hard edges anywhere. Every wisp is a radial fade, so the finish never settles into a shape.
+  apparition: { rough: 0.4, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#c7ccd4'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(295);
+    for (let i = 0; i < 26; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 24 + r() * 46, pale = r() < 0.5; wrapped((dx, dy) => { const g = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, s); g.addColorStop(0, pale ? 'rgba(255,255,255,.5)' : 'rgba(116,126,144,.32)'); g.addColorStop(1, 'rgba(255,255,255,0)'); c.fillStyle = g; c.fillRect(x + dx - s, y + dy - s, s * 2, s * 2); }); }
+    veins(c, 'rgba(255,255,255,.3)', 3.4, 5, 296); grain(c, 0.05, 297);
+  } },
+  seance: {
+    rough: 0.55, metal: 0.1, glow: 1.05,
+    // Hands are laid down on the same seed in both tiles, so the glow sits exactly in the smudge.
+    paint: (c) => {
+      c.fillStyle = '#0f1014'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(26,28,36,.6)', 'rgba(4,4,6,.5)'], 22, 18, 48, 298); grain(c, 0.07, 299);
+      const r = rng(300); c.fillStyle = 'rgba(160,180,210,.1)';
+      for (let i = 0; i < 8; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 0.8 + r() * 0.5, turn = r() * 6.28; wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(turn); c.scale(s, s); c.beginPath(); c.ellipse(0, 6, 11, 13, 0, 0, Math.PI * 2); c.fill(); for (let k = 0; k < 5; k += 1) { const a = -Math.PI / 2 + (k - 2) * 0.5; c.beginPath(); c.ellipse(Math.cos(a) * 15, 4 + Math.sin(a) * 15, 3.4, k === 0 ? 6 : 8, a + Math.PI / 2, 0, Math.PI * 2); c.fill(); } c.restore(); }); }
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(300); c.fillStyle = 'rgba(120,205,255,.5)';
+      for (let i = 0; i < 8; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 0.8 + r() * 0.5, turn = r() * 6.28; wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(turn); c.scale(s, s); c.beginPath(); c.ellipse(0, 6, 11, 13, 0, 0, Math.PI * 2); c.fill(); for (let k = 0; k < 5; k += 1) { const a = -Math.PI / 2 + (k - 2) * 0.5; c.beginPath(); c.ellipse(Math.cos(a) * 15, 4 + Math.sin(a) * 15, 3.4, k === 0 ? 6 : 8, a + Math.PI / 2, 0, Math.PI * 2); c.fill(); } c.restore(); }); }
+    },
+  },
+  // Sunfall: the horizon sits mid-tile, so the hot band lands along the gun's spine and the dark violet wraps the ends.
+  sunfall: { rough: 0.35, metal: 0.15, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, 0, SIZE); [[0, '#241238'], [0.3, '#5e2352'], [0.46, '#b83f4a'], [0.55, '#ef7a2a'], [0.6, '#ffc25a'], [0.68, '#c84a56'], [0.85, '#4a1c48'], [1, '#241238']].forEach(([t, col]) => g.addColorStop(t, col));
+    c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    const sun = c.createRadialGradient(128, 150, 6, 128, 150, 56); sun.addColorStop(0, 'rgba(255,246,198,.95)'); sun.addColorStop(0.4, 'rgba(255,196,90,.45)'); sun.addColorStop(1, 'rgba(255,150,60,0)'); c.fillStyle = sun; c.fillRect(70, 92, 116, 116);
+    c.fillStyle = 'rgba(40,16,48,.3)'; for (const [y, h] of [[96, 4], [132, 5], [146, 3], [168, 7], [190, 5]]) c.fillRect(0, y, SIZE, h);
+    grain(c, 0.05, 301);
+  } },
+  emberline: {
+    rough: 0.9, metal: 0.1, glow: 1.35,
+    paint: (c) => {
+      c.fillStyle = '#131215'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(34,32,36,.6)', 'rgba(5,5,6,.5)'], 26, 14, 40, 302); lines(c, 'rgba(0,0,0,.45)', 2, 22, 303, [20, 80]); grain(c, 0.14, 304);
+      c.strokeStyle = 'rgba(122,42,10,.8)'; c.lineWidth = 7; c.beginPath(); for (let x = 0; x <= SIZE; x += 4) c.lineTo(x, 128 + Math.sin((x / SIZE) * Math.PI * 4) * 12 + Math.sin((x / SIZE) * Math.PI * 10) * 4); c.stroke();
+    },
+    // One seam, laid three times from wide and dull to thin and white, so the crack looks hot through rather than painted on.
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      for (const [w, col] of [[26, 'rgba(180,40,0,.35)'], [12, 'rgba(255,110,10,.7)'], [4, 'rgba(255,228,170,.95)']]) { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); for (let x = 0; x <= SIZE; x += 4) c.lineTo(x, 128 + Math.sin((x / SIZE) * Math.PI * 4) * 12 + Math.sin((x / SIZE) * Math.PI * 10) * 4); c.stroke(); }
+      const r = rng(305); for (let i = 0; i < 90; i += 1) { const x = r() * SIZE, y = 128 + Math.sin((x / SIZE) * Math.PI * 4) * 12 + (r() - 0.5) * 70; c.fillStyle = `rgba(255,170,60,${0.3 + r() * 0.7})`; c.fillRect(x, y, 1.6, 1.6); }
+    },
+  },
+  // Vault: brushed, so the noise runs in rows along one axis only.
+  vault: { rough: 0.25, metal: 0.65, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#c2942f'); g.addColorStop(0.5, '#f2d179'); g.addColorStop(1, '#c2942f'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(306); for (let y = 0; y < SIZE; y += 1) { c.fillStyle = `rgba(${r() < 0.5 ? '96,64,10' : '255,244,198'},${r() * 0.18})`; c.fillRect(0, y, SIZE, 1); }
+    for (let i = 0; i < 24; i += 1) { const x = r() * SIZE, y = r() * SIZE, l = 40 + r() * 150; c.fillStyle = `rgba(255,250,220,${0.1 + r() * 0.22})`; c.fillRect(x, y, l, 1); c.fillRect(x - SIZE, y, l, 1); }
+    grain(c, 0.04, 307);
+  } },
+  // Bullion: 64px cells with every other row shifted half a cell, so the offset rows meet across the tile edge.
+  bullion: { rough: 0.3, metal: 0.8, paint: (c) => {
+    c.fillStyle = '#7a5c16'; c.fillRect(0, 0, SIZE, SIZE);
+    for (let row = 0; row < 4; row += 1) for (let col = -1; col <= 4; col += 1) {
+      const x = col * 64 + (row % 2 ? 32 : 0), y = row * 64;
+      c.fillStyle = '#f4dc94'; c.beginPath(); c.moveTo(x + 10, y + 4); c.lineTo(x + 54, y + 4); c.lineTo(x + 60, y + 18); c.lineTo(x + 4, y + 18); c.closePath(); c.fill();
+      const g = c.createLinearGradient(x, y + 18, x, y + 58); g.addColorStop(0, '#e9cc76'); g.addColorStop(0.45, '#c39a31'); g.addColorStop(1, '#8f6d18'); c.fillStyle = g; c.beginPath(); c.moveTo(x + 4, y + 18); c.lineTo(x + 60, y + 18); c.lineTo(x + 56, y + 58); c.lineTo(x + 8, y + 58); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(58,40,4,.55)'; c.lineWidth = 1.5; c.stroke();
+      c.fillStyle = 'rgba(255,248,212,.45)'; c.fillRect(x + 6, y + 19, 52, 2);
+    }
+    grain(c, 0.05, 308);
+  } },
+  static: { rough: 0.6, metal: 0.1, paint: (c) => {
+    pixels(c, ['#0d0e10', '#262a2e', '#4e545a', '#878d94', '#c6ccd2', '#191b1e'], 4, 309);
+    const r = rng(310);
+    for (let i = 0; i < 16; i += 1) { const y = Math.floor(r() * 64) * 4, h = 4 + Math.floor(r() * 4) * 4; c.fillStyle = r() < 0.5 ? 'rgba(236,240,244,.35)' : 'rgba(0,0,0,.6)'; c.fillRect(0, y, SIZE, h); }
+    c.fillStyle = 'rgba(255,255,255,.07)'; c.fillRect(0, 88, SIZE, 30);
+    c.fillStyle = 'rgba(0,0,0,.3)'; for (let y = 0; y < SIZE; y += 4) c.fillRect(0, y, SIZE, 1);
+  } },
+  lostsignal: {
+    rough: 0.4, metal: 0.15, glow: 0.9,
+    // Eight 32px bars: a torn row shifts by whole bars, so the tear never breaks the tile's own repeat.
+    paint: (c) => { const bars = ['#c8c8c8', '#c8c82a', '#2ac8c8', '#2ac82a', '#c82ac8', '#c82a2a', '#2a2ac8', '#0b0c0e']; const r = rng(311); for (let y = 0; y < SIZE; y += 8) { const shift = r() < 0.3 ? Math.floor(r() * 8) * 4 : 0; for (let k = -1; k < 8; k += 1) { c.fillStyle = bars[(k + 8) % 8]; c.fillRect(k * 32 + shift, y, 32, 8); } } c.fillStyle = 'rgba(0,0,0,.25)'; for (let y = 0; y < SIZE; y += 4) c.fillRect(0, y, SIZE, 1); grain(c, 0.08, 312); },
+    emit: (c) => { const bars = ['#8e8e8e', '#8e8e1c', '#1c8e8e', '#1c8e1c', '#8e1c8e', '#8e1c1c', '#1c1c8e', '#000000']; const r = rng(311); for (let y = 0; y < SIZE; y += 8) { const shift = r() < 0.3 ? Math.floor(r() * 8) * 4 : 0; for (let k = -1; k < 8; k += 1) { c.fillStyle = bars[(k + 8) % 8]; c.fillRect(k * 32 + shift, y, 32, 8); } } },
+  },
+  // Low Tide: the waterline is one edge across the middle of the tile, wet below it and dry sand above.
+  lowtide: { rough: 0.8, metal: 0.1, paint: (c) => {
+    c.fillStyle = '#cbb389'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(214,196,160,.5)', 'rgba(166,146,112,.4)'], 24, 16, 44, 313);
+    c.strokeStyle = 'rgba(150,128,96,.3)'; c.lineWidth = 2; for (let k = 0; k < SIZE; k += 14) { c.beginPath(); for (let x = 0; x <= SIZE; x += 6) c.lineTo(x, k + Math.sin((x / SIZE) * Math.PI * 6 + k) * 5); c.stroke(); }
+    const edge = () => { c.beginPath(); for (let x = 0; x <= SIZE; x += 6) c.lineTo(x, 152 + Math.sin((x / SIZE) * Math.PI * 4) * 9 + Math.sin((x / SIZE) * Math.PI * 10) * 3); };
+    edge(); c.lineTo(SIZE, SIZE); c.lineTo(0, SIZE); c.closePath(); c.fillStyle = 'rgba(66,80,84,.45)'; c.fill();
+    edge(); c.strokeStyle = 'rgba(255,255,255,.65)'; c.lineWidth = 3; c.stroke();
+    const r = rng(314); for (let i = 0; i < 90; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 1 + r() * 2.5; c.fillStyle = `rgba(${r() < 0.5 ? '90,78,60' : '246,242,232'},${0.3 + r() * 0.5})`; c.beginPath(); c.arc(x, y, s, 0, Math.PI * 2); c.fill(); }
+    grain(c, 0.1, 315);
+  } },
+  // Barnacle: grown in clusters, not scattered, so they pile up the way they do on a hull.
+  barnacle: { rough: 0.85, metal: 0.15, paint: (c) => {
+    c.fillStyle = '#1f2c2e'; c.fillRect(0, 0, SIZE, SIZE); blobs(c, ['rgba(48,64,60,.5)', 'rgba(10,16,18,.5)'], 24, 16, 44, 316); blobs(c, ['rgba(126,70,32,.3)'], 22, 6, 18, 317);
+    const r = rng(318);
+    for (let b = 0; b < 7; b += 1) {
+      const bx = r() * SIZE, by = r() * SIZE;
+      for (let i = 0; i < 14; i += 1) {
+        const x = bx + (r() + r() - 1) * 34, y = by + (r() + r() - 1) * 34, s = 4 + r() * 8, turn = r() * 6.28;
+        wrapped((dx, dy) => {
+          c.fillStyle = '#cfc7b2'; c.beginPath(); c.arc(x + dx, y + dy, s, 0, Math.PI * 2); c.fill();
+          c.fillStyle = '#a79e88'; c.beginPath(); c.arc(x + dx, y + dy, s * 0.72, 0, Math.PI * 2); c.fill();
+          c.strokeStyle = 'rgba(86,80,64,.8)'; c.lineWidth = 1; c.beginPath(); for (let k = 0; k < 7; k += 1) { const a = turn + (k / 7) * Math.PI * 2; c.moveTo(x + dx + Math.cos(a) * s * 0.35, y + dy + Math.sin(a) * s * 0.35); c.lineTo(x + dx + Math.cos(a) * s, y + dy + Math.sin(a) * s); } c.stroke();
+          c.fillStyle = '#26261f'; c.beginPath(); c.ellipse(x + dx, y + dy, s * 0.3, s * 0.2, turn, 0, Math.PI * 2); c.fill();
+        });
+      }
+    }
+    grain(c, 0.12, 319);
+  } },
+  // Pole Position: one stripe, dead centre, and the red left clean either side of it.
+  polestart: { rough: 0.2, metal: 0.3, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#9c0d14'); g.addColorStop(0.5, '#d81420'); g.addColorStop(1, '#9c0d14'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(255,90,80,.16)', 'rgba(90,6,10,.18)'], 18, 20, 52, 320);
+    c.fillStyle = 'rgba(30,2,4,.45)'; c.fillRect(0, 108, SIZE, 40);
+    c.fillStyle = '#f4f6f8'; c.fillRect(0, 114, SIZE, 28);
+    c.fillStyle = 'rgba(200,210,220,.5)'; c.fillRect(0, 138, SIZE, 4);
+    grain(c, 0.04, 321);
+  } },
+  gridstart: { rough: 0.45, metal: 0.2, paint: (c) => {
+    for (let x = 0; x < SIZE; x += 16) for (let y = 0; y < SIZE; y += 16) { c.fillStyle = (x + y) % 32 ? '#111316' : '#eef0f2'; c.fillRect(x, y, 16, 16); }
+    c.fillStyle = 'rgba(12,13,16,.92)'; c.fillRect(0, 96, SIZE, 56);
+    c.fillStyle = '#f4f6f8'; c.fillRect(0, 114, SIZE, 12);
+    lines(c, 'rgba(10,10,12,.3)', 6, 12, 322, [40, 140]);
+    grain(c, 0.07, 323);
+  } },
+  // Quarry: all four are cut rock, so they share the voronoi block shapes and differ only in tone and bedding.
+  quarry: { rough: 0.95, metal: 0.05, paint: (c) => {
+    const greys = [[142, 142, 138], [120, 121, 118], [158, 157, 150], [104, 106, 104], [132, 133, 128]];
+    voronoi(c, 5, 330, (i, e) => { const g = greys[i % 5], lit = 1 - Math.min(e, 26) / 90, t = Math.max(0, Math.min(1, e / 3)); return [g[0] * lit * t + 58 * (1 - t), g[1] * lit * t + 58 * (1 - t), g[2] * lit * t + 56 * (1 - t)]; });
+    lines(c, 'rgba(58,58,54,.35)', 1.4, 26, 331, [10, 50]); blobs(c, ['rgba(206,204,194,.18)', 'rgba(52,52,48,.2)'], 36, 4, 14, 332); grain(c, 0.16, 333);
+  } },
+  limestone: { rough: 0.9, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#d8d1bc'; c.fillRect(0, 0, SIZE, SIZE);
+    // Beds run flat across the tile: limestone reads as layers, not blocks.
+    const r = rng(334);
+    for (let k = 0; k < 10; k += 1) { const y = k * 26 + r() * 8, h = 6 + r() * 16; c.fillStyle = `rgba(${r() < 0.5 ? '250,246,232' : '176,166,140'},${0.2 + r() * 0.3})`; c.beginPath(); for (let x = 0; x <= SIZE; x += 8) c.lineTo(x, y + Math.sin((x / SIZE) * Math.PI * 4 + k) * 3); for (let x = SIZE; x >= 0; x -= 8) c.lineTo(x, y + h + Math.sin((x / SIZE) * Math.PI * 4 + k) * 3); c.fill(); }
+    blobs(c, ['rgba(120,112,90,.16)', 'rgba(252,249,240,.3)'], 40, 4, 16, 335); lines(c, 'rgba(112,104,84,.22)', 1, 20, 336, [8, 40]); grain(c, 0.14, 337);
+  } },
+  slatefall: { rough: 0.6, metal: 0.2, paint: (c) => {
+    const darks = [[54, 58, 64], [40, 44, 50], [68, 72, 80], [32, 35, 40], [60, 64, 72]];
+    voronoi(c, 6, 338, (i, e) => { const g = darks[i % 5], t = Math.max(0, Math.min(1, e / 1.6)), lit = 1 + Math.min(e, 20) / 40; return [g[0] * lit * t + 14 * (1 - t), g[1] * lit * t + 15 * (1 - t), g[2] * lit * t + 18 * (1 - t)]; });
+    // Cleave lines are dead straight and all on one axis: slate splits the way it was bedded.
+    c.strokeStyle = 'rgba(18,20,24,.55)'; c.lineWidth = 1.2; for (let k = -SIZE; k < SIZE * 2; k += 11) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k + SIZE * 0.5, SIZE); c.stroke(); }
+    lines(c, 'rgba(180,192,208,.18)', 0.8, 22, 339, [12, 60]); grain(c, 0.1, 340);
+  } },
+  dustveil: { rough: 0.95, metal: 0.05, paint: (c) => {
+    const darks = [[58, 58, 56], [46, 47, 45], [70, 70, 66], [38, 39, 38], [52, 53, 50]];
+    voronoi(c, 5, 330, (i, e) => { const g = darks[i % 5], t = Math.max(0, Math.min(1, e / 3)); return [g[0] * t + 22 * (1 - t), g[1] * t + 22 * (1 - t), g[2] * t + 21 * (1 - t)]; });
+    // Dust settles rather than sticks: soft fades on top, nothing with an edge.
+    const r = rng(341);
+    for (let i = 0; i < 40; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 18 + r() * 44; wrapped((dx, dy) => { const g = c.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, s); g.addColorStop(0, `rgba(222,216,198,${0.16 + r() * 0.2})`); g.addColorStop(1, 'rgba(222,216,198,0)'); c.fillStyle = g; c.fillRect(x + dx - s, y + dy - s, s * 2, s * 2); }); }
+    blobs(c, ['rgba(232,226,208,.25)'], 90, 2, 6, 342); grain(c, 0.12, 343);
+  } },
+  // Tempest: one storm palette across the set, each one a different way the weather hits.
+  tempest: { rough: 0.5, metal: 0.1, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#2c3742'); g.addColorStop(0.5, '#4e5d6c'); g.addColorStop(1, '#2c3742'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(344);
+    for (let i = 0; i < 34; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 20 + r() * 50, pale = r() < 0.45; wrapped((dx, dy) => { const rg = c.createRadialGradient(x + dx, y + dy - s * 0.3, 0, x + dx, y + dy, s); rg.addColorStop(0, pale ? 'rgba(178,192,206,.35)' : 'rgba(22,28,36,.32)'); rg.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = rg; c.fillRect(x + dx - s, y + dy - s, s * 2, s * 2); }); }
+    veins(c, 'rgba(198,212,226,.14)', 5, 5, 345); grain(c, 0.06, 346);
+  } },
+  squall: { rough: 0.45, metal: 0.15, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#3a4652'); g.addColorStop(0.5, '#28323c'); g.addColorStop(1, '#3a4652'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(88,102,118,.3)', 'rgba(16,20,26,.3)'], 24, 18, 48, 347);
+    // Rain slants on one fixed angle, and the step closes on the tile edge so the streaks carry round.
+    const r = rng(348);
+    for (let pass = 0; pass < 3; pass += 1) { c.strokeStyle = `rgba(214,228,242,${0.12 + pass * 0.1})`; c.lineWidth = 0.6 + pass * 0.5; for (let k = -SIZE * 2; k < SIZE * 2; k += 7 + pass * 5) { const off = r() * 6, len = 60 + r() * 120; c.beginPath(); c.moveTo(k + off, -20); c.lineTo(k + off + len * 0.55, len); c.stroke(); } }
+    grain(c, 0.07, 349);
+  } },
+  thunderhead: {
+    rough: 0.5, metal: 0.1, glow: 1.2,
+    // The bright edge sits high on the tile so the anvil top lands above the gun's spine.
+    paint: (c) => {
+      const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#6e7d8e'); g.addColorStop(0.28, '#3b4652'); g.addColorStop(1, '#14191f'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(350);
+      for (let i = 0; i < 40; i += 1) { const x = r() * SIZE, y = 20 + r() * 210, s = 18 + r() * 46, top = y < 110; wrapped((dx, dy) => { const rg = c.createRadialGradient(x + dx, y + dy - s * 0.4, 0, x + dx, y + dy, s); rg.addColorStop(0, top ? 'rgba(206,218,232,.4)' : 'rgba(10,14,18,.4)'); rg.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = rg; c.fillRect(x + dx - s, y + dy - s, s * 2, s * 2); }); }
+      c.strokeStyle = 'rgba(226,236,248,.5)'; c.lineWidth = 3; c.beginPath(); for (let x = 0; x <= SIZE; x += 6) c.lineTo(x, 34 + Math.sin((x / SIZE) * Math.PI * 4) * 12 + Math.sin((x / SIZE) * Math.PI * 10) * 4); c.stroke();
+      grain(c, 0.06, 351);
+    },
+    // Only the bolt emits: the cloud stays flat so the strike is the one bright thing on the gun.
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const r = rng(352);
+      for (const [w, col] of [[9, 'rgba(90,140,240,.3)'], [4, 'rgba(180,210,255,.7)'], [1.6, 'rgba(255,255,255,.95)']]) {
+        c.strokeStyle = col; c.lineWidth = w; c.lineCap = 'round';
+        const bolt = rng(353); let x = 120, y = 40; const path = [[x, y]];
+        for (let k = 0; k < 14; k += 1) { x += (bolt() - 0.5) * 26; y += 14 + bolt() * 6; path.push([x, y]); }
+        c.beginPath(); path.forEach(([px, py], k) => (k ? c.lineTo(px, py) : c.moveTo(px, py))); c.stroke();
+        const [bx, by] = path[6]; c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - 34, by + 46); c.lineTo(bx - 44, by + 78); c.stroke();
+      }
+      for (let i = 0; i < 40; i += 1) { c.fillStyle = `rgba(190,215,255,${0.2 + r() * 0.4})`; c.fillRect(r() * SIZE, 20 + r() * 200, 1.4, 1.4); }
+    },
+  },
+  downpour: { rough: 0.4, metal: 0.15, paint: (c) => {
+    c.fillStyle = '#1e242b'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(58,70,82,.35)', 'rgba(8,11,14,.4)'], 26, 16, 46, 354);
+    // Straight down and packed tight: the rain is the texture, not a detail on top of it.
+    const r = rng(355);
+    for (let i = 0; i < 260; i += 1) { const x = r() * SIZE, y = r() * SIZE, l = 16 + r() * 70, a = 0.12 + r() * 0.45; c.strokeStyle = `rgba(200,218,236,${a})`; c.lineWidth = 0.6 + r() * 1.2; c.beginPath(); c.moveTo(x, y); c.lineTo(x, y + l); c.stroke(); c.beginPath(); c.moveTo(x, y - SIZE); c.lineTo(x, y - SIZE + l); c.stroke(); }
+    c.fillStyle = 'rgba(160,184,208,.05)'; for (let x = 0; x < SIZE; x += 6) c.fillRect(x, 0, 2, SIZE);
+    grain(c, 0.08, 356);
+  } },
+  // Crucible: the same furnace, caught at four temperatures.
+  crucible: {
+    rough: 0.85, metal: 0.15, glow: 1.3,
+    paint: (c) => {
+      c.fillStyle = '#2b2018'; c.fillRect(0, 0, SIZE, SIZE);
+      for (let row = 0; row < 8; row += 1) for (let col = -1; col <= 4; col += 1) { const x = col * 64 + (row % 2 ? 32 : 0), y = row * 32; c.fillStyle = ['#3a2a1e', '#31241a', '#443123'][(row + col + 3) % 3]; c.fillRect(x + 2, y + 2, 60, 28); c.fillStyle = 'rgba(96,70,48,.4)'; c.fillRect(x + 2, y + 2, 60, 2); }
+      blobs(c, ['rgba(16,10,8,.35)', 'rgba(120,86,56,.2)'], 34, 6, 20, 357);
+      c.strokeStyle = 'rgba(150,52,10,.8)'; c.lineWidth = 8; c.beginPath(); for (let y = 0; y <= SIZE; y += 4) c.lineTo(160 + Math.sin((y / SIZE) * Math.PI * 4) * 22 + Math.sin((y / SIZE) * Math.PI * 10) * 7, y); c.stroke();
+      grain(c, 0.13, 358);
+    },
+    // The seam runs down the tile, so the hot line pours along the barrel rather than banding it.
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      for (const [w, col] of [[30, 'rgba(160,36,0,.3)'], [14, 'rgba(255,96,8,.65)'], [5, 'rgba(255,224,150,.95)']]) { c.strokeStyle = col; c.lineWidth = w; c.beginPath(); for (let y = 0; y <= SIZE; y += 4) c.lineTo(160 + Math.sin((y / SIZE) * Math.PI * 4) * 22 + Math.sin((y / SIZE) * Math.PI * 10) * 7, y); c.stroke(); }
+      const r = rng(359); for (let i = 0; i < 80; i += 1) { const y = r() * SIZE, x = 160 + Math.sin((y / SIZE) * Math.PI * 4) * 22 + (r() - 0.5) * 80; c.fillStyle = `rgba(255,150,40,${0.25 + r() * 0.7})`; c.fillRect(x, y, 1.6, 1.6); }
+    },
+  },
+  slagline: { rough: 0.9, metal: 0.2, paint: (c) => {
+    const crust = [[112, 110, 106], [88, 87, 84], [130, 127, 120], [74, 74, 72], [100, 99, 95]];
+    voronoi(c, 7, 360, (i, e) => { const g = crust[i % 5], t = Math.max(0, Math.min(1, e / 2.2)); return [g[0] * t + 30 * (1 - t), g[1] * t + 26 * (1 - t), g[2] * t + 24 * (1 - t)]; });
+    // A last flush of brown near the cracks: slag keeps the iron in it even after it goes cold.
+    blobs(c, ['rgba(126,72,34,.2)', 'rgba(40,36,32,.3)'], 44, 4, 16, 361);
+    lines(c, 'rgba(24,22,20,.4)', 1.6, 22, 362, [10, 46]); blobs(c, ['rgba(198,196,188,.22)'], 70, 2, 6, 363); grain(c, 0.16, 364);
+  } },
+  whitehot: {
+    rough: 0.5, metal: 0.25, glow: 1.5,
+    paint: (c) => {
+      const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#c86a1a'); g.addColorStop(0.35, '#ffb84a'); g.addColorStop(0.5, '#fff6e2'); g.addColorStop(0.65, '#ffb84a'); g.addColorStop(1, '#c86a1a'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+      blobs(c, ['rgba(255,252,240,.35)', 'rgba(180,72,10,.25)'], 26, 14, 40, 365); grain(c, 0.05, 366);
+    },
+    // Emission follows the same band, so the brightest metal is exactly where the paint is palest.
+    emit: (c) => {
+      const g = c.createLinearGradient(0, 0, 0, SIZE); g.addColorStop(0, '#5a1c00'); g.addColorStop(0.35, '#ff8a10'); g.addColorStop(0.5, '#fffaf0'); g.addColorStop(0.65, '#ff8a10'); g.addColorStop(1, '#5a1c00'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+      blobs(c, ['rgba(255,255,255,.35)'], 20, 12, 34, 365);
+    },
+  },
+  quench: { rough: 0.3, metal: 0.7, paint: (c) => {
+    const g = c.createLinearGradient(0, 0, SIZE, SIZE); g.addColorStop(0, '#141a26'); g.addColorStop(0.5, '#233048'); g.addColorStop(1, '#141a26'); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE);
+    // Oil leaves temper colours in bands, not patches, so they follow the quench streaks.
+    const r = rng(367);
+    for (let i = 0; i < 22; i += 1) { const x = r() * SIZE, w = 6 + r() * 26, col = ['60,90,170', '110,70,170', '40,120,140', '170,120,60'][i % 4], lg = c.createLinearGradient(x, 0, x + w, 0); lg.addColorStop(0, `rgba(${col},0)`); lg.addColorStop(0.5, `rgba(${col},${0.1 + r() * 0.22})`); lg.addColorStop(1, `rgba(${col},0)`); c.fillStyle = lg; c.fillRect(x, 0, w, SIZE); c.fillRect(x - SIZE, 0, w, SIZE); }
+    blobs(c, ['rgba(6,8,12,.45)', 'rgba(120,150,200,.12)'], 26, 12, 36, 368);
+    lines(c, 'rgba(190,210,240,.1)', 1, 22, 369, [30, 110]); grain(c, 0.05, 370);
+  } },
+  // Overgrowth: same green, four stages of the plants taking the thing back.
+  overgrowth: { rough: 0.8, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#16290f'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(371), leafs = ['#2f6a1e', '#458c2a', '#1f4a14', '#5ba832', '#38762a'];
+    for (let i = 0; i < 150; i += 1) {
+      const x = r() * SIZE, y = r() * SIZE, l = 10 + r() * 20, a = r() * 6.28, fill = leafs[Math.floor(r() * leafs.length)];
+      wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(a); c.fillStyle = fill; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(l * 0.5, -l * 0.34, l, 0); c.quadraticCurveTo(l * 0.5, l * 0.34, 0, 0); c.fill(); c.strokeStyle = 'rgba(14,34,10,.5)'; c.lineWidth = 0.8; c.beginPath(); c.moveTo(0, 0); c.lineTo(l, 0); c.stroke(); c.restore(); });
+    }
+    blobs(c, ['rgba(8,20,6,.28)', 'rgba(140,200,90,.12)'], 26, 14, 40, 372); grain(c, 0.07, 373);
+  } },
+  creeper: { rough: 0.75, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#cfc8b4'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(238,233,220,.4)', 'rgba(158,150,132,.3)'], 24, 16, 44, 374); grain(c, 0.12, 375);
+    veins(c, 'rgba(46,88,34,.75)', 2.2, 6, 376); veins(c, 'rgba(88,140,58,.6)', 1, 7, 377);
+    // Leaves only where a vine already is: loose sprigs read as paint splatter instead of growth.
+    const r = rng(376);
+    for (let i = 0; i < 6; i += 1) {
+      let x = r() * SIZE, y = r() * SIZE, a = r() * 6.28;
+      for (let k = 0; k < 26; k += 1) { a += (r() - 0.5) * 0.9; x += Math.cos(a) * 12; y += Math.sin(a) * 12; if (k % 3) continue; const turn = a + (k % 6 ? 1.2 : -1.2); wrapped((dx, dy) => { c.save(); c.translate(x + dx, y + dy); c.rotate(turn); c.fillStyle = k % 2 ? '#3f7a2a' : '#5c9c3a'; c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(5, -4, 11, 0); c.quadraticCurveTo(5, 4, 0, 0); c.fill(); c.restore(); }); }
+    }
+  } },
+  mossback: { rough: 0.9, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#241b13'; c.fillRect(0, 0, SIZE, SIZE);
+    // Bark runs the length of the tile, so the grooves line up with the barrel and the moss sits in them.
+    const r = rng(378);
+    for (let i = 0; i < 90; i += 1) { const x = r() * SIZE, w = 1 + r() * 6; c.fillStyle = `rgba(${r() < 0.55 ? '12,8,5' : '92,70,46'},${0.2 + r() * 0.5})`; c.fillRect(x, 0, w, SIZE); }
+    blobs(c, ['rgba(52,38,24,.4)', 'rgba(8,6,4,.4)'], 26, 10, 30, 379);
+    for (let b = 0; b < 8; b += 1) {
+      const bx = r() * SIZE, by = r() * SIZE;
+      for (let i = 0; i < 36; i += 1) { const x = bx + (r() + r() - 1) * 40, y = by + (r() + r() - 1) * 30, s = 2 + r() * 7, fill = ['rgba(58,110,40,.85)', 'rgba(84,140,54,.8)', 'rgba(36,78,28,.85)', 'rgba(120,168,76,.7)'][i % 4]; wrapped((dx, dy) => { c.fillStyle = fill; c.beginPath(); c.ellipse(x + dx, y + dy, s, s * 0.8, i, 0, Math.PI * 2); c.fill(); }); }
+    }
+    blobs(c, ['rgba(180,220,140,.16)'], 60, 2, 5, 380); grain(c, 0.13, 381);
+  } },
+  thornline: { rough: 0.85, metal: 0.05, paint: (c) => {
+    c.fillStyle = '#6b6a5c'; c.fillRect(0, 0, SIZE, SIZE);
+    blobs(c, ['rgba(126,124,110,.35)', 'rgba(46,46,40,.3)'], 26, 16, 44, 382); grain(c, 0.1, 383);
+    // Thorns hang off the stem on alternating sides, which is what stops it reading as plain scratches.
+    const r = rng(384);
+    for (let i = 0; i < 9; i += 1) {
+      let x = r() * SIZE, y = r() * SIZE, a = r() * 6.28; const path = [[x, y, a]];
+      for (let k = 0; k < 24; k += 1) { a += (r() - 0.5) * 0.7; x += Math.cos(a) * 12; y += Math.sin(a) * 12; path.push([x, y, a]); }
+      wrapped((dx, dy) => {
+        c.strokeStyle = 'rgba(38,32,24,.9)'; c.lineWidth = 2; c.lineCap = 'round'; c.beginPath(); path.forEach(([px, py], k) => (k ? c.lineTo(px + dx, py + dy) : c.moveTo(px + dx, py + dy))); c.stroke();
+        c.fillStyle = 'rgba(28,24,18,.95)';
+        path.forEach(([px, py, pa], k) => { if (k % 2) return; const side = k % 4 ? 1 : -1, t = pa + side * 1.1; c.beginPath(); c.moveTo(px + dx, py + dy); c.lineTo(px + dx + Math.cos(t) * 7, py + dy + Math.sin(t) * 7); c.lineTo(px + dx + Math.cos(pa) * 5, py + dy + Math.sin(pa) * 5); c.fill(); });
+      });
+    }
+    lines(c, 'rgba(146,142,124,.2)', 1, 18, 385, [10, 40]);
+  } },
+  // Signal: lights against dark. Each one puts the emission only where the lamp is.
+  flarepath: {
+    rough: 0.85, metal: 0.1, glow: 1.25,
+    paint: (c) => {
+      c.fillStyle = '#1b1d20'; c.fillRect(0, 0, SIZE, SIZE);
+      blobs(c, ['rgba(44,47,52,.5)', 'rgba(8,9,11,.45)'], 28, 14, 42, 386); grain(c, 0.15, 387);
+      c.fillStyle = 'rgba(214,214,206,.75)'; for (let y = 8; y < SIZE; y += 48) c.fillRect(124, y, 8, 26);
+      for (const [x, col] of [[44, '255,210,80'], [212, '80,180,255']]) for (let y = 16; y < SIZE; y += 32) { const g = c.createRadialGradient(x, y, 0, x, y, 16); g.addColorStop(0, `rgba(${col},.5)`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.fillRect(x - 16, y - 16, 32, 32); c.fillStyle = `rgba(${col},.9)`; c.beginPath(); c.arc(x, y, 3.4, 0, Math.PI * 2); c.fill(); }
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      for (const [x, col] of [[44, '255,200,60'], [212, '60,170,255']]) for (let y = 16; y < SIZE; y += 32) { const g = c.createRadialGradient(x, y, 0, x, y, 22); g.addColorStop(0, `rgba(${col},1)`); g.addColorStop(0.25, `rgba(${col},.55)`); g.addColorStop(1, `rgba(${col},0)`); c.fillStyle = g; c.fillRect(x - 22, y - 22, 44, 44); }
+    },
+  },
+  semaphore: { rough: 0.6, metal: 0.1, paint: (c) => {
+    // Flag code, so the blocks stay flat and hard edged: no gradient, no grain over the colour.
+    const flags = ['#d81e2c', '#f2f2f0', '#1b4ea8', '#f5c316', '#111214', '#e06a12'];
+    for (let row = 0; row < 4; row += 1) for (let col = 0; col < 4; col += 1) {
+      const x = col * 64, y = row * 64, i = (row * 4 + col * 3 + 1) % flags.length;
+      c.fillStyle = flags[i]; c.fillRect(x, y, 64, 64);
+      c.fillStyle = flags[(i + 2) % flags.length];
+      if ((row + col) % 3 === 0) c.fillRect(x, y, 64, 22);
+      else if ((row + col) % 3 === 1) { c.beginPath(); c.moveTo(x, y); c.lineTo(x + 64, y + 64); c.lineTo(x, y + 64); c.closePath(); c.fill(); }
+      else c.fillRect(x + 20, y + 20, 24, 24);
+    }
+    c.strokeStyle = 'rgba(12,12,14,.5)'; c.lineWidth = 2; for (let k = 0; k <= SIZE; k += 64) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k, SIZE); c.moveTo(0, k); c.lineTo(SIZE, k); c.stroke(); }
+    grain(c, 0.05, 388);
+  } },
+  starshell: {
+    rough: 0.45, metal: 0.15, glow: 1.4,
+    // The burst is centred so it lands on one flank and the sky wraps the rest of the gun.
+    paint: (c) => {
+      c.fillStyle = '#080c18'; c.fillRect(0, 0, SIZE, SIZE);
+      blobs(c, ['rgba(20,30,58,.45)', 'rgba(2,3,8,.5)'], 20, 20, 50, 389);
+      const r = rng(390); for (let i = 0; i < 110; i += 1) { c.fillStyle = `rgba(226,232,248,${0.25 + r() * 0.55})`; c.fillRect(r() * SIZE, r() * SIZE, 1.3, 1.3); }
+      const g = c.createRadialGradient(128, 128, 0, 128, 128, 90); g.addColorStop(0, 'rgba(255,250,224,.85)'); g.addColorStop(0.2, 'rgba(255,220,140,.4)'); g.addColorStop(1, 'rgba(255,200,110,0)'); c.fillStyle = g; c.fillRect(38, 38, 180, 180);
+      c.strokeStyle = 'rgba(255,238,190,.5)'; c.lineWidth = 1.2; for (let k = 0; k < 24; k += 1) { const a = (k / 24) * Math.PI * 2, l = 40 + (k % 3) * 26; c.beginPath(); c.moveTo(128 + Math.cos(a) * 12, 128 + Math.sin(a) * 12); c.lineTo(128 + Math.cos(a) * l, 128 + Math.sin(a) * l); c.stroke(); }
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      const g = c.createRadialGradient(128, 128, 0, 128, 128, 96); g.addColorStop(0, 'rgba(255,255,244,1)'); g.addColorStop(0.14, 'rgba(255,232,168,.7)'); g.addColorStop(0.5, 'rgba(255,190,90,.22)'); g.addColorStop(1, 'rgba(255,170,70,0)'); c.fillStyle = g; c.fillRect(32, 32, 192, 192);
+      c.strokeStyle = 'rgba(255,244,210,.7)'; c.lineWidth = 1.6; for (let k = 0; k < 24; k += 1) { const a = (k / 24) * Math.PI * 2, l = 44 + (k % 3) * 28; c.beginPath(); c.moveTo(128 + Math.cos(a) * 10, 128 + Math.sin(a) * 10); c.lineTo(128 + Math.cos(a) * l, 128 + Math.sin(a) * l); c.stroke(); }
+      const r = rng(391); for (let i = 0; i < 60; i += 1) { const a = r() * 6.28, d = 50 + r() * 80; c.fillStyle = `rgba(255,224,150,${0.2 + r() * 0.6})`; c.fillRect(128 + Math.cos(a) * d, 128 + Math.sin(a) * d, 1.6, 1.6); }
+    },
+  },
+  lantern: {
+    rough: 0.35, metal: 0.2, glow: 1.15,
+    // Panes on a 64px grid with lead between them, so the frame tiles and only the glass lights up.
+    paint: (c) => {
+      c.fillStyle = '#1a1510'; c.fillRect(0, 0, SIZE, SIZE);
+      for (let row = 0; row < 4; row += 1) for (let col = 0; col < 4; col += 1) {
+        const x = col * 64 + 6, y = row * 64 + 6, warm = (row + col) % 3;
+        const g = c.createRadialGradient(x + 26, y + 26, 2, x + 26, y + 26, 40); g.addColorStop(0, warm ? 'rgba(255,224,150,.95)' : 'rgba(255,196,104,.8)'); g.addColorStop(0.6, 'rgba(226,150,52,.55)'); g.addColorStop(1, 'rgba(120,68,20,.35)'); c.fillStyle = g; c.fillRect(x, y, 52, 52);
+        c.fillStyle = 'rgba(255,246,214,.3)'; c.fillRect(x + 6, y + 6, 18, 4);
+      }
+      c.strokeStyle = '#2b2118'; c.lineWidth = 12; for (let k = 0; k <= SIZE; k += 64) { c.beginPath(); c.moveTo(k, 0); c.lineTo(k, SIZE); c.moveTo(0, k); c.lineTo(SIZE, k); c.stroke(); }
+      c.strokeStyle = 'rgba(180,140,80,.35)'; c.lineWidth = 1.4; for (let k = 0; k <= SIZE; k += 64) { c.beginPath(); c.moveTo(k + 6, 0); c.lineTo(k + 6, SIZE); c.moveTo(0, k + 6); c.lineTo(SIZE, k + 6); c.stroke(); }
+      grain(c, 0.06, 392);
+    },
+    emit: (c) => {
+      c.fillStyle = '#000'; c.fillRect(0, 0, SIZE, SIZE);
+      for (let row = 0; row < 4; row += 1) for (let col = 0; col < 4; col += 1) {
+        const x = col * 64 + 6, y = row * 64 + 6;
+        const g = c.createRadialGradient(x + 26, y + 26, 2, x + 26, y + 26, 38); g.addColorStop(0, 'rgba(255,226,158,1)'); g.addColorStop(0.55, 'rgba(240,158,50,.5)'); g.addColorStop(1, 'rgba(160,80,16,.1)'); c.fillStyle = g; c.fillRect(x, y, 52, 52);
+      }
+    },
+  },
 };
 // Suit patterns are grey: they multiply the pilot's suit colour instead of replacing it.
 const PATTERN_ART = {
@@ -507,6 +1004,20 @@ const PATTERN_ART = {
       c.fillStyle = 'rgba(70,70,70,.5)'; c.fillRect(col * 8 + 1, head * 16 + 1, 6, 2);
     }
   },
+  // Item Shop patterns. Reeds sway on a whole sine period, so each stalk leaves the tile where it entered it.
+  reedbed: (c) => {
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE);
+    const r = rng(231);
+    for (let i = 0; i < 80; i += 1) {
+      const x = r() * SIZE, ph = r() * 6.28, amp = 2 + r() * 5, head = r() * SIZE;
+      c.strokeStyle = ['#6e6e6e', '#a2a2a2', '#4e4e4e', '#c0c0c0'][i % 4]; c.lineWidth = 1 + r() * 2.6;
+      for (const dx of [-SIZE, 0, SIZE]) { c.beginPath(); for (let y = 0; y <= SIZE; y += 8) c.lineTo(x + dx + Math.sin((y / SIZE) * Math.PI * 2 + ph) * amp, y); c.stroke(); }
+      if (i % 3) continue;
+      c.fillStyle = '#5a5a5a'; wrapped((dx, dy) => { c.beginPath(); c.ellipse(x + dx + Math.sin((head / SIZE) * Math.PI * 2 + ph) * amp, head + dy, 2.4, 9, 0, 0, Math.PI * 2); c.fill(); });
+    }
+  },
+  petals: (c) => { c.fillStyle = '#ffffff'; c.fillRect(0, 0, SIZE, SIZE); const r = rng(232); for (let i = 0; i < 70; i += 1) { const x = r() * SIZE, y = r() * SIZE, s = 4 + r() * 6, a = r() * 6.28; c.fillStyle = ['#8e8e8e', '#b6b6b6', '#6a6a6a', '#d0d0d0'][i % 4]; wrapped((dx, dy) => { c.beginPath(); c.moveTo(x + dx, y + dy); c.quadraticCurveTo(x + dx + Math.cos(a + 0.8) * s, y + dy + Math.sin(a + 0.8) * s, x + dx + Math.cos(a) * s * 2.2, y + dy + Math.sin(a) * s * 2.2); c.quadraticCurveTo(x + dx + Math.cos(a - 0.8) * s, y + dy + Math.sin(a - 0.8) * s, x + dx, y + dy); c.fill(); }); } },
+  duskfade: (c) => { const g = c.createLinearGradient(0, 0, 0, SIZE); [[0, '#ffffff'], [0.26, '#e2e2e2'], [0.46, '#8c8c8c'], [0.56, '#6e6e6e'], [0.7, '#b0b0b0'], [1, '#ffffff']].forEach(([t, col]) => g.addColorStop(t, col)); c.fillStyle = g; c.fillRect(0, 0, SIZE, SIZE); c.fillStyle = 'rgba(255,255,255,.18)'; for (const [y, h] of [[118, 4], [134, 3], [152, 6]]) c.fillRect(0, y, SIZE, h); grain(c, 0.04, 233); },
 };
 
 const textures = new Map();

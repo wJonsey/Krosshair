@@ -2,6 +2,7 @@
 // the browser only animates the answer. Each function returns { error } or a result.
 import { randomInt } from 'node:crypto';
 import { COSMETICS, WEAPONS } from '../shared/constants.js';
+import { bundleOn, bundlePrice, inShop, itemName, itemPrice, itemSet, ownsItem } from '../shared/itemshop.js';
 import { CRASH, COINFLIP, CRATES, PLINKO, crashAt, crashTime, hiloMultiplier, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, SCRAP, SLOTS, TRADE_UP, crateFinishes, crateOdds, STAKE, TRANSFER, diceMultiplier, finishInfo, finishPrice, finishValue, slotsMultiplier } from '../shared/economy.js';
 
 const SKINNABLE = Object.keys(WEAPONS);
@@ -30,7 +31,7 @@ const wholeCoins = (value, min, max) => (Number.isInteger(value) && value >= min
 // A finish is bought once and then goes on every gun.
 export function buySkin(profiles, token, finish) {
   const info = finishInfo(finish);
-  if (!info || info.rarity === 'dev') return { error: 'Not in the shop.' };
+  if (!info || info.rarity === 'dev' || info.shop === 'item') return { error: 'Not in the shop.' };
   const owned = profiles.wallet(token).finishes;
   if (owned.includes(finish)) return { error: 'Already yours.' };
   if (!finishPrice(finish)) return { error: 'Mythics only come from crates.' };
@@ -39,9 +40,35 @@ export function buySkin(profiles, token, finish) {
   return { bought: { finish } };
 }
 
+// The Item Shop. The server decides what is on sale today, not the browser: a pilot can only buy a
+// piece whose set is standing in the shop on this very day, whatever their client says.
+export function buyItemShop(profiles, token, setId, kind, id) {
+  const set = itemSet(setId);
+  if (!set || !inShop(setId)) return { error: 'That set is not in the shop today.' };
+  const profile = profiles.wallet(token);
+  const give = (entryKind, entryId) => {
+    if (entryKind === 'finish') profile.finishes.push(entryId);
+    else profile.owned.push(`${entryKind}:${entryId}`);
+  };
+  if (kind === 'bundle') {
+    // Only the set featured today is sold whole.
+    if (!bundleOn(setId)) return { error: 'That set is not sold as a bundle today.' };
+    // All or nothing: owning a piece already would make the bundle a worse deal than the pieces.
+    if (set.items.some(([entryKind, entryId]) => ownsItem(entryKind, entryId, profile))) return { error: 'You already own part of this set. Buy the rest piece by piece.' };
+    if (!profiles.debit(token, bundlePrice(set), 'shop', `${set.name} set`)) return { error: 'Not enough coins.' };
+    for (const [entryKind, entryId] of set.items) give(entryKind, entryId);
+    return { bought: { set: setId, bundle: true } };
+  }
+  if (!set.items.some(([entryKind, entryId]) => entryKind === kind && entryId === id)) return { error: 'Not in that set.' };
+  if (ownsItem(kind, id, profile)) return { error: 'Already yours.' };
+  if (!profiles.debit(token, itemPrice(kind, id), 'shop', itemName(kind, id))) return { error: 'Not enough coins.' };
+  give(kind, id);
+  return { bought: { set: setId, kind, id } };
+}
+
 export function buyGear(profiles, token, kind, id) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
-  if (!item?.price) return { error: 'Not in the shop.' };
+  if (!item?.price || item.shop === 'item') return { error: 'Not in the shop.' };
   const profile = profiles.wallet(token);
   if (profile.owned.includes(`${kind}:${id}`)) return { error: 'Already yours.' };
   if (!profiles.debit(token, item.price, 'shop', item.name)) return { error: 'Not enough coins.' };
@@ -96,6 +123,7 @@ export function scrapSkin(profiles, token, finish) {
   const info = finishInfo(finish);
   const profile = profiles.wallet(token);
   if (!info || !profile.finishes.includes(finish)) return { error: 'You don’t own that.' };
+  if (info.shop === 'item') return { error: 'Item Shop skins can’t be scrapped.' };
   profile.finishes = profile.finishes.filter((id) => id !== finish);
   // It comes off every gun that was wearing it.
   for (const [weapon, worn] of Object.entries(profile.look?.skins || {})) if (worn === finish) delete profile.look.skins[weapon];
@@ -111,13 +139,14 @@ export function tradeUp(profiles, token, items) {
   const picked = items.map((item) => String(typeof item === 'string' ? item : item?.finish || ''));
   if (new Set(picked).size !== TRADE_UP) return { error: 'Pick five different skins.' };
   if (!picked.every((finish) => profile.finishes.includes(finish))) return { error: 'You don’t own all of those.' };
+  if (picked.some((finish) => finishInfo(finish)?.shop === 'item')) return { error: 'Item Shop skins can’t be traded up.' };
   const rarity = finishInfo(picked[0])?.rarity;
   if (!picked.every((finish) => finishInfo(finish)?.rarity === rarity)) return { error: 'All five must be the same rarity.' };
   const next = NEXT_RARITY[rarity];
   if (!next) return { error: 'Mythic is as high as it goes.' };
   profile.finishes = profile.finishes.filter((id) => !picked.includes(id));
   for (const [weapon, worn] of Object.entries(profile.look?.skins || {})) if (picked.includes(worn)) delete profile.look.skins[weapon];
-  const choices = FINISHES.filter((finish) => finish.rarity === next);
+  const choices = FINISHES.filter((finish) => finish.rarity === next && finish.shop !== 'item');
   const finish = choices[randomInt(choices.length)].id;
   profiles.logCoins(profile, 0, 'trade', `Trade-up: ${finishInfo(finish).name}`);
   return { traded: grant(profiles, token, finish, next, SKINNABLE[randomInt(SKINNABLE.length)]) };

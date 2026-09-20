@@ -1,4 +1,5 @@
 // WebSocket transport: identify, clock sync, automatic reconnect.
+import { installShopCatalogue } from './itemcatalogue.js';
 import { bus, game, store, tabStore, tabStored } from './state.js';
 
 const handlers = new Map();
@@ -94,6 +95,9 @@ function connect() {
       if (game.authSession) net.auth('resume', { legacyToken: game.token || game.legacyToken || undefined });
       else if (!game.loginRequired) { if (game.name.trim().length >= 2) net.identify(); }
       else bus.emit('auth-required', {});
+      // The Item Shop catalogue arrives from the server: only the sets that have already been out, so
+      // nothing unreleased is ever written into these pages.
+      if (message.itemShop) installShopCatalogue(message.itemShop);
       bus.emit('config');
     }
     if (message.type === 'auth-required' || message.type === 'logged-out') {
