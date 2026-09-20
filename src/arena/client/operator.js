@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { WEAPONS } from '../shared/constants.js';
 import { applyPattern } from './skins.js';
 import { buildWeapon } from './viewmodel.js';
+import { buildCharm, updateCharm } from './charms.js';
 
 const TEAM_COLORS = { friend: '#6ce6d1', foe: '#ff4d3d' };
 export { TEAM_COLORS };
@@ -599,7 +600,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
     guns: new Map(), held: null, skins: {}, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
-    phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
+    charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
     materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror],
     beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
   };
@@ -622,13 +623,14 @@ export function styleOperator(root, look) {
   choose(data.packs, look.pack);
   if (look.pattern) applyPattern(data.suit, look.pattern);
   if (look.skins) data.skins = look.skins;
+  if (look.charm !== undefined && look.charm !== data.charm) { data.charm = look.charm; if (data.held) data.held.model.visible = false; data.held = null; }
 }
 
 // The weapon in hand is the first-person model, a little smaller, without its arms. One per weapon and
 // finish, built the first time it is drawn and kept.
 function heldGun(data, weapon) {
   const finish = data.skins[weapon.id] || null;
-  const key = `${weapon.id}|${finish}`;
+  const key = `${weapon.id}|${finish}|${data.charm || 'none'}`;
   if (data.held?.key === key) return data.held;
   if (data.held) data.held.model.visible = false;
   let entry = data.guns.get(key);
@@ -638,7 +640,10 @@ function heldGun(data, weapon) {
     model.scale.setScalar(GUN_SCALE);
     model.traverse((part) => { if (part.isMesh) part.castShadow = true; });
     const front = Math.min(-0.2, ...model.children.filter((child) => child.isMesh).map((child) => child.position.z));
-    entry = { key, model, reach: -front * GUN_SCALE };
+    // The charm hangs off the left of the receiver, the same place it hangs in your own hands.
+    const charm = buildCharm(data.charm);
+    if (charm) { charm.position.set(-0.05, -0.03, Math.max(front * 0.45, -0.32)); charm.scale.setScalar(1.6); charm.traverse((part) => { if (part.isMesh) part.castShadow = false; }); model.add(charm); }
+    entry = { key, model, charm, reach: -front * GUN_SCALE };
     data.guns.set(key, entry);
     data.gun.add(model);
   }
@@ -770,6 +775,8 @@ export function animateOperator(root, pose) {
   data.head.rotation.y = Math.sin(data.phase) * 0.08 * stride + sway * 0.06;
   data.head.rotation.z = dead * 0.4 - Math.max(0, data.blade) * 0.16;
   if (data.packs.jetpack.visible) for (const flame of data.flames) flame.scale.y = 0.8 + Math.sin(data.idle * 31 + flame.position.x * 40) * 0.25 + air * 1.2;
+  // The charm swings off the gun for everyone watching, not just the pilot holding it.
+  if (held.charm && dt > 0) updateCharm(held.charm, dt, { scale: GUN_SCALE });
   animateCosmetics(data, stride, sway);
 
   // Hands: strong hand on the grip, support hand out along the fore-end (no further than the gun is long).

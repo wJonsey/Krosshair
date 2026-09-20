@@ -7,7 +7,7 @@ import { net } from './net.js';
 import { bindLabel, bindsFor, codeLabel, isBound } from './input.js';
 import { crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, announce } from './audio.js';
-import { weaponArt } from './weaponart.js';
+import { skinArt, skinArtReady, weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -147,7 +147,18 @@ export class Hud {
     if (event.distance >= 50) tags.push(`<i class="tag">${event.distance} M</i>`);
     const killer = event.killer ? `<b class="${side(event.killer)}">${escapeHtml(nameOf(event.killer))}</b>` : '';
     const assist = event.assist ? `<small> + ${escapeHtml(nameOf(event.assist))}</small>` : '';
-    line.innerHTML = `${killer}${assist}<span class="gun">${WEAPON_SHORT[event.weapon] || (event.reason === 'disconnect' ? 'LOST LINK' : '?')}</span><b class="${side(event.victim)}">${escapeHtml(nameOf(event.victim))}</b>${tags.join('')}`;
+    // The gun the kill was made with, wearing the killer's own skin. Drawing one costs a frame, so a
+    // gun nobody has killed with yet shows its name and the picture is made while the game is idle.
+    const finish = (event.killer ? game.roster.get(event.killer)?.skins?.[event.weapon] : null) || null;
+    const known = WEAPONS[event.weapon] && skinArtReady(event.weapon, finish);
+    const short = WEAPON_SHORT[event.weapon] || (event.reason === 'disconnect' ? 'LOST LINK' : '?');
+    const gun = known ? `<span class="gun art${finish ? ' skinned' : ''}"><img src="${skinArt(event.weapon, finish)}" alt="${short}" title="${short}" /></span>`
+      : `<span class="gun">${short}</span>`;
+    if (!known && WEAPONS[event.weapon]) {
+      const draw = () => { try { skinArt(event.weapon, finish); } catch { /* no WebGL to spare */ } };
+      if (window.requestIdleCallback) requestIdleCallback(draw, { timeout: 4000 }); else setTimeout(draw, 500);
+    }
+    line.innerHTML = `${killer}${assist}${gun}<b class="${side(event.victim)}">${escapeHtml(nameOf(event.victim))}</b>${tags.join('')}`;
     if (event.killer === game.id || event.victim === game.id) line.classList.add('mine');
     this.dom.killfeed.prepend(line);
     while (this.dom.killfeed.children.length > 6) this.dom.killfeed.lastChild.remove();

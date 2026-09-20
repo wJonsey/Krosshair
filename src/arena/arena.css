@@ -1443,3 +1443,8 @@ button.cash-out .coins { color: var(--void); }
   .crate-panel .button-row { flex-wrap: wrap; }
   .crate-panel .button-row button { flex: 1 1 140px; }
 }
+
+/* ---- The kill feed shows the gun that did it, wearing the killer's skin. */
+.killfeed .gun.art { display: inline-flex; align-items: center; }
+.killfeed .gun.art img { display: block; height: 20px; width: auto; max-width: 92px; object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .8)); }
+.killfeed .gun.art.skinned img { filter: drop-shadow(0 0 4px rgba(255, 181, 71, .35)) drop-shadow(0 1px 2px rgba(0, 0, 0, .8)); }

@@ -40,6 +40,8 @@ function shoot(model) {
 }
 
 // The gun as it looks in hand with a finish on, for the shop.
+// Already drawn? The kill feed only draws art it can show at once, and builds the rest when idle.
+export const skinArtReady = (id, finish) => cache.has(`${id}:${finish}`);
 export function skinArt(id, finish) {
   const key = `${id}:${finish}`;
   if (cache.has(key)) return cache.get(key);

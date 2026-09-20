@@ -10,7 +10,7 @@ export { animateOperator, buildOperator, styleOperator };
 
 const DUMMY_LOOK = { color: '#d9d4c8', accent: '#ff7148', name: '' };
 // The parts of a roster entry that dress an operator.
-export const lookOf = (entry = {}) => ({ color: entry.color, accent: entry.accent, headgear: entry.headgear || 'helmet', face: entry.face || 'visor', pack: entry.pack || 'radio', pattern: entry.pattern || 'solid', skins: entry.skins || {} });
+export const lookOf = (entry = {}) => ({ color: entry.color, accent: entry.accent, headgear: entry.headgear || 'helmet', face: entry.face || 'visor', pack: entry.pack || 'radio', pattern: entry.pattern || 'solid', charm: entry.charm || 'none', skins: entry.skins || {} });
 const lerpAngle = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
 function nameTag(text, color) {
@@ -86,7 +86,7 @@ class Entity {
   }
 
   style(entry, friendly, hologram = false) {
-    const key = `${entry.color}|${entry.accent}|${entry.headgear}|${entry.face}|${entry.pack}|${entry.pattern}|${JSON.stringify(entry.skins || {})}|${friendly}|${entry.name}|${hologram}`;
+    const key = `${entry.color}|${entry.accent}|${entry.headgear}|${entry.face}|${entry.pack}|${entry.pattern}|${entry.charm}|${JSON.stringify(entry.skins || {})}|${friendly}|${entry.name}|${hologram}`;
     if (key === this.styleKey) return;
     this.styleKey = key;
     styleOperator(this.model, { ...lookOf(entry), team: friendly ? 'friend' : 'foe' });
