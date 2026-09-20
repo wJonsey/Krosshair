@@ -41,6 +41,33 @@ function onlineLabel(state = net.connected ? 'open' : 'closed') {
   return net.identified ? `${game.online} ONLINE` : 'ONLINE';
 }
 
+// Who is on the server, for the developers only. The server refuses the question from anyone else.
+const onlineCard = document.createElement('div');
+onlineCard.className = 'online-card hidden';
+document.body.append(onlineCard);
+onlineCard.addEventListener('click', (event) => { if (event.target.closest('[data-dev-online-close]') || event.target === onlineCard) { play('uiBack'); closeOnline(); } });
+addEventListener('keydown', (event) => { if (event.key === 'Escape' && !onlineCard.classList.contains('hidden')) closeOnline(); });
+let onlineTimer = null;
+function closeOnline() { clearInterval(onlineTimer); onlineTimer = null; onlineCard.classList.add('hidden'); }
+function openOnline() {
+  onlineCard.classList.remove('hidden');
+  onlineCard.innerHTML = '<div class="panel"><p class="eyebrow">Who is playing</p><p class="muted">Asking the server…</p></div>';
+  net.send({ type: 'dev-online' });
+  clearInterval(onlineTimer);
+  onlineTimer = setInterval(() => net.send({ type: 'dev-online' }), 4000);
+}
+net.on('dev-online', (message) => {
+  if (onlineCard.classList.contains('hidden')) return;
+  const accounts = message.players.filter((player) => player.account), guests = message.players.filter((player) => !player.account);
+  const row = (player) => `<div class="online-row${player.you ? ' you' : ''}"><b>${escapeHtml(player.name)}</b><small>${player.account ? `LV ${player.level}` : 'guest'}</small><span>${player.room ? `${escapeHtml(player.room)} · ${(player.phase || '').toUpperCase()}` : 'in the menus'}</span>${player.ping ? `<em>${player.ping} ms</em>` : '<em></em>'}</div>`;
+  const list = (title, rows) => `<p class="eyebrow sub">${title} <small>${rows.length}</small></p>${rows.length ? rows.map(row).join('') : '<p class="muted">Nobody.</p>'}`;
+  onlineCard.innerHTML = `<div class="panel online-panel"><p class="eyebrow">Who is playing <small>${message.players.length} online · ${message.bots} bots</small></p>
+    ${list('Accounts', accounts)}${list('Guests', guests)}
+    <p class="eyebrow sub">Rooms <small>${message.rooms.length}</small></p>
+    ${message.rooms.length ? message.rooms.map((room) => `<div class="online-row"><b>${escapeHtml(room.name)}</b><small>${room.queue}</small><span>${(room.phase || '').toUpperCase()}</span><em>${room.humans} + ${room.bots} bots</em></div>`).join('') : '<p class="muted">No rooms.</p>'}
+    <div class="button-row"><button type="button" class="ghost-button" data-dev-online-close="1">Close</button></div></div>`;
+});
+
 // ------------------------------------------------------------------ account
 let authMode = 'login';
 let authPending = null;
@@ -412,7 +439,7 @@ export function renderHome() {
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
         <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}" ${on ? 'aria-current="page"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
-        <div class="menu-tools"><span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
+        <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
       <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}</nav></footer>
@@ -515,7 +542,8 @@ home.addEventListener('click', (event) => {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
     game.look[target.dataset.kind] = target.dataset.value;
     saveLook(); play('ui'); renderHome();
-  } else if (target.dataset.page) { play('ui'); setHomePage(target.dataset.page); }
+  } else if (target.dataset.devOnline) { play('ui'); openOnline(); }
+  else if (target.dataset.page) { play('ui'); setHomePage(target.dataset.page); }
   else if (target.dataset.play) play_(target.dataset.play === 'range' ? { action: 'range' } : target.dataset.play === 'royale' ? { action: 'royale' } : { action: 'quick', queue: target.dataset.play });
   else if (target.dataset.bots) play_({ action: 'bots', difficulty: target.dataset.bots });
   else if (target.dataset.join) play_({ action: 'join', room: target.dataset.join });

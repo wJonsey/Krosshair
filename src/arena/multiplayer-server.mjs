@@ -171,6 +171,26 @@ function handleCoins(socket, message) {
   reply(result.error ? 'coins-error' : 'coins-result', result);
 }
 
+// Who is on the server right now, for the developers' accounts only. Nobody else can ask, and it is
+// never broadcast: it names guests as well as accounts, so it stays between the people running the game.
+function sendOnline(socket) {
+  if (!socket.identified || !profiles.get(socket.token).dev) return;
+  const players = [...sockets].filter((other) => other.identified).map((other) => ({
+    name: other.name || 'Pilot',
+    account: Boolean(other.account),
+    room: other.room?.name || null,
+    queue: other.room?.queue || null,
+    phase: other.room?.phase || null,
+    playing: Boolean(other.player?.alive),
+    level: levelFromXp(profiles.get(other.token).xp),
+    ping: other.player?.ping || 0,
+    you: other === socket,
+  })).sort((a, b) => Number(b.account) - Number(a.account) || a.name.localeCompare(b.name));
+  const rooms = [...rooms_()].map((room) => ({ name: room.name, queue: room.queue, phase: room.phase, humans: room.connectedHumans().length, bots: [...room.players.values()].filter((p) => p.bot && !p.dummy).length }));
+  send(socket, { type: 'dev-online', players, rooms, bots: rooms.reduce((sum, room) => sum + room.bots, 0) });
+}
+const rooms_ = () => rooms.values();
+
 // A Crash round that ended on its own (crashed, or hit the auto cash-out): tell every tab on that account.
 function crashSettled(token, game) {
   for (const socket of sockets) if (socket.token === token && socket.account) send(socket, { type: 'coins-result', game, profile: profiles.view(token) });
@@ -534,6 +554,7 @@ wss.on('connection', (socket) => {
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
       if (['shop', 'game', 'crash', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
+      if (message.type === 'dev-online') return sendOnline(socket);
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {

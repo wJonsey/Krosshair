@@ -1467,3 +1467,15 @@ button.cash-out .coins { color: var(--void); }
 .loading-bar { height: 3px; background: rgba(230, 237, 241, .12); overflow: hidden; }
 .loading-bar i { display: block; width: 38%; height: 100%; background: var(--signal); animation: loading-slide 1.1s ease-in-out infinite; }
 @keyframes loading-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(320%); } }
+
+/* ---- Who is playing: the developers' own list, opened from the online chip. */
+.online-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px !important; background: rgba(0, 255, 198, .08) !important; border: 1px solid rgba(0, 255, 198, .35) !important; color: var(--frost) !important; font: 500 10px var(--mono) !important; letter-spacing: .12em !important; cursor: pointer; }
+.online-chip:hover { background: rgba(0, 255, 198, .16) !important; }
+.online-card { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgba(6, 9, 12, .72); backdrop-filter: blur(4px); }
+.online-card.hidden { display: none; }
+.online-panel { width: min(560px, 92vw); max-height: 80vh; overflow-y: auto; }
+.online-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hairline); font: 400 13px var(--body); }
+.online-row.you b { color: #00ffc6; }
+.online-row small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.online-row span { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.online-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
