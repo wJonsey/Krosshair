@@ -1,7 +1,7 @@
 // Everything outside the match: home screen, career, lobby, settings,
 // end-of-match report, share card, tutorial checklist, toasts.
 import * as THREE from 'three';
-import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, TEAM_MODES, TEAM_MODE_IDS, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
+import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, TEAM_MODES, TEAM_MODE_IDS, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
@@ -328,7 +328,9 @@ function rankedCardHtml() {
   const info = profile && game.username ? rankInfo(profile.rating, profile.rankedMatches) : null;
   const line = !game.username ? 'Humans only. Needs a Discord login.' : !info ? 'Humans only.'
     : info.placed ? `${info.name} · ${info.rating} SR` : `Placement ${info.placement.played} / ${info.placement.total}`;
-  return `<button type="button" class="play-card ranked-card${game.username ? '' : ' locked'}" data-play="ranked"${info ? ` style="--rank:${info.color}"` : ''}><small>02 // RANKED</small><strong>Climb the ladder</strong><span>${line}</span>${info ? rankBadge(info, 40) : ''}</button>`;
+  // One rating, four sizes. Each size queues on its own, so you pick the fight you want.
+  const sizes = RANKED_SIZES.map((size) => `<button type="button" data-play="ranked-${size}">${size}</button>`).join('');
+  return `<div class="play-card split ranked-card${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}><small>02 // RANKED</small><strong>Climb the ladder</strong><span>${line}</span>${info ? rankBadge(info, 40) : ''}<div class="ranked-sizes">${sizes}</div></div>`;
 }
 
 function playPageHtml() {
@@ -346,7 +348,7 @@ function playPageHtml() {
         <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
         <button type="button" class="play-card royale-card-play" data-play="royale"><small>06 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
       </div>
-      <div class="team-modes">${TEAM_MODE_IDS.map((id, index) => { const mode = TEAM_MODES[id]; return `<button type="button" class="play-card team-card" data-play="${id}"><small>0${index + 7} // ${id.toUpperCase()}</small><strong>${mode.name}</strong><span>${mode.desc}</span></button>`; }).join('')}</div>
+      <div class="team-modes">${TEAM_MODE_IDS.map((id, index) => { const mode = TEAM_MODES[id]; return `<button type="button" class="play-card team-card" data-play="${id}"><small>${String(index + 7).padStart(2, '0')} // ${id.toUpperCase()}</small><strong>${mode.name}</strong><span>${mode.desc}</span></button>`; }).join('')}</div>
       <div class="mode-grid">
         ${rankedCardHtml()}
         <button type="button" class="play-card" data-play="arcade"><small>03 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
@@ -492,7 +494,7 @@ function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({
 function play_(payload) {
   unlockAudio();
   if (!net.connected) { toast('Still connecting…', 'warn'); return; }
-  if (payload.queue === 'ranked' && !game.username) { toast('Ranked needs a Discord login.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
+  if (isRanked(payload.queue) && !game.username) { toast('Ranked needs a Discord login.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
   if (game.username) { /* signed in: straight in */ } else if (game.loginRequired && !ACCOUNTS_ENABLED) {
     if (!net.identified) { toast('Log in with Discord to play.', 'warn'); setHomePage('play'); document.querySelector('.discord-button')?.focus(); play('deny'); return; }
   } else if (!ACCOUNTS_ENABLED) {
@@ -504,7 +506,7 @@ function play_(payload) {
   } else if (!net.identified) { toast('Log in or sign up to play.', 'warn'); setHomePage('play'); $('#auth-username')?.focus(); play('deny'); return; }
   play('ready');
   // The island is a big world to build, so say what is happening instead of looking frozen.
-  const where = payload.action === 'royale' ? 'Kestrel Island' : payload.action === 'range' ? 'the practice range' : payload.queue === 'ranked' ? 'a ranked match' : TEAM_MODES[payload.queue] ? `a ${payload.queue}` : 'a match';
+  const where = payload.action === 'royale' ? 'Kestrel Island' : payload.action === 'range' ? 'the practice range' : isRanked(payload.queue) ? `a ranked ${String(payload.queue).replace('ranked-', '').replace('ranked', 'match')}` : TEAM_MODES[payload.queue] ? `a ${payload.queue}` : 'a match';
   showLoading(`Dropping into ${where}`, payload.action === 'royale' ? 'Building the island' : 'Finding a room');
   net.enter(payload);
 }
@@ -618,7 +620,7 @@ export function renderLobby() {
   const custom = room.queue === 'custom';
   const wager = room.wager;
   const seats = wager ? wager.size : 4;
-  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}${p.botType && BOT_TYPES[p.botType] ? ` · ${BOT_TYPES[p.botType].name.toUpperCase()}` : ''}` : `${titleHtml(p.title)} · LV ${p.level}${room.queue === 'ranked' ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
+  const slot = (p) => `<div class="lobby-player${p.id === game.id ? ' you' : ''}"><i style="background:${p.color}"></i><div><b>${escapeHtml(p.name)}${p.host ? ' <em>HOST</em>' : ''}</b><small>${p.bot ? `BOT · ${(BOT_DIFFICULTY[p.difficulty]?.name || '').toUpperCase()}${p.botType && BOT_TYPES[p.botType] ? ` · ${BOT_TYPES[p.botType].name.toUpperCase()}` : ''}` : `${titleHtml(p.title)} · LV ${p.level}${isRanked(room.queue) ? ` · ${rankChip(p.rating, p.rankedMatches ?? 0, 14)}` : ''}`}</small></div>${p.bot ? (host ? `<button type="button" class="mini" data-removebot="${p.id}">✕</button>` : '') : `<span class="ready-tag${p.ready ? ' on' : ''}">${p.ready ? 'READY' : 'NOT READY'}</span>`}</div>`;
   const teamColumn = (team, label) => {
     const players = room.players.filter((p) => p.team === team);
     const open = Math.max(0, seats - players.length);
@@ -638,7 +640,7 @@ export function renderLobby() {
       ${wager ? '' : `<label>Bot skill${select('botDifficulty', Object.entries(BOT_DIFFICULTY).map(([id, d]) => [id, d.name]), rules.botDifficulty)}</label>`}
       <label>Friendly fire${select('friendlyFire', [['false', 'Off'], ['true', 'On']], rules.friendlyFire)}</label>
       <label>Sudden death${select('overtimeOn', [['true', 'On'], ['false', 'Off']], rules.overtime > 0)}</label>
-    </div><small class="muted">${mapRuleSummary(rules.map)}<br />${MODIFIERS[rules.modifier].desc}</small></div>` : `<div class="panel rules"><p class="eyebrow">${room.queue.toUpperCase()} queue</p><p class="muted">${room.queue === 'ranked' ? 'Starts when a second pilot joins.' : room.queue === 'arcade' ? `<b>${MODIFIERS[rules.modifier].name}.</b> ${MODIFIERS[rules.modifier].desc}` : 'Bots hold empty seats until pilots join.'}</p></div>`;
+    </div><small class="muted">${mapRuleSummary(rules.map)}<br />${MODIFIERS[rules.modifier].desc}</small></div>` : `<div class="panel rules"><p class="eyebrow">${room.queue.toUpperCase()} queue</p><p class="muted">${isRanked(room.queue) ? 'Starts when a second pilot joins.' : room.queue === 'arcade' ? `<b>${MODIFIERS[rules.modifier].name}.</b> ${MODIFIERS[rules.modifier].desc}` : 'Bots hold empty seats until pilots join.'}</p></div>`;
   const link = `${location.origin}${location.pathname}?room=${encodeURIComponent(room.name)}`;
   const humans = room.players.filter((p) => !p.bot).length;
   const canStart = wager ? ['A', 'B'].every((team) => room.players.filter((p) => p.team === team && !p.bot).length === wager.size) && room.players.every((p) => p.bot || p.ready)
@@ -684,7 +686,7 @@ export function renderLobby() {
       const seconds = Math.max(0, Math.ceil(room.autoStartAt - net.time()));
       status.textContent = `Deploying in ${seconds}s`;
       status.classList.add('ok');
-    } else { status.textContent = room.queue === 'ranked' ? 'Searching for an opponent…' : 'Waiting for pilots…'; status.classList.remove('ok'); }
+    } else { status.textContent = isRanked(room.queue) ? 'Searching for an opponent…' : 'Waiting for pilots…'; status.classList.remove('ok'); }
   };
   tick();
   lobbyTimer = setInterval(tick, 250);

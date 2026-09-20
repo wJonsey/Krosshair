@@ -85,7 +85,7 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 .difficulty button { padding: 8px 11px !important; font-size: 10px !important; background: transparent !important; color: var(--frost) !important; border: 1px solid var(--hairline-strong) !important; }
 .difficulty button:hover { border-color: var(--signal) !important; color: var(--signal) !important; }
 
-.panel { padding: 18px; background: var(--glass); backdrop-filter: blur(12px); margin-bottom: 12px; --tick: rgba(230, 237, 241, .3); }
+.panel { padding: clamp(18px, 1.5vw, 24px); background: var(--glass); backdrop-filter: blur(12px); margin-bottom: 16px; --tick: rgba(230, 237, 241, .3); }
 .room-row-input { display: flex; gap: 10px; align-items: end; }
 .room-row-input input { margin-top: 0; flex: 1; min-width: 0; }
 .room-row-input button { white-space: nowrap; }
@@ -621,7 +621,7 @@ body[data-screen='home'] .vignette, body[data-screen='lobby'] .vignette { backgr
 .page-wide { grid-column: 1 / -1; }
 .page-title { margin: 0 0 28px; font: 400 clamp(30px, 4.2vw, 58px)/1.04 var(--display); letter-spacing: .01em; text-transform: uppercase; }
 .page-title em { color: var(--haze); font-style: normal; }
-.page-side { display: grid; gap: 12px; }
+.page-side { display: grid; gap: 16px; }
 .page-side .panel { margin: 0; }
 
 /* play */
@@ -914,7 +914,7 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .earn-list { margin: 8px 0 0; padding: 0; list-style: none; color: var(--haze); font-size: 12px; line-height: 1.8; }
 .earn-list b { color: var(--frost); font-weight: 500; }
 .shop-locked { display: grid; gap: 14px; justify-items: start; max-width: 420px; }
-.shop-skins { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; align-items: start; }
+.shop-skins { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 18px; align-items: start; }
 .shop-weapons { display: grid; gap: 2px; max-height: 620px; overflow-y: auto; padding-right: 4px; }
 .shop-class { margin: 12px 0 4px; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .shop-class:first-child { margin-top: 0; }
@@ -922,11 +922,11 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .shop-weapon img { width: 16px; height: 16px; }
 .shop-weapon small { color: var(--graphite); font: 500 10px var(--mono); }
 .shop-weapon.active { color: var(--frost) !important; border-left-color: var(--signal) !important; background: rgba(20, 27, 34, .85) !important; }
-.skin-preview { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 16px; align-items: center; }
+.skin-preview { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 20px; align-items: center; }
 .skin-preview img { width: 100%; aspect-ratio: 720 / 300; object-fit: contain; }
 .skin-preview small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .14em; }
 .skin-preview h3 { margin: 6px 0 8px; font: 400 20px/1.2 var(--display); text-transform: uppercase; }
-.skin-preview span { color: var(--haze); font-size: 13px; }
+.skin-preview span { color: var(--haze); font-size: 13px; line-height: 1.6; }
 .finish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
 .finish-card { display: grid; gap: 8px; padding: 10px; background: var(--glass); border-top: 2px solid var(--rarity, var(--hairline-strong)); }
 .finish-card.showing { box-shadow: inset 0 0 0 1px var(--hairline-strong); background: rgba(20, 27, 34, .85); }
@@ -1121,7 +1121,7 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 }
 
 /* ---------- shop: gear and charms ---------- */
-.shop-gear { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 14px; align-items: start; }
+.shop-gear { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; align-items: start; }
 .operator-try { position: relative; margin: 0; }
 .skin-stage.tall { height: 460px; }
 .try-tag { position: absolute; left: 18px; bottom: 16px; display: grid; gap: 4px; justify-items: start; }
@@ -1131,8 +1131,8 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 .try-tag .ghost-button { padding: 6px 10px !important; font-size: 9px !important; }
 .tracer-demo { position: absolute; right: 18px; top: 40px; width: 4px; height: 160px; background: linear-gradient(transparent, var(--tracer), transparent); box-shadow: 0 0 12px var(--tracer); transform: rotate(18deg); }
 .gear-kinds { flex-wrap: wrap; margin-bottom: 12px; }
-.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.gear-card { display: grid; gap: 8px; padding: 10px; background: var(--glass); border-top: 2px solid var(--hairline-strong); }
+.gear-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.gear-card { display: grid; gap: 9px; padding: 12px; background: var(--glass); border-top: 2px solid var(--hairline-strong); }
 .gear-card.on { border-top-color: var(--ally); }
 .gear-card.showing { box-shadow: inset 0 0 0 1px var(--signal); background: rgba(20, 27, 34, .85); }
 .gear-card.locked .gear-look b { color: var(--haze) !important; }
@@ -1144,7 +1144,7 @@ button.reel { display: block; width: 100%; padding: 0 !important; background: rg
 .state.crates-only { color: #ff4fa3; font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; font-style: normal; }
 .gear-swatch { display: block; width: 100%; height: 36px; background-size: 64px; background-blend-mode: multiply; border: 1px solid var(--hairline-strong); }
 .gear-title { display: block; width: 100%; padding: 8px 0; color: var(--signal); font: 400 13px var(--display); text-transform: uppercase; font-style: normal; }
-.shop-charms { display: grid; gap: 14px; }
+.shop-charms { display: grid; gap: 18px; }
 .shop-charms .skin-preview { margin: 0; }
 .charm-guns { margin-top: 12px; flex-wrap: wrap; }
 .charm-icon { display: block; width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff8, transparent 55%), var(--charm, #56626c); box-shadow: 0 0 0 1px var(--hairline-strong); }
@@ -1360,15 +1360,15 @@ button.cash-out .coins { color: var(--void); }
   .shop-crates .reveal-flip, .shop-crates .reveal .skin-stage { height: clamp(240px, 42vh, 460px); }
   .shop-skins .skin-stage { height: clamp(240px, 34vh, 380px); }
   .shop-gear { grid-template-columns: minmax(340px, .75fr) minmax(0, 1.6fr); }
-  .shop-gear .skin-stage.tall { height: calc(100vh - 330px); min-height: 440px; }
+  .shop-gear .skin-stage.tall { height: calc(100vh - 350px); min-height: 440px; }
   .shop-gear .operator-try { position: sticky; top: 84px; }
   .shop-charms { grid-template-columns: minmax(340px, .8fr) minmax(0, 1.6fr); align-items: start; }
   .shop-charms .skin-preview { position: sticky; top: 84px; grid-template-columns: 1fr; }
   .shop-charms .skin-stage { height: clamp(260px, 44vh, 480px); }
 }
 .shop-gear .gear-kinds { flex-wrap: wrap; margin-bottom: 12px; }
-.shop-gear .gear-grid, .shop-charms .gear-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 10px; }
-.shop-gear .gear-card, .shop-charms .gear-card { padding: 12px; align-content: start; transition: transform .2s var(--ease), background .2s; }
+.shop-gear .gear-grid, .shop-charms .gear-grid { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; }
+.shop-gear .gear-card, .shop-charms .gear-card { padding: 14px; align-content: start; transition: transform .2s var(--ease), background .2s; }
 .shop-gear .gear-card:hover, .shop-charms .gear-card:hover { transform: translateY(-2px); background: rgba(20, 27, 34, .85); }
 .gear-look { width: 100%; }
 .gear-thumb { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; margin-bottom: 4px; background: radial-gradient(ellipse at 50% 60%, rgba(230, 237, 241, .08), transparent 70%); }
@@ -1479,3 +1479,9 @@ button.cash-out .coins { color: var(--void); }
 .online-row small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .online-row span { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .online-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
+
+/* Ranked picks its size the way the bot match picks its difficulty. */
+.ranked-sizes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ranked-sizes button { padding: 8px 12px !important; font-size: 10px !important; letter-spacing: .12em; background: transparent !important; color: var(--frost) !important; border: 1px solid var(--hairline-strong) !important; }
+.ranked-sizes button:hover { border-color: var(--rank, var(--signal)) !important; color: var(--rank, var(--signal)) !important; }
+.ranked-card.locked .ranked-sizes button { color: var(--graphite) !important; }

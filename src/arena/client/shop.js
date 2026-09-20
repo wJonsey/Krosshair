@@ -267,20 +267,29 @@ function ensureStage() {
   stage = { canvas, renderer, scene, camera, pivot, key: '', running: false };
   return stage;
 }
+function sizeStage(s) {
+  const width = s.slot?.clientWidth || 600, height = s.slot?.clientHeight || 260;
+  s.renderer.setSize(width, height, false);
+  s.camera.aspect = width / height;
+  s.camera.updateProjectionMatrix();
+}
 // subject: { kind: 'gun', weapon, finish, charm? } or { kind: 'operator', look }. Rebuilt only when it changes.
 function showOnStage(subject) {
   const s = ensureStage(), key = JSON.stringify(subject);
   if (s.key === key) return;
   s.key = key;
   for (const child of [...s.pivot.children]) { s.pivot.remove(child); child.traverse((mesh) => mesh.geometry?.dispose()); }
-  s.charm = null; s.operator = null; s.crate = null;
+  s.charm = null; s.operator = null; s.crate = null; s.fit = null;
   if (subject.kind === 'crate') {
     const model = buildCrate(CRATES[subject.id] || CRATES.field);
     model.position.y = -0.34;
     s.pivot.add(model);
     s.crate = model;
-    s.camera.position.set(0, 1.05, 4.6 * Math.max(1, 1.5 / s.camera.aspect));
-    s.camera.lookAt(0, 0.12, 0);
+    s.fit = () => {
+      s.camera.position.set(0, 1.05, 4.6 * Math.max(1, 1.5 / s.camera.aspect));
+      s.camera.lookAt(0, 0.12, 0);
+    };
+    s.fit();
     return;
   }
   if (subject.kind === 'operator') {
@@ -288,8 +297,8 @@ function showOnStage(subject) {
     styleOperator(model, { ...lookOf(subject.look), team: 'friend' });
     s.pivot.add(model);
     s.operator = model;
-    s.camera.position.set(0, 1.0, 6.6);
-    s.camera.lookAt(0, 0.88, 0);
+    s.fit = () => frameOperator(s, model);
+    s.fit();
     return;
   }
   const model = buildWeapon(subject.weapon, '#ffb547', subject.finish);
@@ -305,9 +314,26 @@ function showOnStage(subject) {
   s.pivot.add(model);
   const length = Math.max(size.z, size.y * 2.4, 0.35);
   // A narrow stage pulls the camera back so the whole gun stays in frame.
-  const fit = Math.max(1, 1.9 / s.camera.aspect);
-  s.camera.position.set(length * (subject.charm ? 1.2 : 1.45) * fit, length * 0.28 * fit, 0);
-  s.camera.lookAt(0, subject.charm ? -0.04 : 0, 0);
+  s.fit = () => {
+    const pull = Math.max(1, 1.9 / s.camera.aspect);
+    s.camera.position.set(length * (subject.charm ? 1.2 : 1.45) * pull, length * 0.28 * pull, 0);
+    s.camera.lookAt(0, subject.charm ? -0.04 : 0, 0);
+  };
+  s.fit();
+}
+// The operator is framed off its own bounds so it fills the box whatever shape the box is.
+function frameOperator(s, model) {
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const mid = box.getCenter(new THREE.Vector3());
+  const half = Math.tan((s.camera.fov * Math.PI / 180) / 2);
+  // Margin keeps boots and headgear off the edges; the spin swaps x and z, so fit the wider of them.
+  const height = size.y * 1.08, width = Math.max(size.x, size.z) * 1.15;
+  const tall = height / 2 / half;
+  // Wide packs like wings would shrink the operator to nothing, so cap how far they push the camera.
+  const dist = Math.min(Math.max(tall, width / 2 / half / s.camera.aspect), tall * 1.3);
+  s.camera.position.set(0, mid.y, dist);
+  s.camera.lookAt(0, mid.y, 0);
 }
 function spin() {
   const s = stage;
@@ -347,9 +373,11 @@ export function mountShop() {
   if (!slot) return;
   const s = ensureStage();
   slot.append(s.canvas);
-  const width = slot.clientWidth || 600, height = slot.clientHeight || 260;
-  s.renderer.setSize(width, height, false);
-  s.camera.aspect = width / height; s.camera.updateProjectionMatrix();
+  s.slot = slot;
+  sizeStage(s);
+  // The box is fluid, so follow it instead of the size it happened to have on the first draw.
+  if (!s.watch) s.watch = new ResizeObserver(() => { sizeStage(s); s.fit?.(); });
+  s.watch.disconnect(); s.watch.observe(slot);
   showOnStage(stageSubject());
   if (!s.running) { s.running = true; requestAnimationFrame(spin); }
 }

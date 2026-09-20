@@ -337,9 +337,17 @@ export const TEAM_MODES = {
   '1v1': { id: '1v1', size: 1, name: 'Duel', desc: 'One on one. No hiding behind a team.' },
   '2v2': { id: '2v2', size: 2, name: 'Duos', desc: 'Two a side. One partner, one plan.' },
   '3v3': { id: '3v3', size: 3, name: 'Trios', desc: 'Three a side. Room to take an angle.' },
+  '5v5': { id: '5v5', size: 5, name: 'Squads', desc: 'Five a side. Hold a site, take a site.' },
 };
 export const TEAM_MODE_IDS = Object.keys(TEAM_MODES);
-export const teamSizeOf = (queue) => TEAM_MODES[queue]?.size || 0;
+// Ranked plays the same sizes, for a rating. Each size queues on its own so a duel never waits on a squad.
+export const RANKED_SIZES = ['1v1', '2v2', '3v3', '5v5'];
+export const RANKED_MODES = Object.fromEntries(RANKED_SIZES.map((size) => [`ranked-${size}`, { id: `ranked-${size}`, size: TEAM_MODES[size].size, name: TEAM_MODES[size].name, desc: TEAM_MODES[size].desc }]));
+export const RANKED_IDS = Object.keys(RANKED_MODES);
+// 'ranked' on its own is the old open queue, kept so a client running older code still finds a match.
+export const RANKED_QUEUES = ['ranked', ...RANKED_IDS];
+export const isRanked = (queue) => RANKED_QUEUES.includes(queue);
+export const teamSizeOf = (queue) => TEAM_MODES[queue]?.size || RANKED_MODES[queue]?.size || 0;
 
 // Handles in the styles real pilots pick: short words, a name with a number, an underscore or a dot, the
 // odd clan tag. The lobby, the scoreboard and their chat already say these are bots, so the names never do.

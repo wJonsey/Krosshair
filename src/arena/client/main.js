@@ -475,8 +475,9 @@ function drawViewmodel() {
   renderer.setRenderTarget(null);
   renderer.setClearColor(clearWas, alphaWas);
   blurMaterial.uniforms.uStep.value.set(1 / bufferSize.x, 1 / bufferSize.y);
-  // About 9 pixels at 1080p fully aimed; open sights a touch less than a scope's eyepiece an inch from the eye.
-  blurMaterial.uniforms.uRadius.value = amount * amount * (bufferSize.y / 1080) * (viewmodel.current?.userData.lens ? 11 : 8);
+  // A scope's eyepiece sits an inch from the eye, so the tube around it goes soft. Open sights are the
+  // thing you aim with, so they stay sharp enough to read: any more and the gun is no use.
+  blurMaterial.uniforms.uRadius.value = amount * amount * (bufferSize.y / 1080) * (viewmodel.current?.userData.lens ? 11 : 2);
   renderer.render(blurScene, blurCamera);
   viewmodel.camera.layers.set(1);
   renderer.clearDepth();

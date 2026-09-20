@@ -48,7 +48,7 @@ cat ~/.ssh/krosshair_deploy.pub
    ```bash
    printf 'Host github-krosshair\n  HostName github.com\n  User git\n  IdentityFile ~/.ssh/krosshair_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
    ssh-keyscan github.com >> ~/.ssh/known_hosts
-   git -C <checkout> remote set-url origin git@github-krosshair:wJonsey/sniper-shootout-multiplayer.git
+   git -C <checkout> remote set-url origin git@github-krosshair:wJonsey/Krosshair.git
    git -C <checkout> fetch origin
    ```
 3. Only once `fetch` works: Settings → General → Danger Zone → Change visibility → Private. Collaborators keep their access.

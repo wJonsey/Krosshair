@@ -30,7 +30,7 @@ export class LocalPlayer {
     this.epoch = 0;
     this.keys = new Set();
     this.buttons = { fire: false, scope: false };
-    this.pad = { fire: false, scope: false, prev: new Set(), active: false, aim: 0 };
+    this.pad = { fire: false, scope: false, prev: new Set(), active: false, aim: 0, uiWait: 0, uiHeld: false };
     this.crouchToggle = false; this.scopeToggle = false;
     this.crouching = false; this.crouchAmount = 0;
     this.scopeAmount = 0; this.zoomIndex = 0;
@@ -64,7 +64,9 @@ export class LocalPlayer {
     if (!this.canAct) { if (this.mode === 'killcam' && actions.includes('jump')) this.skipKillcam(); return; }
     for (const action of actions) {
       if (action === 'fire') this.fireHeld = false;
-      if (action === 'scope' && game.settings.toggleScope) this.scopeToggle = !this.scopeToggle;
+      // Only when the gun can actually come up. Pressing aim during the Anvil's 5.2 s reload used to
+      // latch the toggle, so it snapped into the sight by itself the moment the reload finished.
+      if (action === 'scope' && game.settings.toggleScope && !this.reloadEnd && !this.weapon.melee) this.scopeToggle = !this.scopeToggle;
       if (action === 'reload') this.reload();
       if (action === 'inspect' && this.alive && this.scopeAmount < 0.1) this.viewmodel.inspect();
       if (action === 'primary' || action === 'sidearm' || action === 'melee') this.switchTo(action);
@@ -393,6 +395,28 @@ export class LocalPlayer {
     const was = this.pad.prev;
     const tap = (action) => { const code = padBindFor(action); return Boolean(code && down.has(code) && !was.has(code)); };
     if (down.size || lx || ly || state.mx || state.mz) { this.pad.active = true; setInputMode('pad', pad); }
+    // With a menu open the pad drives the menu, not the pilot. These read the raw buttons rather than the
+    // bind table: a menu button has to sit where every pad puts it, whatever the pilot bound for the game.
+    if (this.uiBlocked()) {
+      const raw = (code) => down.has(code) && !was.has(code);
+      const dx = (down.has('Pad15') ? 1 : 0) - (down.has('Pad14') ? 1 : 0) || Math.round(state.mx * 0.9) || Math.round(lx * 0.9);
+      const dy = (down.has('Pad13') ? 1 : 0) - (down.has('Pad12') ? 1 : 0) || Math.round(state.mz * 0.9) || Math.round(ly * 0.9);
+      // A held direction repeats: a beat before the second step, then quickly, the way a menu should feel.
+      if (!dx && !dy) { this.pad.uiWait = 0; this.pad.uiHeld = false; } else if ((this.pad.uiWait -= dt) <= 0) {
+        this.pad.uiWait = this.pad.uiHeld ? 0.11 : 0.36;
+        this.pad.uiHeld = true;
+        if (dy) bus.emit('pad-ui', dy > 0 ? 'down' : 'up');
+        else bus.emit('pad-ui', dx > 0 ? 'right' : 'left');
+      }
+      if (raw('Pad0')) bus.emit('pad-ui', 'confirm');
+      if (raw('Pad1')) bus.emit('pad-ui', 'back');
+      if (raw('Pad4')) bus.emit('pad-ui', 'tabPrev');
+      if (raw('Pad5')) bus.emit('pad-ui', 'tabNext');
+      if (tap('menu')) bus.emit('key', 'Escape');
+      this.pad.prev = down;
+      state.mx = 0; state.mz = 0;
+      return state;
+    }
     const zoom = this.scopeAmount > 0.5 ? 0.35 : 1;
     // Aim assist eases the stick down when the crosshair is near a pilot, so a small stick move stays small.
     const slow = 1 - this.pad.aim * 0.42;

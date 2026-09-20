@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
-  CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,
+  CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, isRanked, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
@@ -242,7 +242,7 @@ export class Room {
     if (!humans) { this.autoStartAt = 0; return; }
     const t = now();
     let wait = this.queue === 'bots' ? 4 : 14;
-    if (this.queue === 'ranked') wait = humans >= 2 ? 8 : 0;
+    if (isRanked(this.queue)) wait = humans >= 2 ? 8 : 0;
     else if (humans >= 2) wait = 7;
     if (!wait) { this.autoStartAt = 0; return; }
     this.autoStartAt = this.autoStartAt ? Math.min(this.autoStartAt, t + wait) : t + wait;
@@ -366,7 +366,17 @@ export class Room {
   spawnPoint(player, index = 0) {
     const side = this.swapped ? (player.team === 'A' ? 'B' : 'A') : player.team;
     const list = this.map.spawns[side].length ? this.map.spawns[side] : this.map.spawns.A;
-    return list[index % list.length];
+    const point = list[index % list.length];
+    // Every map lays out four spawns a side, so a 5v5 runs out and starts again at the first one. The
+    // ones that wrap step aside rather than standing inside a team mate.
+    const wrap = Math.floor(index / list.length);
+    if (!wrap) return point;
+    for (let turn = 0; turn < 8; turn += 1) {
+      const angle = wrap * 2.4 + index + turn * 0.8;
+      const x = point.x + Math.cos(angle) * 1.1 * wrap, z = point.z + Math.sin(angle) * 1.1 * wrap;
+      if (this.world.bodyFree(x, point.y, z, BODY.radius, BODY.height)) return { ...point, x, z };
+    }
+    return point;
   }
 
   // at: an exact spot, for modes that choose their own (the royale drop).
@@ -491,7 +501,7 @@ export class Room {
     this.phaseEnds = now() + this.rules.matchEndTime;
     const winner = this.scores.A === this.scores.B ? null : this.scores.A > this.scores.B ? 'A' : 'B';
     const everyone = [...this.players.values()].filter((p) => !p.dummy);
-    const ranked = this.queue === 'ranked' && this.team('A').some((p) => !p.bot) && this.team('B').some((p) => !p.bot);
+    const ranked = isRanked(this.queue) && this.team('A').some((p) => !p.bot) && this.team('B').some((p) => !p.bot);
     const avg = (team) => { const list = this.team(team).filter((p) => !p.bot); return list.length ? list.reduce((s, p) => s + p.rating, 0) / list.length : 1000; };
     const expectedA = 1 / (1 + 10 ** ((avg('B') - avg('A')) / 400));
     const pool = winner ? this.team(winner) : everyone;
@@ -622,7 +632,7 @@ export class Room {
 
     if (this.wager) this.checkForfeit(t);
     if (this.phase === 'lobby' && this.autoStartAt && t >= this.autoStartAt) {
-      if (this.queue === 'ranked' && this.connectedHumans().length < 2) this.autoStartAt = 0; else beginMatch(this);
+      if (isRanked(this.queue) && this.connectedHumans().length < 2) this.autoStartAt = 0; else beginMatch(this);
     } else if (this.phase === 'mapvote') tickMapVote(this, t);
     else if (this.phase === 'buy' && t >= this.phaseEnds) this.goLive();
     else if (this.phase === 'live' && t >= this.phaseEnds) { if (this.rules.overtime > 0) this.startOvertime(); else this.resolveTimeout(); }

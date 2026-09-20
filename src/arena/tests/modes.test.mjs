@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { Room } from '../server/room.js';
-import { BOT_TYPES, TEAM_MODES, TEAM_MODE_IDS, WEAPONS, teamSizeOf } from '../shared/constants.js';
+import { BOT_TYPES, RANKED_IDS, RANKED_MODES, TEAM_MODES, TEAM_MODE_IDS, WEAPONS, isRanked, teamSizeOf } from '../shared/constants.js';
+import { MAP_IDS, getMap } from '../shared/map.js';
+import { World } from '../shared/physics.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => ({ readyState: 1, send: () => {} });
@@ -88,5 +90,40 @@ test('personalities buy the guns they should', async () => {
   // Not every roll buys (they keep money back), but most picks come from the type's own list.
   assert.ok(counts.sniper >= 20, `snipers picked their own guns ${counts.sniper} times in 40`);
   assert.ok(counts.rusher >= 20, `rushers picked their own guns ${counts.rusher} times in 40`);
+  room.close();
+});
+
+test('ranked runs 1v1, 2v2, 3v3 and 5v5, each queueing on its own', async () => {
+  assert.deepEqual(RANKED_IDS, ['ranked-1v1', 'ranked-2v2', 'ranked-3v3', 'ranked-5v5']);
+  for (const id of RANKED_IDS) {
+    assert.ok(isRanked(id), `${id} does not count as ranked`);
+    const size = RANKED_MODES[id].size;
+    assert.equal(teamSizeOf(id), size);
+    const room = await makeRoom(id);
+    assert.equal(room.capacity, size * 2);
+    room.close();
+  }
+  // The old open queue still works, and nothing else is ranked.
+  assert.ok(isRanked('ranked'));
+  for (const id of ['casual', 'arcade', 'custom', '3v3', 'royale']) assert.ok(!isRanked(id), `${id} should not be ranked`);
+});
+
+test('a 5v5 seats everyone, and nobody spawns inside a team mate', async () => {
+  const room = await makeRoom('5v5');
+  const seats = [];
+  for (let i = 0; i < 10; i += 1) seats.push(room.join(fakeSocket(), { token: ProfileStore.newToken(), session: `r${i}`, name: `P${i}` }, look));
+  assert.ok(seats.every(Boolean), 'a 5v5 turned someone away');
+  for (const map of MAP_IDS) {
+    room.map = getMap(map);
+    room.world = new World(room.map.boxes);
+    for (const team of ['A', 'B']) {
+      const spots = room.team(team).map((player, index) => room.spawnPoint(player, index));
+      assert.equal(spots.length, 5);
+      for (let i = 0; i < spots.length; i += 1) for (let j = i + 1; j < spots.length; j += 1) {
+        const gap = Math.hypot(spots[i].x - spots[j].x, spots[i].z - spots[j].z);
+        assert.ok(gap > 0.7, `${map} ${team}: two pilots spawn ${gap.toFixed(2)} m apart`);
+      }
+    }
+  }
   room.close();
 });

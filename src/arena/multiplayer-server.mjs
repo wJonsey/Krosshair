@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, TEAM_MODE_IDS, dailyModifier, dateKey, levelFromXp } from './shared/constants.js';
+import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, RANKED_IDS, TEAM_MODE_IDS, dailyModifier, dateKey, isRanked, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { isDev } from './server/devs.js';
@@ -362,9 +362,9 @@ function findQuickRoom(queue, rating = 1000) {
   open.sort((a, b) => (a.phase === 'lobby' ? 0 : 1) - (b.phase === 'lobby' ? 0 : 1) || b.connectedHumans().length - a.connectedHumans().length);
   // Ranked prefers the lobby whose pilots are closest to your rating (never splits the queue, only orders it).
   const gap = (room) => { const humans = room.connectedHumans(); return humans.length ? Math.abs(humans.reduce((sum, p) => sum + p.rating, 0) / humans.length - rating) : 400; };
-  if (queue === 'ranked') open.sort((a, b) => gap(a) - gap(b));
+  if (isRanked(queue)) open.sort((a, b) => gap(a) - gap(b));
   // Ranked never drops you into a match that is already running.
-  const pick = open.find((room) => queue !== 'ranked' || room.phase === 'lobby');
+  const pick = open.find((room) => !isRanked(queue) || room.phase === 'lobby');
   return pick || createRoom(`${queue}-${roomCounter++}`, { queue, isPublic: true });
 }
 
@@ -485,14 +485,14 @@ function enter(socket, message) {
     room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic), wager: { size, stake } });
   }
   else if (action === 'quick') {
-    const queue = ['casual', 'ranked', 'arcade', ...TEAM_MODE_IDS].includes(message.queue) ? message.queue : 'casual';
-    if (queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
+    const queue = ['casual', 'ranked', 'arcade', ...TEAM_MODE_IDS, ...RANKED_IDS].includes(message.queue) ? message.queue : 'casual';
+    if (isRanked(queue) && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
     room = findQuickRoom(queue, profiles.get(socket.token).rating);
   } else {
     const name = cleanRoomName(message.room);
     if (name.length < 3) return send(socket, { type: 'error', message: 'Room codes need 3+ characters.' });
     room = rooms.get(name);
-    if (room?.queue === 'ranked' && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
+    if (room && isRanked(room.queue) && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
     if (room?.wager && !socket.account) return send(socket, { type: 'error', message: WAGER_LOGIN });
     if (room && room.queue !== 'custom' && !room.isPublic) return send(socket, { type: 'error', message: 'That room is private.' });
     if (!room) room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic) });

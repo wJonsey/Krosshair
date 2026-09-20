@@ -315,7 +315,9 @@ function longGun(root, o, m) {
   else if (o.optic === 'dot') sightLine = redDot(k, m, railTop, -0.15);
   else if (o.optic === 'bead') { const beadY = Math.max(top + 0.006, barrelY + (o.bore || 0.02) + 0.004); k.tube(m.grey, 0.002, beadY - barrelY, [0, (beadY + barrelY) / 2, muzzle + 0.03], 6, null); k.ball(m.brass, 0.0055, [0, beadY, muzzle + 0.03]); k.box(m.black, 0.018, 0.004, o.len * 0.7, [0, top + 0.002, front + o.len * 0.45]); sightLine = beadY + 0.004; }
   else sightLine = ironSights(k, m, top, o.fore ? foreEnd + 0.04 : front + 0.03, 0.03);
-  if (o.carry) { k.box(m.dark, 0.016, 0.012, 0.16, [0, top + 0.05, front + o.len * 0.5]); for (const dz of [-0.07, 0.07]) k.box(m.dark, 0.016, 0.044, 0.014, [0, top + 0.026, front + o.len * 0.5 + dz]); }
+  // A carry handle sits where an open sight's eye line runs, so a gun wearing a dot or a holo loses it:
+  // the handle was drawn straight through the Anvil's red dot and blocked half the sight picture.
+  if (o.carry && o.optic !== 'dot' && o.optic !== 'holo') { k.box(m.dark, 0.016, 0.012, 0.16, [0, top + 0.05, front + o.len * 0.5]); for (const dz of [-0.07, 0.07]) k.box(m.dark, 0.016, 0.044, 0.014, [0, top + 0.026, front + o.len * 0.5 + dz]); }
   if (o.bipod) bipod(k, m, bottom + 0.004, foreEnd + 0.06);
   // Accent strip and a sling loop.
   k.box(m.glow, 0.004, 0.008, o.len * 0.6, [w / 2 + 0.002, -0.012, front + o.len * 0.5]);

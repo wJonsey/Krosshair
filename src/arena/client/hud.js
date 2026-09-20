@@ -62,6 +62,7 @@ export class Hud {
     bus.on('pov-hit', (kind) => this.hitmarker(kind));
     bus.on('drone', (on) => this.dom.drone.classList.toggle('hidden', !on));
     bus.on('spawned', () => { this.dom.spectate.classList.add('hidden'); this.showPovCard(null); });
+    bus.on('pad-ui', (action) => this.onPadUi(action));
   }
 
   get blocking() { return this.buyOpen || this.chatOpen || this.quickOpen; }
@@ -263,6 +264,37 @@ export class Hud {
     const item = card.dataset.item;
     net.send({ type: card.classList.contains('refundable') ? 'sell' : 'buy', item });
     play('buy');
+  }
+  // ---- the armoury on a controller. Up and down run through everything on the page, left and right
+  // (or the bumpers) change weapon class, the bottom button buys or sells, the right one deploys.
+  onPadUi(action) {
+    if (!this.buyOpen) { if (action === 'back' && this.quickOpen) this.toggleQuick(false); return; }
+    if (action === 'back') { play('uiBack'); return this.closeBuy(); }
+    const rows = [...this.dom.buy.querySelectorAll('[data-item]')];
+    if (!rows.length) return;
+    let at = rows.findIndex((row) => row.dataset.item === (this.padPick || this.buyFocus));
+    if (at < 0) at = 0;
+    if (action === 'confirm') { rows[at].click(); return; }
+    if (action === 'up' || action === 'down') {
+      at = (at + (action === 'down' ? 1 : rows.length - 1)) % rows.length;
+      this.padPick = rows[at].dataset.item;
+      this.onBuyFocus({ target: rows[at] });
+      this.paintPadFocus();
+      rows[at].scrollIntoView({ block: 'nearest' });
+      play('ui', { volume: 0.4 });
+      return;
+    }
+    // Tabs, either way round. The list redraws, so the pad lands on whatever the new class shows first.
+    const step = action === 'right' || action === 'tabNext' ? 1 : -1;
+    const at2 = WEAPON_CLASSES.findIndex((c) => c.id === this.buyTab);
+    const next = WEAPON_CLASSES[(at2 + step + WEAPON_CLASSES.length) % WEAPON_CLASSES.length];
+    this.onBuyClick({ target: this.dom.buy.querySelector(`[data-tab="${next.id}"]`) });
+    this.padPick = this.buyFocus;
+    this.paintPadFocus();
+  }
+  paintPadFocus() {
+    const pick = this.padPick;
+    for (const row of this.dom.buy.querySelectorAll('[data-item]')) row.classList.toggle('pad-focus', row.dataset.item === pick);
   }
   // Hover or keyboard focus picks what the inspect panel shows, without rebuilding the menu.
   onBuyFocus(event) {
@@ -544,8 +576,11 @@ export class Hud {
       dom.breath.style.width = `${player.breath * 100}%`;
       dom.breath.classList.toggle('winded', player.winded);
     }
-    // Aiming down any sight replaces the crosshair with the sight itself.
-    const showCross = (player.mode === 'play' || Boolean(pov)) && aim < 0.55 && !this.buyOpen;
+    // Aiming down any sight replaces the crosshair with the sight itself. A scope takes over the screen
+    // early, but an open sight only shows its dot once the eye is properly behind it, so the crosshair
+    // holds on almost to the end: the Anvil's slow 0.28 s aim used to leave you with nothing to aim with.
+    const lens = Boolean(this.player.viewmodel?.current?.userData.lens);
+    const showCross = (player.mode === 'play' || Boolean(pov)) && aim < (lens ? 0.55 : 0.92) && !this.buyOpen;
     dom.crosshair.classList.toggle('hidden', !showCross);
     if (showCross) {
       const spread = weapon.melee ? 0 : pov ? (pov.scope > 0.9 ? weapon.spread.ads : weapon.spread.hip) : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);
