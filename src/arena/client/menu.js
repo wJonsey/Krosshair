@@ -6,7 +6,7 @@ import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DE
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
 import { net } from './net.js';
-import { ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, resetBinds, setBind } from './input.js';
+import { ACTIONS, PAD_ACTIONS, RESERVED, bindLabel, bindsFor, codeLabel, input, padBindFor, padName, resetBinds, resetPadBinds, setBind, setPadBind } from './input.js';
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
@@ -404,7 +404,7 @@ export function renderHome() {
   const keep = { name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
-  if (homePage !== 'settings' && homePage !== 'controls') listening = null;
+  if (homePage !== 'settings' && homePage !== 'controls') { listening = null; padListening = null; }
   const pageHtml = SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
@@ -713,6 +713,8 @@ lobby.addEventListener('keydown', (event) => {
 const SETTINGS_TABS = [['aim', 'Aim'], ['graphics', 'Graphics'], ['audio', 'Audio & HUD'], ['crosshair', 'Crosshair'], ['binds', 'Key binds']];
 let settingsTab = 'aim';
 let listening = null; // { action, slot } while a bind button waits for a key
+let padListening = null; // the action waiting for a controller button
+let padWatch = 0;
 const FORMATS = { x2: (v) => Number(v).toFixed(2), x1: (v) => Number(v).toFixed(1), deg: (v) => `${v}°`, pct: (v) => `${Math.round(v * 100)}%`, px: (v) => `${v} px`, int: (v) => String(v) };
 const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights', 'viewDistance'];
 
@@ -766,7 +768,11 @@ function settingsBodyHtml(tab) {
     const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS A KEY…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
     return `<div class="bind-cols">${groups.map((group) => `<div class="panel"><p class="eyebrow">${group}</p>${ACTIONS.filter((action) => action.group === group).map((action) => `<div class="bind-row"><span>${action.label}</span>${slot(action, 0)}${slot(action, 1)}</div>`).join('')}</div>`).join('')}</div>
       <p class="hint bind-help">Click a slot, press a key. <b>Esc</b> cancels, <b>Backspace</b> clears. The mouse wheel always zooms and switches weapons.</p>
-      <div class="panel"><p class="eyebrow">Gamepad</p><div class="controls-list"><div><b>GAMEPAD</b><span>Sticks move/aim · RT fire · LT scope · X reload · Y swap · B crouch · LB/RB gadgets</span></div></div></div>`;
+      <div class="panel pad-panel"><p class="eyebrow">Controller <small>${input.padName ? escapeHtml(input.padName.slice(0, 40)) : 'none connected'}</small></p>
+        <p class="hint">Sticks move and aim. Click a button, then press it on the pad.</p>
+        <div class="bind-grid">${PAD_ACTIONS.map((action) => { const waiting = padListening === action.id; return `<div class="bind-row"><span>${action.label}</span><button type="button" class="bind${waiting ? ' waiting' : ''}" data-pad-bind="${action.id}">${waiting ? 'PRESS A BUTTON…' : (padBindFor(action.id) ? padName(padBindFor(action.id)) : '-')}</button></div>`; }).join('')}</div>
+        ${toggle('aimAssist', 'Aim assist', 'Controller only. Slows your aim near a pilot and helps it along a little.')}
+        <div class="button-row"><button type="button" id="reset-pad-binds" class="ghost-button">Reset controller</button></div></div>`;
   }
   return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Sensitivity</p>${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, 'x2')}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, 'x2', s.scopeSensitivity, 'While aiming.')}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, 'x1')}</div>
     <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}</div></div>`;
@@ -833,7 +839,9 @@ function onSettingsClick(event) {
     listening = null; settingsTab = target.dataset.settingsTab; play('ui');
     if (settingsOverlayOpen()) openSettings(); else { pageEntering = true; setHomePage(settingsTab === 'binds' ? 'controls' : 'settings'); renderHome(); }
   } else if (target.dataset.preset) { game.settings.quality = target.dataset.preset; saveSettings(); play('ui'); refreshSettings(); }
-  else if (target.dataset.bind) { listening = { action: target.dataset.bind, slot: Number(target.dataset.slot) }; play('ui'); refreshSettings(); }
+  else if (target.dataset.bind) { listening = { action: target.dataset.bind, slot: Number(target.dataset.slot) }; padListening = null; play('ui'); refreshSettings(); }
+  else if (target.dataset.padBind) { padListening = target.dataset.padBind; listening = null; play('ui'); watchPad(); refreshSettings(); }
+  else if (target.id === 'reset-pad-binds') { resetPadBinds(); play('uiBack'); refreshSettings(); }
   else if (target.dataset.xhPreset) { game.settings.crosshair = cleanCrosshair(CROSSHAIR_PRESETS[Number(target.dataset.xhPreset)][1]); saveSettings(); play('ui'); refreshSettings(); }
   else if (target.dataset.xhColor) { game.settings.crosshair = { ...currentCrosshair(), color: target.dataset.xhColor }; saveSettings(); play('ui'); refreshSettings(); }
   else if (target.id === 'xh-copy') navigator.clipboard?.writeText($('#xh-code').value).then(() => toast('Copied.', 'good'), () => toast('Copy blocked. Select the code and copy it.', 'warn'));
@@ -847,13 +855,40 @@ function onSettingsClick(event) {
   else return false;
   return true;
 }
+// A controller bind waits for the next button on the pad itself.
+function watchPad() {
+  cancelAnimationFrame(padWatch);
+  const was = new Set();
+  const tick = () => {
+    if (!padListening) return;
+    const pad = [...(navigator.getGamepads?.() || [])].find((entry) => entry && entry.connected);
+    if (pad) {
+      pad.buttons.forEach((button, index) => {
+        const code = `Pad${index}`;
+        const down = button.pressed || button.value > 0.4;
+        if (down && !was.has(code) && padListening) {
+          const action = padListening;
+          padListening = null;
+          const displaced = setPadBind(action, code);
+          if (displaced) toast(`${padName(code)} removed from ${displaced}.`, 'info');
+          play('ready');
+          refreshSettings();
+        }
+        if (down) was.add(code); else was.delete(code);
+      });
+    }
+    padWatch = requestAnimationFrame(tick);
+  };
+  padWatch = requestAnimationFrame(tick);
+}
+
 // While a bind slot is waiting, the next key or mouse button goes to it and nowhere else.
 function captureBind(event) {
   if (!listening) return;
   event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
   const code = event.type === 'keydown' ? event.code : `Mouse${event.button}`;
   const { action, slot } = listening;
-  if (code === 'Escape') { listening = null; play('uiBack'); return refreshSettings(); }
+  if (code === 'Escape') { listening = null; padListening = null; play('uiBack'); return refreshSettings(); }
   if (RESERVED.includes(code)) { toast(`${codeLabel(code)} is reserved.`, 'warn'); play('deny'); return; }
   listening = null;
   const displaced = setBind(action, slot, code === 'Backspace' || code === 'Delete' ? null : code);

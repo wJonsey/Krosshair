@@ -23,6 +23,16 @@ function cleanBinds(binds) {
   }
   return out;
 }
+// Controller binds: one button per action, or null for none.
+function cleanPadBinds(binds) {
+  if (!binds || typeof binds !== 'object' || Array.isArray(binds)) return null;
+  const out = {};
+  for (const [action, code] of Object.entries(binds).slice(0, 40)) {
+    if (!/^[A-Za-z0-9]{1,24}$/.test(action)) continue;
+    out[action] = typeof code === 'string' && /^Pad([0-9]|1[0-9])$/.test(code) ? code : null;
+  }
+  return out;
+}
 function cleanCrosshair(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const num = (value, min, max) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : min);
@@ -38,7 +48,7 @@ function cleanCrosshair(c) {
 const SETTING_RULES = {
   sensitivity: [0.1, 5], scopeSensitivity: [0.1, 3], padSensitivity: [0.1, 5], fov: [50, 120], volume: [0, 1], ambience: [0, 1], music: [0, 1], musicInMatch: 'bool', settingsVersion: [1, 99],
   quality: ['ultra', 'high', 'medium', 'low', 'custom'], renderScale: [0.4, 2], shadows: ['off', 'low', 'high', 'ultra'], streetLights: 'bool', brightness: [0.5, 2], fpsCap: [0, 360], autoQuality: 'bool', showFps: 'bool',
-  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool',
+  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool', aimAssist: 'bool',
 };
 
 export class ProfileStore {
@@ -240,6 +250,7 @@ export class ProfileStore {
         if (rule === 'bool') { if (typeof value === 'boolean') clean[key] = value; } else if (typeof rule[0] === 'string') { if (rule.includes(value)) clean[key] = value; } else if (Number.isFinite(value)) clean[key] = Math.min(rule[1], Math.max(rule[0], value));
       }
       const binds = cleanBinds(settings.binds); if (binds) clean.binds = binds;
+      const padBinds = cleanPadBinds(settings.padBinds); if (padBinds) clean.padBinds = padBinds;
       const crosshair = cleanCrosshair(settings.crosshair); if (crosshair) clean.crosshair = crosshair;
       profile.settings = clean;
     }

@@ -7,13 +7,17 @@ import { makeBody } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
-import { actionsFor, bindsFor, held, mouseCode } from './input.js';
+import { actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode } from './input.js';
 import { net } from './net.js';
 import { DROP, PAD_LAUNCH } from '../shared/royale.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
 
 const SLOTS = ['primary', 'sidearm', 'melee'];
 const forward = new THREE.Vector3();
+const scratchDir = new THREE.Vector3(), scratchTo = new THREE.Vector3();
+// Controller aim assist. Deliberately mild: it slows the stick near a pilot and drifts the aim a little
+// while you are already moving it. No snapping, no auto fire, no help through walls.
+const AIM_ASSIST = { cone: 0.16, range: 95, pull: 2.4 };
 
 export class LocalPlayer {
   constructor({ camera, arena, viewmodel, effects, operators, canvas }) {
@@ -26,7 +30,7 @@ export class LocalPlayer {
     this.epoch = 0;
     this.keys = new Set();
     this.buttons = { fire: false, scope: false };
-    this.pad = { fire: false, scope: false, prev: [] };
+    this.pad = { fire: false, scope: false, prev: new Set(), active: false, aim: 0 };
     this.crouchToggle = false; this.scopeToggle = false;
     this.crouching = false; this.crouchAmount = 0;
     this.scopeAmount = 0; this.zoomIndex = 0;
@@ -54,6 +58,7 @@ export class LocalPlayer {
   // One entry point for keys and mouse buttons, so anything can be bound to anything.
   press(code) {
     this.keys.add(code);
+    setInputMode('kbm');
     bus.emit('key', code);
     const actions = actionsFor(code);
     if (!this.canAct) { if (this.mode === 'killcam' && actions.includes('jump')) this.skipKillcam(); return; }
@@ -377,33 +382,80 @@ export class LocalPlayer {
   pollPad(dt) {
     const pad = [...(navigator.getGamepads?.() || [])].find((entry) => entry && entry.connected);
     const state = { mx: 0, mz: 0 };
-    if (!pad) { this.pad.fire = false; this.pad.scope = false; return state; }
+    this.pad.active = false;
+    if (!pad) { this.pad.fire = false; this.pad.scope = false; this.pad.prev = new Set(); return state; }
     const dead = (value) => (Math.abs(value) < 0.16 ? 0 : (value - Math.sign(value) * 0.16) / 0.84);
     state.mx = dead(pad.axes[0] || 0); state.mz = dead(pad.axes[1] || 0);
     const lx = dead(pad.axes[2] || 0), ly = dead(pad.axes[3] || 0);
+    // Every button as a code, so the pad reads from its own bind table like the keyboard does.
+    const down = new Set();
+    pad.buttons.forEach((button, index) => { if (button.pressed || button.value > 0.4) down.add(`Pad${index}`); });
+    const was = this.pad.prev;
+    const tap = (action) => { const code = padBindFor(action); return Boolean(code && down.has(code) && !was.has(code)); };
+    if (down.size || lx || ly || state.mx || state.mz) { this.pad.active = true; setInputMode('pad', pad); }
     const zoom = this.scopeAmount > 0.5 ? 0.35 : 1;
-    if (lx || ly) this.look(lx * Math.abs(lx) * 3.2 * dt * game.settings.padSensitivity * zoom, ly * Math.abs(ly) * 2.4 * dt * game.settings.padSensitivity * zoom * (game.settings.invertY ? -1 : 1));
-    const pressed = pad.buttons.map((button) => button.pressed || button.value > 0.4);
-    const tapped = (index) => pressed[index] && !this.pad.prev[index];
-    this.pad.fire = Boolean(pressed[7]);
-    if (tapped(7)) this.fireHeld = false;
-    this.pad.scope = Boolean(pressed[6]);
-    this.pad.jump = Boolean(pressed[0]);
-    this.pad.walk = Boolean(pressed[10]);
+    // Aim assist eases the stick down when the crosshair is near a pilot, so a small stick move stays small.
+    const slow = 1 - this.pad.aim * 0.42;
+    if (lx || ly) this.look(lx * Math.abs(lx) * 3.2 * dt * game.settings.padSensitivity * zoom * slow, ly * Math.abs(ly) * 2.4 * dt * game.settings.padSensitivity * zoom * slow * (game.settings.invertY ? -1 : 1));
+    this.pad.stick = Math.hypot(lx, ly);
+    this.pad.fire = padHeld(down, 'fire');
+    if (tap('fire')) this.fireHeld = false;
+    this.pad.scope = padHeld(down, 'scope');
+    this.pad.jump = padHeld(down, 'jump');
+    this.pad.walk = padHeld(down, 'walk');
     if (this.canAct) {
-      if (tapped(1)) this.crouchToggle = !this.crouchToggle;
-      if (tapped(2)) this.reload();
-      if (tapped(3)) { const owned = SLOTS.filter((slot) => game.you?.weapons?.[slot]); this.switchTo(owned[(owned.indexOf(this.active) + 1) % owned.length]); }
-      if (tapped(4)) this.useGadget(0);
-      if (tapped(5)) this.useGadget(1);
-      if (tapped(12)) this.ping();
-      if (tapped(11)) this.switchTo('melee');
-    } else if (this.mode === 'spectate' && tapped(0)) this.cycleSpectate(1);
-    else if (this.mode === 'killcam' && tapped(0)) this.skipKillcam();
-    if (tapped(9)) bus.emit('key', 'Escape');
-    if (tapped(8)) bus.emit('pad-scoreboard');
-    this.pad.prev = pressed;
+      if (tap('crouch')) this.crouchToggle = !this.crouchToggle;
+      if (tap('reload')) this.reload();
+      if (tap('swap')) { const owned = SLOTS.filter((slot) => game.you?.weapons?.[slot]); this.switchTo(owned[(owned.indexOf(this.active) + 1) % owned.length]); }
+      if (tap('gadget1')) this.useGadget(0);
+      if (tap('gadget2')) this.useGadget(1);
+      if (tap('ping')) this.ping();
+      if (tap('melee')) this.switchTo('melee');
+      // These live on the keyboard's side of the game, so the pad presses their key for them.
+      for (const action of ['interact', 'armoury']) if (tap(action)) bus.emit('key', bindsFor(action)[0] || bindsFor(action)[1]);
+      if (tap('inspect') && this.scopeAmount < 0.1) this.viewmodel.inspect();
+    } else if (this.mode === 'spectate' && tap('jump')) this.cycleSpectate(1);
+    else if (this.mode === 'killcam' && tap('jump')) this.skipKillcam();
+    if (tap('menu')) bus.emit('key', 'Escape');
+    if (tap('scoreboard')) bus.emit('pad-scoreboard');
+    this.pad.prev = down;
     return state;
+  }
+
+  // Aim assist, controller only. Two gentle helpers, both off unless a pilot is near the crosshair and in
+  // the open: the stick slows down (above) and the aim drifts a little toward them. It never fires, never
+  // locks on, and never moves the aim on its own when the stick is still.
+  aimAssist(dt) {
+    this.pad.aim = 0;
+    if (!this.pad.active || !this.alive || game.settings.aimAssist === false || this.mode !== 'play') return;
+    const camera = this.camera, origin = camera.position;
+    const forward = scratchDir.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    let best = null, bestAngle = AIM_ASSIST.cone;
+    for (const target of this.operators.targets()) {
+      if (target.kind !== 'player') continue;
+      const to = scratchTo.set(target.x - origin.x, target.y + (target.crouch ? 0.95 : 1.35) - origin.y, target.z - origin.z);
+      const dist = to.length();
+      if (dist < 1.2 || dist > AIM_ASSIST.range) continue;
+      to.multiplyScalar(1 / dist);
+      const angle = Math.acos(Math.min(1, Math.max(-1, to.dot(forward))));
+      if (angle > bestAngle) continue;
+      // Only for a pilot you can actually see.
+      const hit = this.arena.physics.raycast([origin.x, origin.y, origin.z], [to.x, to.y, to.z], dist - 0.6);
+      if (hit) continue;
+      bestAngle = angle; best = { to: to.clone(), angle, dist };
+    }
+    if (!best) return;
+    // Full help dead on the target, fading to nothing at the edge of the cone.
+    const closeness = 1 - best.angle / AIM_ASSIST.cone;
+    this.pad.aim = closeness;
+    // The drift only helps while you are already moving the stick, and never more than a few degrees a second.
+    const moving = Math.min(1, (this.pad.stick || 0) * 2.2);
+    if (!moving) return;
+    const wantYaw = Math.atan2(-best.to.x, -best.to.z);
+    const wantPitch = Math.asin(Math.max(-1, Math.min(1, best.to.y)));
+    const pull = AIM_ASSIST.pull * closeness * moving * dt * (this.scopeAmount > 0.5 ? 0.5 : 1);
+    this.yaw += Math.atan2(Math.sin(wantYaw - this.yaw), Math.cos(wantYaw - this.yaw)) * Math.min(1, pull);
+    this.pitch += (wantPitch - this.pitch) * Math.min(1, pull);
   }
 
   update(dt, wallDt = dt) {
@@ -419,6 +471,7 @@ export class LocalPlayer {
         if (this.mode === 'play') this.updatePlay(step, now, pad); else if (this.mode === 'drone') this.updateDrone(step, pad);
       }
     }
+    if (this.mode === 'play') this.aimAssist(dt);
     else if (this.mode === 'dead') this.updateDead(wallDt);
     else if (this.mode === 'killcam' || this.mode === 'replay') this.updateReplayCamera(wallDt);
     else if (this.mode === 'spectate') this.updateSpectate(wallDt);

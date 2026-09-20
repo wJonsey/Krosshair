@@ -1451,3 +1451,8 @@ button.cash-out .coins { color: var(--void); }
 
 /* Scopes are real glass on the gun now: the HUD keeps only the zoom label and the breath meter. */
 .scope-overlay.glass::before, .scope-overlay.glass .scope-crosshair, .scope-overlay.glass .scope-mil { display: none; }
+
+/* ---- Controller binds on the Controls page. */
+.pad-panel .bind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; margin-bottom: 10px; }
+.pad-panel .bind-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--hairline); }
+.pad-panel .check { margin-top: 6px; }

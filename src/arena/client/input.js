@@ -1,6 +1,8 @@
-// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW') or a mouse button ('Mouse0').
-// Every action has two slots so the classic doubles (CTRL / C to crouch) still work after rebinding.
-import { game, saveSettings } from './state.js';
+// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW'), a mouse button ('Mouse0') or a
+// controller button ('Pad0'). Keyboard and controller keep their own bind tables, so a pad never takes
+// a key away from anyone. Every keyboard action has two slots so the classic doubles (CTRL / C to
+// crouch) still work after rebinding.
+import { bus, game, saveSettings } from './state.js';
 
 export const ACTIONS = [
   ['forward', 'Move forward', 'Movement'], ['back', 'Move back', 'Movement'], ['left', 'Strafe left', 'Movement'], ['right', 'Strafe right', 'Movement'],
@@ -22,6 +24,61 @@ export const DEFAULT_BINDS = {
 // Keys the game keeps for itself.
 export const RESERVED = ['Escape', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight'];
 
+// Which kind of controller a pad is, by its id, so the prompts show the right letters.
+const XBOX = { Pad0: 'A', Pad1: 'B', Pad2: 'X', Pad3: 'Y', Pad4: 'LB', Pad5: 'RB', Pad6: 'LT', Pad7: 'RT', Pad8: 'VIEW', Pad9: 'MENU', Pad10: 'L3', Pad11: 'R3', Pad12: 'D-UP', Pad13: 'D-DOWN', Pad14: 'D-LEFT', Pad15: 'D-RIGHT', Pad16: 'GUIDE' };
+const PLAYSTATION = { Pad0: '✕', Pad1: '○', Pad2: '□', Pad3: '△', Pad4: 'L1', Pad5: 'R1', Pad6: 'L2', Pad7: 'R2', Pad8: 'SHARE', Pad9: 'OPTIONS', Pad10: 'L3', Pad11: 'R3', Pad12: 'D-UP', Pad13: 'D-DOWN', Pad14: 'D-LEFT', Pad15: 'D-RIGHT', Pad16: 'PS' };
+export const PAD_CODES = Object.keys(XBOX);
+// What the game is being played with right now. It flips on the first press of either kind.
+export const input = { mode: 'kbm', padName: '', playstation: false };
+export function setInputMode(mode, pad = null) {
+  if (pad) {
+    const id = pad.id || '';
+    input.padName = id;
+    // Sony's vendor id is 054c. "Wireless Controller" alone is not enough: Xbox pads say that too.
+    input.playstation = /dualshock|dualsense|playstation|054c/i.test(id) || (/wireless controller/i.test(id) && !/xbox|045e/i.test(id));
+  }
+  if (input.mode === mode) return;
+  input.mode = mode;
+  bus.emit('input-mode', mode);
+}
+export const padName = (code) => (input.playstation ? PLAYSTATION : XBOX)[code] || String(code || '').toUpperCase();
+
+// Controller binds live in their own table.
+export const DEFAULT_PAD_BINDS = {
+  fire: 'Pad7', scope: 'Pad6', jump: 'Pad0', crouch: 'Pad1', walk: 'Pad10', reload: 'Pad2',
+  swap: 'Pad3', gadget1: 'Pad4', gadget2: 'Pad5', melee: 'Pad11', ping: 'Pad12', interact: 'Pad14',
+  armoury: 'Pad15', inspect: 'Pad13', scoreboard: 'Pad8', menu: 'Pad9',
+};
+// Actions a controller can hold, in the order the settings page lists them.
+export const PAD_ACTIONS = [
+  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['crouch', 'Crouch'], ['walk', 'Walk · hold breath'],
+  ['reload', 'Reload'], ['swap', 'Swap weapon'], ['melee', 'Blade'], ['gadget1', 'Gadget 1'], ['gadget2', 'Gadget 2'],
+  ['interact', 'Pick up (royale)'], ['armoury', 'Armoury'], ['inspect', 'Inspect weapon'], ['ping', 'Ping location'],
+  ['scoreboard', 'Scoreboard'], ['menu', 'Pause / back'],
+].map(([id, label]) => ({ id, label }));
+export function padBindFor(action) {
+  const saved = game.settings.padBinds?.[action];
+  return saved === null ? null : saved || DEFAULT_PAD_BINDS[action] || null;
+}
+export const padHeld = (codes, action) => { const code = padBindFor(action); return Boolean(code && codes.has(code)); };
+export const padActionFor = (code) => PAD_ACTIONS.find((action) => padBindFor(action.id) === code)?.id || null;
+export const padLabel = (action) => { const code = padBindFor(action); return code ? padName(code) : 'UNBOUND'; };
+// One pad button does one thing: setting it takes it off whatever had it.
+export function setPadBind(action, code) {
+  const binds = { ...(game.settings.padBinds || {}) };
+  let displaced = null;
+  if (code) for (const other of PAD_ACTIONS) {
+    if (other.id === action || padBindFor(other.id) !== code) continue;
+    binds[other.id] = null;
+    displaced = other.label;
+  }
+  binds[action] = code;
+  game.settings.padBinds = binds;
+  saveSettings();
+  return displaced;
+}
+export function resetPadBinds() { game.settings.padBinds = {}; saveSettings(); }
+
 export function bindsFor(action) {
   const saved = game.settings.binds?.[action];
   return Array.isArray(saved) ? [saved[0] ?? null, saved[1] ?? null] : DEFAULT_BINDS[action] || [null, null];
@@ -41,7 +98,12 @@ export function codeLabel(code) {
   return code.replace(/([a-z])([A-Z])/g, '$1 $2').toUpperCase();
 }
 // "L-CTRL / C" for prompts and the tutorial.
-export const bindLabel = (action) => bindsFor(action).filter(Boolean).map(codeLabel).join(' / ') || 'UNBOUND';
+export const keyLabel = (action) => bindsFor(action).filter(Boolean).map(codeLabel).join(' / ') || 'UNBOUND';
+// On a controller the prompts name the controller's button instead.
+export function bindLabel(action) {
+  if (input.mode === 'pad') { const code = padBindFor(action); if (code) return padName(code); }
+  return keyLabel(action);
+}
 
 // Bind a code to one slot of an action. A code can only do one thing, so it is taken off whatever had it.
 // Returns the label of the action that lost it, if any.

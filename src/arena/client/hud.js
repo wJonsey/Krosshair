@@ -4,7 +4,7 @@ import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIO
 import { zoneAt } from '../shared/map.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
-import { bindLabel, bindsFor, codeLabel, isBound } from './input.js';
+import { bindLabel, bindsFor, codeLabel, isBound, input, padBindFor } from './input.js';
 import { crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, announce } from './audio.js';
 import { skinArt, skinArtReady, weaponArt } from './weaponart.js';
@@ -53,6 +53,8 @@ export class Hud {
     addEventListener('keyup', (event) => { if (isBound('scoreboard', event.code)) this.toggleScoreboard(false); });
     addEventListener('mouseup', (event) => { if (isBound('scoreboard', `Mouse${event.button}`)) this.toggleScoreboard(false); });
     bus.on('settings', () => { this.refreshHints(); this.refreshCrosshair(); });
+    // Picking up a controller (or going back to the keyboard) changes every prompt in the game.
+    bus.on('input-mode', () => this.refreshHints());
     this.refreshHints();
     this.refreshCrosshair();
     bus.on('spectate', (id) => { this.dom.spectate.classList.toggle('hidden', !id); if (id) this.dom.spectateName.textContent = nameOf(id); });
@@ -75,9 +77,15 @@ export class Hud {
   }
   refreshHints() {
     const hint = document.querySelector('#controls-hint');
-    if (hint) hint.innerHTML = [['armoury', 'armoury'], [null, 'gadgets'], ['ping', 'ping'], ['radio', 'radio'], ['chat', 'chat'], ['scoreboard', 'scores']].map(([action, text]) => `<span><b>${action ? codeLabel(bindsFor(action)[0] || bindsFor(action)[1]) : `${codeLabel(bindsFor('gadget1')[0])} / ${codeLabel(bindsFor('gadget2')[0])}`}</b> ${text}</span>`).join('');
+    // On a controller every prompt names the controller's button instead of the key.
+    const pad = input.mode === 'pad';
+    const one = (action) => (pad ? bindLabel(action) : codeLabel(bindsFor(action)[0] || bindsFor(action)[1]));
+    const rows = pad
+      ? [['armoury', 'armoury'], [null, 'gadgets'], ['ping', 'ping'], ['swap', 'swap'], ['interact', 'pick up'], ['scoreboard', 'scores']]
+      : [['armoury', 'armoury'], [null, 'gadgets'], ['ping', 'ping'], ['radio', 'radio'], ['chat', 'chat'], ['scoreboard', 'scores']];
+    if (hint) hint.innerHTML = rows.filter(([action]) => action === null || !pad || padBindFor(action)).map(([action, text]) => `<span><b>${action ? one(action) : `${one('gadget1')} / ${one('gadget2')}`}</b> ${text}</span>`).join('');
     const breath = document.querySelector('.scope-overlay .breath span');
-    if (breath) breath.textContent = `HOLD BREATH // ${codeLabel(bindsFor('walk')[0] || bindsFor('walk')[1])}`;
+    if (breath) breath.textContent = `HOLD BREATH // ${one('walk')}`;
   }
 
   onKey(code) {
