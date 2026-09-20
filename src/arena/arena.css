@@ -629,7 +629,7 @@ body[data-screen='home'] .vignette, body[data-screen='lobby'] .vignette { backgr
 .page-play .play-card.primary strong { font-size: clamp(24px, 2.6vw, 34px); }
 .play-card .go { position: absolute; right: 28px; bottom: 30px; color: var(--signal); font: 500 11px var(--mono); font-style: normal; letter-spacing: .14em; text-transform: uppercase; transition: transform .25s var(--ease); }
 .play-card.primary:hover .go { transform: translateX(6px); }
-.mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(172px, 1fr)); gap: 12px; margin-top: 12px; }
 .mode-grid .play-card { min-height: 132px; transition: transform .25s var(--ease), background .2s; }
 .mode-grid .play-card:hover:not(.split) { transform: translateY(-3px); }
 .pilot .callsign-field { margin-bottom: 20px; }
@@ -793,8 +793,8 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .menu-page { max-width: 1840px; grid-template-columns: minmax(0, 1fr) minmax(340px, 480px); padding-top: clamp(22px, 3.5vh, 48px); }
 .page-title { margin-bottom: clamp(16px, 2.4vh, 28px); }
 .page-play { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr) minmax(320px, 1fr); }
-.page-play .mode-grid .play-card { min-height: clamp(132px, 17vh, 190px); }
-.page-play .play-card.primary { padding-block: clamp(30px, 5vh, 56px) !important; }
+.page-play .mode-grid .play-card { min-height: clamp(118px, 14vh, 170px); }
+.page-play .play-card.primary { padding-block: clamp(24px, 3.4vh, 44px) !important; }
 .operator-stage .stage { min-height: clamp(380px, calc(100vh - 330px), 760px); }
 .operator-stage #operator-preview { height: clamp(340px, calc(100vh - 380px), 700px); width: min(520px, 90%); }
 .career-grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
@@ -880,10 +880,7 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 .rank-report { margin-top: 12px; padding-top: 12px; }
 .rank-report b { display: block; margin-bottom: 8px; color: var(--rank); font: 500 11px var(--mono); letter-spacing: .12em; }
 .rank-report.bad b { color: var(--loss); }
-.ranked-card { position: relative; }
-.ranked-card .rank-badge { position: absolute; top: 16px; right: 16px; }
-.ranked-card span { color: var(--rank, var(--haze)) !important; }
-.ranked-card.locked span { color: var(--graphite) !important; }
+
 .board-row em .rank-badge, .podium-card em .rank-badge { display: inline-block; margin-right: 6px; vertical-align: middle; }
 
 /* ---------- coins ---------- */
@@ -1308,10 +1305,11 @@ button.cash-out .coins { color: var(--void); }
 .room-make .panel { margin: 0; height: 100%; }
 
 /* ---- play page: modes, operator stage, side stack; fills the screen ---- */
-.page-play { grid-template-columns: minmax(0, 1.4fr) minmax(280px, .85fr) minmax(320px, 1fr); align-items: stretch; min-height: calc(100vh - 68px - 52px); }
+/* One screen: the bar, this page's own padding and the footer all come off the viewport first. */
+.page-play { grid-template-columns: minmax(0, 1.4fr) minmax(280px, .85fr) minmax(320px, 1fr); align-items: stretch; min-height: calc(100vh - 68px - 59px - 81px); }
 .play-modes { display: flex; flex-direction: column; min-width: 0; }
 .hero-row { display: grid; grid-template-columns: 1.35fr 1fr; gap: 12px; }
-.hero-row .play-card { min-height: clamp(170px, 24vh, 260px); justify-content: flex-end; }
+.hero-row .play-card { min-height: clamp(140px, 17vh, 210px); justify-content: flex-end; }
 .page-play .mode-grid { flex: 1; grid-auto-rows: minmax(132px, 1fr); }
 .play-card.soon { position: relative; overflow: hidden; cursor: not-allowed; background: linear-gradient(135deg, rgba(108, 230, 209, .1), transparent 60%), repeating-linear-gradient(-45deg, rgba(230, 237, 241, .035) 0 10px, transparent 10px 20px), rgba(11, 16, 21, .8) !important; }
 .play-card.soon strong { font-size: clamp(16px, 1.5vw, 22px); color: var(--haze); }
@@ -1407,10 +1405,26 @@ button.cash-out .coins { color: var(--void); }
 .dev-note { color: #00ffc6; }
 
 /* ---- 1v1, 2v2 and 3v3 cards on the play page. */
-.team-modes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
-.team-card small { color: var(--signal); }
-.team-card strong { font-size: 18px; }
-@media (max-width: 720px) { .team-modes { grid-template-columns: 1fr; } }
+/* A mode block: one heading, then a row of team sizes. Ranked and the unranked queues share it. */
+.mode-block { padding: 13px 15px; background: var(--glass); backdrop-filter: blur(12px); --tick: rgba(230, 237, 241, .3); }
+.block-head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 14px; margin-bottom: 12px; }
+.block-head small { grid-column: 1; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .16em; }
+.block-head b { grid-column: 1; font: 400 17px/1.2 var(--display); text-transform: uppercase; }
+.block-head span { grid-column: 1; color: var(--haze); font-size: 12px; line-height: 1.45; }
+.block-head .rank-badge { grid-column: 2; grid-row: 1 / span 3; }
+.mode-blocks { display: grid; gap: 12px; margin-top: 12px; }
+.size-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; }
+.size-chip { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 11px 13px !important; background: rgba(230, 237, 241, .04) !important; border: 1px solid var(--hairline-strong) !important; color: var(--frost) !important; text-transform: none !important; letter-spacing: 0 !important; }
+.size-chip b { font: 500 13px var(--mono); letter-spacing: .1em; }
+.size-chip span { color: var(--haze); font: 400 11px var(--body); }
+.size-chip:hover { border-color: var(--signal) !important; background: rgba(108, 230, 209, .1) !important; }
+.size-chip:hover b { color: var(--signal); }
+.ranked-block .block-head small, .ranked-block .block-head span { color: var(--rank, var(--haze)); }
+.ranked-block .size-chip:hover { border-color: var(--rank, var(--signal)) !important; background: color-mix(in srgb, var(--rank, var(--signal)) 12%, transparent) !important; }
+.ranked-block .size-chip:hover b { color: var(--rank, var(--signal)); }
+.ranked-block.locked .block-head span { color: var(--graphite); }
+/* Wide enough for the page's three columns: ranked and the unranked queues sit side by side. */
+@media (min-width: 1321px) { .mode-blocks { grid-template-columns: 1fr 1fr; } }
 .skins-owned { margin: 2px 0 6px; font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 
 /* ---- The crate page fits the window: the lists scroll inside it, never the page. */
@@ -1479,9 +1493,3 @@ button.cash-out .coins { color: var(--void); }
 .online-row small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .online-row span { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .online-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
-
-/* Ranked picks its size the way the bot match picks its difficulty. */
-.ranked-sizes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.ranked-sizes button { padding: 8px 12px !important; font-size: 10px !important; letter-spacing: .12em; background: transparent !important; color: var(--frost) !important; border: 1px solid var(--hairline-strong) !important; }
-.ranked-sizes button:hover { border-color: var(--rank, var(--signal)) !important; color: var(--rank, var(--signal)) !important; }
-.ranked-card.locked .ranked-sizes button { color: var(--graphite) !important; }

@@ -329,9 +329,13 @@ function rankedCardHtml() {
   const line = !game.username ? 'Humans only. Needs a Discord login.' : !info ? 'Humans only.'
     : info.placed ? `${info.name} · ${info.rating} SR` : `Placement ${info.placement.played} / ${info.placement.total}`;
   // One rating, four sizes. Each size queues on its own, so you pick the fight you want.
-  const sizes = RANKED_SIZES.map((size) => `<button type="button" data-play="ranked-${size}">${size}</button>`).join('');
-  return `<div class="play-card split ranked-card${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}><small>02 // RANKED</small><strong>Climb the ladder</strong><span>${line}</span>${info ? rankBadge(info, 40) : ''}<div class="ranked-sizes">${sizes}</div></div>`;
+  return `<section class="mode-block ranked-block${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}>
+    <header class="block-head"><small>03 // RANKED</small><b>Climb the ladder</b><span>${line}</span>${info ? rankBadge(info, 34) : ''}</header>
+    <div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>
+  </section>`;
 }
+// One button per team size, the same shape in ranked and in the unranked queues.
+const sizeChip = (prefix) => (id) => `<button type="button" class="size-chip" data-play="${prefix}${id}"><b>${id.toUpperCase()}</b><span>${TEAM_MODES[id].name}</span></button>`;
 
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
@@ -346,14 +350,19 @@ function playPageHtml() {
       <h1 class="page-title">Pick your <em>fight.</em></h1>
       <div class="hero-row">
         <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
-        <button type="button" class="play-card royale-card-play" data-play="royale"><small>06 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
+        <button type="button" class="play-card royale-card-play" data-play="royale"><small>02 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
       </div>
-      <div class="team-modes">${TEAM_MODE_IDS.map((id, index) => { const mode = TEAM_MODES[id]; return `<button type="button" class="play-card team-card" data-play="${id}"><small>${String(index + 7).padStart(2, '0')} // ${id.toUpperCase()}</small><strong>${mode.name}</strong><span>${mode.desc}</span></button>`; }).join('')}</div>
-      <div class="mode-grid">
+      <div class="mode-blocks">
         ${rankedCardHtml()}
-        <button type="button" class="play-card" data-play="arcade"><small>03 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
-        <div class="play-card split"><small>04 // BOT MATCH</small><strong>3v3 vs bots</strong><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
-        <button type="button" class="play-card" data-play="range"><small>05 // PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear. Moving targets.</span></button>
+        <section class="mode-block">
+          <header class="block-head"><small>04 // TEAM MODES</small><b>Fixed sides</b><span>No rating on the line. Bots hold empty seats.</span></header>
+          <div class="size-row">${TEAM_MODE_IDS.map(sizeChip('')).join('')}</div>
+        </section>
+      </div>
+      <div class="mode-grid">
+        <button type="button" class="play-card" data-play="arcade"><small>05 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
+        <div class="play-card split"><small>06 // BOT MATCH</small><strong>3v3 vs bots</strong><span>Pick how hard they play.</span><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
+        <button type="button" class="play-card" data-play="range"><small>07 // PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear. Moving targets.</span></button>
       </div>
     </section>
     <section class="panel play-stage">
