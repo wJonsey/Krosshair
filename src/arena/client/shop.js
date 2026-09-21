@@ -378,7 +378,28 @@ function stageSubject() {
   return { kind: 'gun', weapon: weaponId, finish: showingFinish() };
 }
 // Called by the menu after every redraw.
+// The crate picker and the skin wall size themselves against --shop-head, which nothing ever set, so
+// both were measured against a guess of 210px. The header wraps on a narrower window, and when it did
+// the column became taller than the room left for it and its bottom, with the last row of skins in it,
+// sat below the fold. Measure the header rather than guess at it.
+function sizeShopHead() {
+  const page = document.querySelector('.shop-page');
+  const head = page?.querySelector('.shop-head');
+  if (!page || !head) return;
+  const top = Math.max(0, page.getBoundingClientRect().top);
+  const height = Math.round(top + head.getBoundingClientRect().height + 34);
+  if (page.style.getPropertyValue('--shop-head') !== `${height}px`) page.style.setProperty('--shop-head', `${height}px`);
+}
+
+let headWatch = null;
+
 export function mountShop() {
+  sizeShopHead();
+  if (!headWatch) { headWatch = new ResizeObserver(() => sizeShopHead()); addEventListener('resize', sizeShopHead); }
+  // Only the header is watched. Watching the page as well would mean reacting to a height this very
+  // function sets, which is a loop waiting to happen.
+  const head = document.querySelector('.shop-page .shop-head');
+  if (head) { headWatch.disconnect(); headWatch.observe(head); }
   const slot = document.querySelector('#skin-stage');
   if (!slot) return;
   const s = ensureStage();
