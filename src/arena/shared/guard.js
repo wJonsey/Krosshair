@@ -7,7 +7,10 @@
 export const GUARD = {
   version: 1,
   heartbeat: 5,       // seconds between client heartbeats
-  missing: 24,        // server kicks a seated player whose heartbeats stop for this long
+  // A stopped heartbeat is the weakest signal there is: a hidden tab has its timers throttled, a
+  // closed lid stops them dead, and a network stall loses them in flight. Nine missed beats before
+  // anything happens, and going quiet is never a strike. See SILENT_IS_NOT_A_STRIKE below.
+  missing: 45,        // server drops a seated player whose heartbeats stop for this long
   grace: 12,          // seconds of plain warning before the screen starts fighting back
   sabotage: 20,       // seconds of sabotage before the kick request goes out
   lockout: 30,        // seconds locked out on a first kick (doubles, capped)
@@ -34,6 +37,12 @@ export const REASONS = {
 };
 
 export function reasonText(reason) { return REASONS[reason] || 'script injection'; }
+
+// Going quiet gets you dropped but never banked against you. Someone who deletes the guard still
+// cannot play, because they are dropped every time they try. Someone whose laptop went to sleep
+// just reconnects. Only something actually detected earns a strike and a lockout.
+export const SILENT_IS_NOT_A_STRIKE = true;
+export const isDetection = (reason) => reason !== 'silent';
 
 export function flagNames(flags) {
   return Object.keys(FLAG).filter((name) => flags & FLAG[name]);
