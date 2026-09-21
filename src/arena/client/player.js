@@ -7,7 +7,7 @@ import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEnt
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
-import { WHEEL_HOLD, actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode, wheelCode } from './input.js';
+import { PAD_TAP_HOLD, WHEEL_HOLD, actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode, wheelCode } from './input.js';
 import { net } from './net.js';
 import { DROP, PAD_LAUNCH } from '../shared/royale.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
@@ -456,8 +456,20 @@ export class LocalPlayer {
       if (tap('gadget2')) this.useGadget(1);
       if (tap('ping')) this.ping();
       if (tap('melee')) this.switchTo('melee');
-      // These live on the keyboard's side of the game, so the pad presses their key for them.
-      for (const action of ['interact', 'armoury']) if (tap(action)) bus.emit('key', bindsFor(action)[0] || bindsFor(action)[1]);
+      // These live on the keyboard's side of the game, so the pad presses their key for them. The
+      // event on its own was not enough: royale asks whether the pick up key is held, and a pad press
+      // put nothing in the key set, so a controller could never pick a gun up. Hold it for a moment
+      // instead, which is what anything polling the keys is waiting to see.
+      for (const action of ['interact', 'armoury']) {
+        if (!tap(action)) continue;
+        const code = bindsFor(action)[0] || bindsFor(action)[1];
+        bus.emit('key', code);
+        if (!code) continue;
+        this.padHold = this.padHold || {};
+        clearTimeout(this.padHold[code]);
+        this.keys.add(code);
+        this.padHold[code] = setTimeout(() => this.keys.delete(code), PAD_TAP_HOLD * 1000);
+      }
       if (tap('inspect') && this.scopeAmount < 0.1) this.viewmodel.inspect();
     } else if (this.mode === 'spectate' && tap('jump')) this.cycleSpectate(1);
     else if (this.mode === 'killcam' && tap('jump')) this.skipKillcam();
