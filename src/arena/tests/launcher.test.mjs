@@ -109,7 +109,14 @@ test('the blast falls off with distance instead of being all or nothing', async 
     room.detonate(rocket, at, 1);
     return 100 - target.hp;
   };
-  const steps = [0.5, 1.5, 3, 4.5].map((gap) => [gap, damageAt(gap)]).filter(([, d]) => d !== null);
+  // The offsets are found rather than written down: the target stands near cover, and the blast is
+  // lethal near its centre, so a fixed list breaks whenever the radius or the damage is tuned. These
+  // are the first few gaps with a clear line that are far enough out to leave someone alive.
+  const steps = [];
+  for (let gap = 1; gap <= spec.radius && steps.length < 4; gap += 0.5) {
+    const hurt = damageAt(gap);
+    if (hurt !== null && hurt > 0 && hurt < 100) steps.push([gap, hurt]);
+  }
   assert.ok(steps.length >= 3, 'need a few clear offsets to see a curve at all');
   for (let i = 1; i < steps.length; i += 1) {
     assert.ok(steps[i][1] < steps[i - 1][1], `blast at ${steps[i][0]}m did ${steps[i][1]}, not less than ${steps[i - 1][1]} at ${steps[i - 1][0]}m`);

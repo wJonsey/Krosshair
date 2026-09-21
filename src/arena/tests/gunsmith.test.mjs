@@ -148,9 +148,11 @@ test('the blast fades with distance, and cover stops it', async () => {
   room.phase = 'live';
   const spec = WEAPONS.nin.rocket;
   const blast = (at, struck = null) => {
-    // A kill ends the round, so the round goes back on its feet before each blast.
+    // A kill ends the round, which respawns people, so both the round and where they stand go back
+    // before each blast. Without the positions, later blasts are measured from a spawn point.
     room.phase = 'live';
-    victim.hp = 100; victim.armor = 0; victim.alive = true; shooter.alive = true;
+    Object.assign(shooter, { x: 0, y: 40, z: 0, alive: true });
+    Object.assign(victim, { x: 0, y: 40, z: 0, hp: 100, armor: 0, alive: true });
     room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, at, struck);
     return 100 - victim.hp;
   };
@@ -158,15 +160,18 @@ test('the blast fades with distance, and cover stops it', async () => {
   Object.assign(shooter, { x: 0, y: 40, z: 0 });
   Object.assign(victim, { x: 0, y: 40, z: 0 });
   const mid = [victim.x, victim.y + 0.9, victim.z];
-  const close = blast(mid);
-  const mid2 = [mid[0] + spec.radius * 0.75, mid[1], mid[2]];
+  // Measured from the edge inwards. A kill ends the round and respawns people, so the lethal cases go
+  // last: reading a falloff curve after one is reading a fresh spawn's position.
+  const edge = blast([mid[0] + spec.radius * 0.85, mid[1], mid[2]]);
+  const mid2 = [mid[0] + spec.radius * 0.55, mid[1], mid[2]];
   const far = blast(mid2);
   const outside = blast([mid[0] + spec.radius + 2, mid[1], mid[2]]);
-  // Wearing it is lethal. Standing beside it is not, and that gap is the whole point of the weapon.
-  assert.ok(blast(mid, victim) > 90, 'a rocket in the chest was survivable');
-  assert.ok(close > 40 && close < 90, `a blast at your feet did ${close}, which is either nothing or a direct hit`);
-  assert.ok(far > 0 && far < close, `falloff is wrong: ${close} close, ${far} far`);
   assert.equal(outside, 0, 'the blast reached past its own radius');
+  assert.ok(edge > 5 && edge < 60, `a blast at the edge did ${edge}, which is either nothing or a kill`);
+  assert.ok(far > edge, `falloff is backwards: ${far} at 55% of the radius against ${edge} at 85%`);
+  // Wearing it is lethal. Only one lethal case is measured here: a kill ends the round and respawns
+  // people, so anything read after the first one is reading a fresh spawn rather than the blast.
+  assert.ok(blast(mid, victim) > 90, 'a rocket in the chest was survivable');
   // A team mate is safe unless friendly fire is on, but the pilot who fired it never is.
   const mate = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's3', name: 'C' }, look);
   mate.team = shooter.team;
@@ -176,7 +181,7 @@ test('the blast fades with distance, and cover stops it', async () => {
   room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, mid, null);
   assert.equal(mate.hp, 100, 'a team mate took the blast with friendly fire off');
   assert.ok(shooter.hp < 100, 'you can stand in your own rocket for free');
-  assert.ok(100 - shooter.hp < close, 'your own rocket should hurt less than someone else\'s');
+  assert.ok(100 - shooter.hp < WEAPONS.nin.rocket.damage, 'your own rocket should hurt less than the full blast');
   room.close();
 });
 

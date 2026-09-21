@@ -250,7 +250,7 @@ export const WEAPONS = {
   // expensive thing in the armoury on purpose: one rocket, a long reload, and it has to be earned.
   // The rocket is a real projectile on the server (room.js `stepRockets`), not a hitscan.
   nin: {
-    id: 'nin', sight: 'iron', slot: 'primary', family: 'launcher', short: 'NIN', name: 'Nin Launcher', tag: 'ROCKET LAUNCHER', cost: 7200,
+    id: 'nin', sight: 'iron', slot: 'primary', family: 'launcher', short: 'NIN', name: 'Nin Launcher', tag: 'ROCKET LAUNCHER', cost: 6600,
     damage: 55, head: 1, limb: 1, armorPen: 0.5, pen: 0.2,
     mag: 1, reserve: 3, cooldown: 1.1, reload: 6.4, equip: 1.4,
     auto: false, pellets: 1, scope: [52], scopeTime: 0.34,
@@ -264,10 +264,10 @@ export const WEAPONS = {
       gravity: 3.4,       // a visible arc, so range costs you elevation
       muzzle: 0.9,        // spawns this far down the barrel, clear of your own shoulders
       life: 6,            // seconds before it gives up and goes off where it is
-      direct: 140,        // a rocket in the chest. Nobody survives that
-      damage: 85,         // the blast, at the centre of it
-      minDamage: 16,      // the blast, at the very edge
-      radius: 7,
+      direct: 220,        // a rocket in the chest. Nobody survives that, armour or not
+      damage: 145,        // the blast, at the centre of it: standing near one is fatal
+      minDamage: 32,      // the blast, at the very edge
+      radius: 8.5,
       selfScale: 0.65,    // your own rocket hurts, a little less than it hurts them
       armorPen: 0.6,
     },
