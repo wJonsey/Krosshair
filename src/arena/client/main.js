@@ -268,6 +268,12 @@ net.on('outages', (message) => {
   bus.emit('outages');
   if (game.screen === 'home') renderHome();
 });
+// The server says what it did, in as many words, so a developer never has to guess whether it landed.
+net.on('outage-done', (message) => {
+  bus.emit('outage-done', message);
+  if (game.screen === 'home') { toast(message.text, message.on ? 'warn' : 'good'); renderHome(); }
+  else hud.notice(message.text, message.on ? 'warn' : 'good');
+});
 net.on('rocket', (message) => effects.rocket(message.id, message.o, message.d, message.s, message.g));
 net.on('boom', (message) => { effects.boom(message.at, message.r); play('explosion', { pos: message.at }); });
 net.on('shot', (message) => {

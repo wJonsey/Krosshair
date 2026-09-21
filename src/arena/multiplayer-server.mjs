@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, RANKED_IDS, TEAM_MODE_IDS, dailyModifier, dateKey, isRanked, levelFromXp } from './shared/constants.js';
+import { WEAPONS, ACCOUNTS_ENABLED, DISCORD_INVITE, MAX_PLAYERS, PLACEMENT_MATCHES, RANKED_IDS, TEAM_MODE_IDS, dailyModifier, dateKey, isRanked, levelFromXp } from './shared/constants.js';
 import { ProfileStore } from './server/profiles.js';
 import { AccountStore } from './server/accounts.js';
 import { isDev } from './server/devs.js';
@@ -794,6 +794,12 @@ wss.on('connection', (socket) => {
         const view = outages.view();
         console.log(`outage: ${socket.name} ${result.on ? 'pulled' : 'restored'} ${kind} ${id}`);
         for (const other of sockets) send(other, { type: 'outages', outages: view });
+        // Told plainly, and only after the list is saved and sent: a developer should never be left
+        // wondering whether it actually went out.
+        const label = kind === 'weapon' ? (WEAPONS[id]?.name || id) : id;
+        const heard = sockets.size;
+        send(socket, { type: 'outage-done', kind, id, on: result.on,
+          text: result.on ? `${label} is pulled. ${heard} ${heard === 1 ? 'pilot has' : 'pilots have'} been told.` : `${label} is back in the game.` });
         // Rooms fix themselves up straight away: a pulled gun leaves every hand, a pulled map ends its round.
         for (const room of rooms.values()) room.applyOutages();
         return;

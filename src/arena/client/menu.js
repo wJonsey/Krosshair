@@ -276,7 +276,11 @@ const NAV = [
   ['Games', [['games', 'Games']]],
   ['Profile', [['career', 'Career'], ['wallet', 'Wallet']]],
   ['Leaderboard', [['leaderboard', 'Leaderboard']]],
+  // Developers only. It is filtered out of the bar for everyone else, and the server refuses the
+  // messages anyway, so this is only about not drawing a door nobody can open.
+  ['Service', [['service', 'Service']]],
 ];
+const navFor = () => NAV.filter(([label]) => label !== 'Service' || game.profile?.dev);
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
 const PAGE_ALIAS = { operator: 'locker' }; // old links
 // A guest gets the game and the settings. Everything that belongs to an account stays shut until there
@@ -475,6 +479,7 @@ function lockedPageHtml(page) {
 }
 
 // What a developer has pulled, as a panel. Empty when nothing is pulled, so it costs nothing to include.
+const MAP_ID_LIST = mapRuleOptions().filter(([id]) => id !== 'vote' && id !== 'random').map(([id]) => id);
 const mapTitle = (id) => (mapRuleOptions().find(([value]) => value === id)?.[1] || id).replace(/ \(.*\)$/, '');
 export function outagesHtml() {
   const out = game.outages || {};
@@ -484,6 +489,50 @@ export function outagesHtml() {
   if (!rows.length) return '';
   return `<div class="panel outage-panel"><p class="eyebrow">Temporarily disabled <small>${rows.length}</small></p>
     ${rows.map(([name, kind, entry]) => `<div class="outage-row"><b>${escapeHtml(name)}</b><small>${kind}</small><span>${escapeHtml(outageReason(entry))}</span></div>`).join('')}</div>`;
+}
+
+
+// ------------------------------------------------------------------ service (devs only)
+// Pull something that is breaking the game, and put it back when it is fixed. Two lists on purpose:
+// what is live, and what is out. A thing only moves between them when the server says it has, so what
+// is on screen is what everyone else is getting, not what this page hoped would happen.
+let serviceReason = '';
+let serviceBusy = null;      // `kind:id` waiting on the server, so a double click cannot fire twice
+function servicePageHtml() {
+  if (!game.profile?.dev) return `<section class="page-wide"><p class="eyebrow">Service</p><h1 class="page-title">Not <em>yours.</em></h1><div class="panel"><p class="muted">This page belongs to the developers.</p></div></section>`;
+  const out = game.outages || { map: {}, weapon: {} };
+  const pulledMaps = Object.entries(out.map || {});
+  const pulledGuns = Object.entries(out.weapon || {});
+  const pulled = [...pulledMaps.map(([id, entry]) => ['map', id, mapTitle(id), entry]), ...pulledGuns.map(([id, entry]) => ['weapon', id, WEAPONS[id]?.name || id, entry])];
+  const chip = (kind, id, name) => {
+    const busy = serviceBusy === `${kind}:${id}`;
+    return `<button type="button" class="service-chip${busy ? ' busy' : ''}" data-pull="${kind}:${id}"${busy ? ' disabled' : ''}>${escapeHtml(name)}</button>`;
+  };
+  const liveMaps = MAP_ID_LIST.filter((id) => !out.map?.[id]);
+  const liveGuns = Object.values(WEAPONS).filter((weapon) => !weapon.melee && !out.weapon?.[weapon.id]);
+  return `<section class="page-wide service-page">
+    <p class="eyebrow">Service · developers</p>
+    <h1 class="page-title">Pull <em>something.</em></h1>
+    <div class="service-grid">
+      <div class="panel service-out">
+        <p class="eyebrow">Currently pulled <small>${pulled.length}</small></p>
+        ${pulled.length ? pulled.map(([kind, id, name, entry]) => `<div class="service-row">
+            <div><b>${escapeHtml(name)}</b><small>${kind === 'map' ? 'Arena' : 'Weapon'} · pulled by ${escapeHtml(entry.by || 'a dev')}</small>
+            <span>${escapeHtml(outageReason(entry))}</span></div>
+            <button type="button" class="service-back${serviceBusy === `${kind}:${id}` ? ' busy' : ''}" data-restore="${kind}:${id}"${serviceBusy === `${kind}:${id}` ? ' disabled' : ''}>Put it back</button>
+          </div>`).join('') : '<p class="muted">Nothing is pulled. The whole game is live.</p>'}
+      </div>
+      <div class="panel">
+        <p class="eyebrow">Pull something out</p>
+        <label class="service-why">Why<input id="service-reason" maxlength="140" placeholder="Leave blank for the default" value="${escapeHtml(serviceReason)}" /></label>
+        <p class="service-sub">Arenas <small>${liveMaps.length} live</small></p>
+        <div class="service-chips">${liveMaps.map((id) => chip('map', id, mapTitle(id))).join('')}</div>
+        <p class="service-sub">Weapons <small>${liveGuns.length} live</small></p>
+        <div class="service-chips">${liveGuns.map((weapon) => chip('weapon', weapon.id, weapon.short || weapon.name)).join('')}</div>
+        <p class="muted service-note">Everyone is told the moment you click, in the lobby and mid round. A pulled gun leaves the hands of anyone holding it and their credits go back.</p>
+      </div>
+    </div>
+  </section>`;
 }
 
 function playPageHtml() {
@@ -594,13 +643,13 @@ export function renderHome() {
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') { listening = null; padListening = null; }
-  const pageHtml = guestLocked(homePage) ? lockedPageHtml(homePage) : SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
+  const pageHtml = guestLocked(homePage) ? lockedPageHtml(homePage) : SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'service' ? servicePageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
-        <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); const shut = guestLocked(pages[0][0]); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}${shut ? ' shut' : ''}" ${on ? 'aria-current="page"' : ''}${shut ? ' title="Needs an account"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
+        <nav class="menu-nav" aria-label="Menu">${navFor().map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); const shut = guestLocked(pages[0][0]); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}${shut ? ' shut' : ''}" ${on ? 'aria-current="page"' : ''}${shut ? ' title="Needs an account"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
         <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${socialButtonHtml()}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
@@ -758,6 +807,18 @@ home.addEventListener('click', (event) => {
   if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
   if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }
   if (target.dataset.board) { boardTab = target.dataset.board; play('ui'); renderHome(); return; }
+  // Pull or restore. Nothing changes on screen until the server sends the new list back, so what is
+  // shown is always what everyone else is getting.
+  if (target.dataset.pull || target.dataset.restore) {
+    const on = Boolean(target.dataset.pull);
+    const [kind, id] = (target.dataset.pull || target.dataset.restore).split(':');
+    serviceReason = document.querySelector('#service-reason')?.value || '';
+    serviceBusy = `${kind}:${id}`;
+    net.send({ type: 'outage', kind, id, on, reason: on ? serviceReason : '' });
+    play(on ? 'deny' : 'ready');
+    renderHome();
+    return;
+  }
   if (target.dataset.kind) {
     if (target.classList.contains('locked')) { toast(target.title, 'warn'); return; }
     game.look[target.dataset.kind] = target.dataset.value;
@@ -806,6 +867,8 @@ function showDiscordPrompt() {
   document.querySelector('#arena-shell').append(card);
 }
 bus.on('config', () => { if (game.screen === 'home') renderHome(); });
+// The answer landed, so the page stops waiting on it.
+bus.on('outage-done', () => { serviceBusy = null; if (game.screen === 'home') renderHome(); });
 initPadMenu();
 bus.on('signed-in', () => {
   // Set by the Discord callback page on its way back to the menu.

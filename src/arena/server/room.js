@@ -217,7 +217,7 @@ export class Room {
   welcome(player, reconnected) {
     this.send(player, {
       type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
-      weapons: Room.liveWeapons(), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
+      weapons: Object.keys(WEAPONS), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
     });
     this.send(player, this.roomState());
     this.pushYou(player);

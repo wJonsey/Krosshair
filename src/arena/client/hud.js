@@ -352,6 +352,7 @@ export class Hud {
       <img class="inspect-art" src="${weaponArt(weapon.id)}" alt="" />
       <header><small>${weapon.tag}</small><h3>${weapon.name}</h3></header>
       <dl>${rows.map(([label, text, value]) => `<div><dt>${label}</dt><dd>${meter(value)}<span>${text}</span></dd></div>`).join('')}</dl>
+      ${game.outages?.weapon?.[weapon.id] ? `<p class="inspect-pulled">Temporarily removed. ${escapeHtml(outageReason(game.outages.weapon[weapon.id]))}</p>` : ''}
       <p class="inspect-foot"><span>Magazine ${weapon.mag} / ${weapon.reserve}</span><span>${MASTERY_TIERS[tier][1]} mastery · ${kills} kills</span></p>
     </section>`;
   }
@@ -372,9 +373,11 @@ export class Hud {
     const weaponRow = (weapon) => {
       const owned = you.weapons[weapon.slot] === weapon.id;
       const refundable = owned && weapon.cost > 0 && (bought.has(`slot:${weapon.slot}`) || free);
-      const locked = (!owned && !free && you.credits + (bought.has(`slot:${weapon.slot}`) ? WEAPONS[you.weapons[weapon.slot]].cost : 0) < weapon.cost) || (weapon.slot === 'primary' && modifier === 'sidearms');
-      const state = owned ? (refundable ? 'Equipped · refund' : 'Equipped') : locked ? 'Locked' : 'Buy';
-      return `<button type="button" class="arm-row${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}${weapon.id === this.buyFocus ? ' focus' : ''}" data-item="${weapon.id}">
+      // A gun pulled by a developer stays on the shelf, greyed, so it is obvious it is gone and not lost.
+      const pulled = game.outages?.weapon?.[weapon.id] || null;
+      const locked = Boolean(pulled) || (!owned && !free && you.credits + (bought.has(`slot:${weapon.slot}`) ? WEAPONS[you.weapons[weapon.slot]].cost : 0) < weapon.cost) || (weapon.slot === 'primary' && modifier === 'sidearms');
+      const state = pulled ? 'Temporarily removed' : owned ? (refundable ? 'Equipped · refund' : 'Equipped') : locked ? 'Locked' : 'Buy';
+      return `<button type="button" class="arm-row${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}${pulled ? ' pulled' : ''}${weapon.id === this.buyFocus ? ' focus' : ''}" data-item="${weapon.id}" ${pulled ? `title="${escapeHtml(outageReason(pulled))}"` : ''}>
         <img src="${weaponArt(weapon.id)}" alt="" /><span class="arm-name">${weapon.name}</span><span class="arm-cost">${cost(weapon.cost)}</span><span class="arm-state">${state}</span></button>`;
     };
     const gearChip = (id, name, price, desc, owned, refundable, icon = '') => {
