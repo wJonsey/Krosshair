@@ -16,7 +16,7 @@ import { ROYALE } from './shared/royale.js';
 import { installCatalogue, publicCatalogue } from './server/itemsets.js';
 import { getMap } from './shared/map.js';
 import { OutageBook } from './server/outage.js';
-import { cleanReason, outageLine, OUTAGE_KINDS } from './shared/outage.js';
+import { cleanReason, featureName, outageLine, OUTAGE_KINDS } from './shared/outage.js';
 import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as socialLists, normalize as normalizeFriends, reject as rejectFriend, relation, request as requestFriend, unblock as unblockPilot, unfriend } from './server/social.js';
 import { PartyBook } from './server/party.js';
@@ -163,6 +163,9 @@ function handleCoins(socket, message) {
   let result;
   if (message.type === 'shop') {
     const action = message.action;
+    // A pulled feature is refused here, whatever the page thinks it is allowed to ask for.
+    const shut = action === 'crate' ? 'crates' : action === 'item' ? 'itemshop' : null;
+    if (shut && outages.featureOut(shut)) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', shut), featureName(shut)) });
     result = action === 'crate' ? openCrate(profiles, socket.token, String(message.crate || ''), message.count, message.free === true)
       : action === 'scrap' ? scrapSkin(profiles, socket.token, String(message.finish || ''))
       : action === 'tradeup' ? tradeUp(profiles, socket.token, message.items)
@@ -172,9 +175,17 @@ function handleCoins(socket, message) {
     if (result.unboxed) announceDrops(socket.name, result.unboxed.drops);
     if (result.traded) announceDrops(socket.name, [result.traded]);
   }
-  else if (message.type === 'game') result = playGame(profiles, socket.token, message);
-  else if (message.type === 'crash') result = message.action === 'out' ? cashOutCrash(socket.token) : startCrash(profiles, socket.token, message, now, crashSettled);
+  else if (message.type === 'game') {
+    if (outages.featureOut('games')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'games'), 'Games') });
+    result = playGame(profiles, socket.token, message);
+  }
+  else if (message.type === 'crash') {
+    // Cashing out is always allowed: a bet already running must never be trapped by the switch.
+    if (message.action !== 'out' && outages.featureOut('games')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'games'), 'Games') });
+    result = message.action === 'out' ? cashOutCrash(socket.token) : startCrash(profiles, socket.token, message, now, crashSettled);
+  }
   else if (message.type === 'send-coins') {
+    if (outages.featureOut('trading')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'trading'), 'Sending coins') });
     result = sendCoins(profiles, accounts, socket.token, socket.name, message.to, message.amount);
     if (result.sent) {
       console.log(`coins: ${socket.name} sent ${result.sent.amount} to ${result.sent.to}`);
@@ -660,6 +671,7 @@ function enter(socket, message) {
   } else if (action === 'range') room = createRoom(`range-${roomCounter++}`, { queue: 'range' });
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
   else if (action === 'royale') {
+    if (outages.featureOut('royale')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'royale'), 'Battle royale') });
     // One open royale lobby at a time; a new one once it has started or filled.
     room = [...rooms.values()].find((r) => r.royale && r.phase === 'lobby' && r.connectedHumans().length < ROYALE.max);
     if (!room) { const name = `royale-${roomCounter++}`; room = new RoyaleRoom({ name, profiles, onEmpty: (empty) => { empty.close(); rooms.delete(empty.name); } }); rooms.set(name, room); }
@@ -676,6 +688,7 @@ function enter(socket, message) {
   }
   else if (action === 'quick') {
     const queue = ['casual', 'ranked', 'arcade', ...TEAM_MODE_IDS, ...RANKED_IDS].includes(message.queue) ? message.queue : 'casual';
+    if (isRanked(queue) && outages.featureOut('ranked')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'ranked'), 'Ranked') });
     if (isRanked(queue) && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
     room = findQuickRoom(queue, profiles.get(socket.token).rating);
   } else {
@@ -797,7 +810,11 @@ wss.on('connection', (socket) => {
         for (const other of sockets) send(other, { type: 'outages', outages: view });
         // Told plainly, and only after the list is saved and sent: a developer should never be left
         // wondering whether it actually went out.
-        const label = kind === 'weapon' ? (WEAPONS[id]?.name || id) : (getMap(id)?.title || id);
+        // getMap falls back to a default arena for an id it does not know, so each kind is named
+        // explicitly rather than letting a feature come out as "Kestrel Yard".
+        const label = kind === 'weapon' ? (WEAPONS[id]?.name || id)
+          : kind === 'feature' ? featureName(id)
+          : (getMap(id)?.title || id);
         const heard = sockets.size;
         send(socket, { type: 'outage-done', kind, id, on: result.on,
           text: result.on ? `${label} is pulled. ${heard} ${heard === 1 ? 'pilot has' : 'pilots have'} been told.` : `${label} is back in the game.` });
@@ -806,6 +823,7 @@ wss.on('connection', (socket) => {
         return;
       }
       if (message.type === 'builds' && socket.identified) {
+        if (outages.featureOut('gunsmith')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'gunsmith'), 'The Gunsmith') });
         profiles.saveBuilds(socket.token, message.builds);
         const saved = profiles.get(socket.token).builds || {};
         if (socket.player) socket.player.builds = saved;

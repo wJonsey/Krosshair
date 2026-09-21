@@ -16,7 +16,7 @@ import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
-import { outageReason } from '../shared/outage.js';
+import { FEATURES, featureName, featureOut, outageReason } from '../shared/outage.js';
 import { initSocial, socialButtonHtml, toggleSocial } from './social.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -281,7 +281,12 @@ const NAV = [
   // messages anyway, so this is only about not drawing a door nobody can open.
   ['Service', [['service', 'Service']]],
 ];
-const navFor = () => NAV.filter(([label]) => label !== 'Service' || game.profile?.dev);
+const FEATURE_PAGE = { gunsmith: 'gunsmith', games: 'games' };
+const navFor = () => NAV.filter(([label, pages]) => {
+  if (label === 'Service') return Boolean(game.profile?.dev);
+  const feature = FEATURE_PAGE[pages[0][0]];
+  return !feature || !featureOut(game.outages, feature);
+});
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
 const PAGE_ALIAS = { operator: 'locker' }; // old links
 // A guest gets the game and the settings. Everything that belongs to an account stays shut until there
@@ -362,12 +367,14 @@ function boardTeaserHtml() {
 function rankedCardHtml() {
   const profile = game.profile;
   const info = profile && game.username ? rankInfo(profile.rating, profile.rankedMatches) : null;
-  const line = !game.username ? 'Humans only. Needs a Discord login.' : !info ? 'Humans only.'
+  const off = featureOut(game.outages, 'ranked');
+  const line = off ? outageReason(game.outages.feature.ranked)
+    : !game.username ? 'Humans only. Needs a Discord login.' : !info ? 'Humans only.'
     : info.placed ? `${info.name} · ${info.rating} SR` : `Placement ${info.placement.played} / ${info.placement.total}`;
   // One rating, four sizes. Each size queues on its own, so you pick the fight you want.
   return `<section class="mode-block ranked-block${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}>
-    <header class="block-head"><small>03 // COMPETITIVE</small><b>Ranked</b><span>${line}</span>${info ? `<button type="button" class="rank-link" data-page="ranked" title="The ladder">${rankBadge(info, 34)}</button>` : ''}</header>
-    <div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>
+    <header class="block-head"><small>03 // COMPETITIVE</small><b>${off ? 'Ranked is off' : 'Ranked'}</b><span>${escapeHtml(line)}</span>${info ? `<button type="button" class="rank-link" data-page="ranked" title="The ladder">${rankBadge(info, 34)}</button>` : ''}</header>
+    ${off ? '' : `<div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>`}
   </section>`;
 }
 // One button per team size, the same shape in ranked and in the unranked queues.
@@ -504,7 +511,12 @@ function servicePageHtml() {
   const out = game.outages || { map: {}, weapon: {} };
   const pulledMaps = Object.entries(out.map || {});
   const pulledGuns = Object.entries(out.weapon || {});
-  const pulled = [...pulledMaps.map(([id, entry]) => ['map', id, mapTitle(id), entry]), ...pulledGuns.map(([id, entry]) => ['weapon', id, WEAPONS[id]?.name || id, entry])];
+  const pulledFeatures = Object.entries(out.feature || {});
+  const pulled = [
+    ...pulledFeatures.map(([id, entry]) => ['feature', id, featureName(id), entry]),
+    ...pulledMaps.map(([id, entry]) => ['map', id, mapTitle(id), entry]),
+    ...pulledGuns.map(([id, entry]) => ['weapon', id, WEAPONS[id]?.name || id, entry]),
+  ];
   const chip = (kind, id, name) => {
     const busy = serviceBusy === `${kind}:${id}`;
     return `<button type="button" class="service-chip${busy ? ' busy' : ''}" data-pull="${kind}:${id}"${busy ? ' disabled' : ''}>${escapeHtml(name)}</button>`;
@@ -518,7 +530,7 @@ function servicePageHtml() {
       <div class="panel service-out">
         <p class="eyebrow">Currently pulled <small>${pulled.length}</small></p>
         ${pulled.length ? pulled.map(([kind, id, name, entry]) => `<div class="service-row">
-            <div><b>${escapeHtml(name)}</b><small>${kind === 'map' ? 'Arena' : 'Weapon'} · pulled by ${escapeHtml(entry.by || 'a dev')}</small>
+            <div><b>${escapeHtml(name)}</b><small>${kind === 'feature' ? 'Feature' : kind === 'map' ? 'Arena' : 'Weapon'} · pulled by ${escapeHtml(entry.by || 'a dev')}</small>
             <span>${escapeHtml(outageReason(entry))}</span></div>
             <button type="button" class="service-back${serviceBusy === `${kind}:${id}` ? ' busy' : ''}" data-restore="${kind}:${id}"${serviceBusy === `${kind}:${id}` ? ' disabled' : ''}>Put it back</button>
           </div>`).join('') : '<p class="muted">Nothing is pulled. The whole game is live.</p>'}
@@ -526,6 +538,8 @@ function servicePageHtml() {
       <div class="panel">
         <p class="eyebrow">Pull something out</p>
         <label class="service-why">Why<input id="service-reason" maxlength="140" placeholder="Leave blank for the default" value="${escapeHtml(serviceReason)}" /></label>
+        <p class="service-sub">Features <small>the big switches</small></p>
+        <div class="service-chips">${FEATURES.filter((feature) => !out.feature?.[feature.id]).map((feature) => `<button type="button" class="service-chip wide${serviceBusy === `feature:${feature.id}` ? ' busy' : ''}" data-pull="feature:${feature.id}" title="${escapeHtml(feature.blurb)}"${serviceBusy === `feature:${feature.id}` ? ' disabled' : ''}>${escapeHtml(feature.name)}</button>`).join('')}</div>
         <p class="service-sub">Arenas <small>${liveMaps.length} live</small></p>
         <div class="service-chips">${liveMaps.map((id) => chip('map', id, mapTitle(id))).join('')}</div>
         <p class="service-sub">Weapons <small>${liveGuns.length} live</small></p>
@@ -549,7 +563,7 @@ function playPageHtml() {
       <h1 class="page-title">Pick your <em>fight.</em></h1>
       <div class="hero-row">
         <button type="button" class="play-card primary" data-play="casual"><small>01 // CASUAL</small><strong>Quick play</strong><span>Straight into a match. Bots fill empty seats.</span><i class="go">Deploy →</i></button>
-        <button type="button" class="play-card royale-card-play" data-play="royale"><small>02 // ISLAND</small><strong>Battle royale</strong><span>${ROYALE.fill} pilots. One island. Last one standing.</span><i class="soon-tag">New</i></button>
+        <button type="button" class="play-card royale-card-play${featureOut(game.outages, 'royale') ? ' shut-down' : ''}" data-play="royale"${featureOut(game.outages, 'royale') ? ` title="${escapeHtml(outageReason(game.outages.feature.royale))}"` : ''}><small>02 // ISLAND</small><strong>${featureOut(game.outages, 'royale') ? 'Battle royale is off' : 'Battle royale'}</strong><span>${ROYALE.fill} pilots. One island. Last one standing.</span><i class="soon-tag">New</i></button>
       </div>
       <div class="mode-blocks">
         ${rankedCardHtml()}

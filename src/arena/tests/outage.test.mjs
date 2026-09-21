@@ -10,7 +10,7 @@ import { OutageBook } from '../server/outage.js';
 import { Room } from '../server/room.js';
 import { MAP_IDS } from '../shared/map.js';
 import { WEAPONS } from '../shared/constants.js';
-import { DEFAULT_REASON, cleanReason, outageReason } from '../shared/outage.js';
+import { DEFAULT_REASON, FEATURES, FEATURE_IDS, cleanReason, featureOut, outageReason } from '../shared/outage.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => { const sent = []; return { readyState: 1, sent, send: (raw) => { const m = JSON.parse(raw); if (m.type !== 's') sent.push(m); } }; };
@@ -133,7 +133,45 @@ test('with nothing pulled, the game is exactly as it was', async () => {
   Room.useOutages(out);
   try {
     assert.equal(Room.liveWeapons().length, Object.keys(WEAPONS).length);
-    assert.deepEqual(out.view(), { map: {}, weapon: {} });
+    assert.deepEqual(out.view(), { map: {}, weapon: {}, feature: {} });
     assert.deepEqual(out.playableMaps(MAP_IDS), MAP_IDS);
   } finally { Room.useOutages(null); }
+});
+
+
+test('a whole feature can be pulled, and only the ones that exist', async () => {
+  const out = await book();
+  assert.ok(FEATURE_IDS.length >= 5, `only ${FEATURE_IDS.length} features can be pulled`);
+  for (const feature of FEATURES) assert.ok(feature.name && feature.blurb, `${feature.id} has no words`);
+  assert.equal(out.set('feature', 'not-a-feature', true, '', 'dev'), null, 'an invented feature was pulled');
+  assert.ok(out.set('feature', 'gunsmith', true, 'Attachments are broken', 'dev')?.on);
+  assert.ok(out.featureOut('gunsmith'));
+  assert.ok(featureOut(out.view(), 'gunsmith'), 'the client view does not carry features');
+  assert.equal(outageReason(out.get('feature', 'gunsmith')), 'Attachments are broken');
+  // Blank gets the feature default, not the weapon one.
+  out.set('feature', 'crates', true, '', 'dev');
+  assert.equal(outageReason(out.get('feature', 'crates')), DEFAULT_REASON.feature);
+  out.set('feature', 'gunsmith', false, '', 'dev');
+  assert.ok(!out.featureOut('gunsmith'), 'the feature never came back');
+});
+
+test('with the Gunsmith pulled, everyone is on stock guns', async () => {
+  const out = await book();
+  const room = await makeRoom();
+  Room.useOutages(out);
+  try {
+    const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+    player.builds = { talon: { optic: null, muzzle: null, barrel: null, mag: 'drum', stock: null, grip: null } };
+    player.weapons.primary = 'talon';
+    player.active = 'primary';
+    const built = room.currentWeapon(player);
+    assert.ok(built.mag > WEAPONS.talon.mag, 'the build was not being used in the first place');
+    out.set('feature', 'gunsmith', true, '', 'dev');
+    room.applyOutages();
+    assert.equal(room.currentWeapon(player).mag, WEAPONS.talon.mag, 'a build survived the Gunsmith being pulled');
+    // And it comes back when the switch goes back.
+    out.set('feature', 'gunsmith', false, '', 'dev');
+    room.applyOutages();
+    assert.ok(room.currentWeapon(player).mag > WEAPONS.talon.mag, 'builds did not come back');
+  } finally { Room.useOutages(null); room.close(); }
 });

@@ -7,9 +7,11 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { MAP_IDS, ROYALE_MAP } from '../shared/map.js';
 import { WEAPONS } from '../shared/constants.js';
-import { OUTAGE_KINDS, cleanReason, emptyOutages } from '../shared/outage.js';
+import { FEATURE_IDS, OUTAGE_KINDS, cleanReason, emptyOutages } from '../shared/outage.js';
 
-const known = (kind, id) => (kind === 'map' ? [...MAP_IDS, ROYALE_MAP].includes(id) : kind === 'weapon' ? Boolean(WEAPONS[id]) : false);
+const known = (kind, id) => (kind === 'map' ? [...MAP_IDS, ROYALE_MAP].includes(id)
+  : kind === 'weapon' ? Boolean(WEAPONS[id])
+  : kind === 'feature' ? FEATURE_IDS.includes(id) : false);
 
 export class OutageBook {
   constructor(file) {
@@ -39,8 +41,10 @@ export class OutageBook {
     } catch (error) { console.warn(`outages: could not save (${error.message})`); }
   }
 
-  view() { return { map: { ...this.out.map }, weapon: { ...this.out.weapon } }; }
+  view() { return Object.fromEntries(OUTAGE_KINDS.map((kind) => [kind, { ...this.out[kind] }])); }
   isOut(kind, id) { return Boolean(this.out[kind]?.[id]); }
+  // The question the rest of the server asks constantly, so it reads like a sentence.
+  featureOut(id) { return Boolean(this.out.feature?.[id]); }
   get(kind, id) { return this.out[kind]?.[id] || null; }
   // Maps still in rotation. The caller decides what to do when that is empty.
   playableMaps(ids) { return ids.filter((id) => !this.isOut('map', id)); }

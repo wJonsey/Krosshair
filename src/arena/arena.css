@@ -1887,3 +1887,6 @@ button.cash-out .coins { color: var(--void); }
 .service-chip:hover:not(:disabled) { border-color: #ff9d3d !important; color: #ff9d3d !important; }
 .service-note { margin-top: 14px; font-size: 12px; line-height: 1.5; }
 @media (max-width: 1020px) { .service-grid { grid-template-columns: 1fr; } }
+.service-chip.wide { padding: 8px 12px !important; border-color: rgba(255, 157, 61, .45) !important; color: #ffc98d !important; }
+.play-card.shut-down { opacity: .5; }
+.play-card.shut-down strong { color: #ff9d3d; }

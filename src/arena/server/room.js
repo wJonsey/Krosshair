@@ -630,11 +630,15 @@ export class Room {
   static outages = null;
   static useOutages(book) { Room.outages = book; }
   static out(kind, id) { return Room.outages?.isOut(kind, id) || false; }
+  static featureOut(id) { return Room.outages?.featureOut(id) || false; }
   static liveWeapons() { return Object.keys(WEAPONS).filter((id) => !Room.out('weapon', id)); }
 
   // Something was just pulled. Put this room right without waiting for the round to end.
   applyOutages() {
     if (!Room.outages) return;
+    // A cached gun remembers the build it was resolved with, so the cache is dropped whenever the
+    // Gunsmith is switched either way. Next shot is resolved fresh.
+    for (const player of this.players.values()) { player.kit = null; player.kitFor = null; }
     // A gun that is gone is taken out of every hand here and now, and the credits go back.
     for (const player of this.players.values()) {
       for (const slot of ['primary', 'sidearm']) {
@@ -903,7 +907,8 @@ export class Room {
     if (!id) return null;
     // Royale ignores builds, but a floor gun still carries the rarity it was found at.
     if (this.royale) return royaleWeapon(WEAPONS[id], player.rarity?.[slot]) || null;
-    if (!player.builds) return WEAPONS[id] || null;
+    // Gunsmith pulled: everyone is on stock guns until it is back.
+    if (!player.builds || Room.featureOut('gunsmith')) return WEAPONS[id] || null;
     if (!player.kit) player.kit = {};
     if (player.kit[slot]?.id !== id || player.kitFor?.[slot] !== player.builds[id]) {
       player.kit[slot] = resolveWeapon(id, player.builds[id]);
@@ -1308,7 +1313,7 @@ export class Room {
     };
     if (WEAPONS[item] && !WEAPONS[item].melee) {
       // You buy the gun as you built it, and you pay for what is bolted on.
-      const weapon = (this.royale || !player.builds) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
+      const weapon = (this.royale || !player.builds || Room.featureOut('gunsmith')) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
       if (Room.out('weapon', item)) return this.notice(player, outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
       if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
