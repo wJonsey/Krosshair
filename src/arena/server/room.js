@@ -2,6 +2,7 @@
 // hit detection (with lag compensation), round flow, gadgets and bots.
 import { performance } from 'node:perf_hooks';
 import { royaleWeapon } from '../shared/royale.js';
+import { outageLine, outageReason } from '../shared/outage.js';
 import { resolveWeapon, cleanBuild, buildCost } from '../shared/attachments.js';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
@@ -10,7 +11,7 @@ import {
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
 import { DEV_ACTION_IDS, DEV_SERVER_TOOLS, DEV_SPEED } from '../shared/devtools.js';
-import { getMap, zoneAt } from '../shared/map.js';
+import { MAP_IDS, getMap, zoneAt } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
 import { World, makeBody } from '../shared/physics.js';
@@ -216,7 +217,7 @@ export class Room {
   welcome(player, reconnected) {
     this.send(player, {
       type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
-      weapons: Object.keys(WEAPONS), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
+      weapons: Room.liveWeapons(), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
     });
     this.send(player, this.roomState());
     this.pushYou(player);
@@ -621,6 +622,44 @@ export class Room {
       this.broadcast({ type: 'feed', text: 'The other side left. Match forfeited.', tone: 'warn' });
       this.endMatch();
       return;
+    }
+  }
+
+  // ---------------------------------------------------------------- outages
+  // One book for the whole server, set at boot. A room only ever reads it.
+  static outages = null;
+  static useOutages(book) { Room.outages = book; }
+  static out(kind, id) { return Room.outages?.isOut(kind, id) || false; }
+  static liveWeapons() { return Object.keys(WEAPONS).filter((id) => !Room.out('weapon', id)); }
+
+  // Something was just pulled. Put this room right without waiting for the round to end.
+  applyOutages() {
+    if (!Room.outages) return;
+    // A gun that is gone is taken out of every hand here and now, and the credits go back.
+    for (const player of this.players.values()) {
+      for (const slot of ['primary', 'sidearm']) {
+        const id = player.weapons[slot];
+        if (!id || !Room.out('weapon', id)) continue;
+        const entry = Room.outages.get('weapon', id);
+        const spent = player.bought?.[`slot:${slot}`];
+        if (spent) { player.credits = Math.min(ECONOMY.max, player.credits + spent.cost); delete player.bought[`slot:${slot}`]; }
+        player.weapons[slot] = null;
+        player.ammo[slot] = null;
+        if (player.active === slot) { player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee'; player.equipUntil = now() + 0.3; }
+        player.kit = null; player.kitFor = null;
+        if (!player.bot) this.send(player, { type: 'notice', tone: 'warn', text: outageLine(entry, WEAPONS[id].name) });
+        this.pushYou(player);
+      }
+    }
+    // A map that is gone takes the round with it: nobody keeps playing on something known to be broken.
+    if (Room.out('map', this.map.id)) {
+      const entry = Room.outages.get('map', this.map.id);
+      this.broadcast({ type: 'feed', text: outageLine(entry, this.map.name || this.map.id), tone: 'warn' });
+      this.broadcast({ type: 'notice', tone: 'warn', text: `${this.map.name || this.map.id} was pulled. ${outageReason(entry)}` });
+      if (this.phase !== 'lobby') this.toLobby();
+      const next = Room.outages.playableMaps(MAP_IDS.filter((id) => id !== this.map.id));
+      if (next.length && this.rules.map && this.rules.map !== 'random') this.rules.map = next[0];
+      this.pushRoom();
     }
   }
 
@@ -1250,6 +1289,7 @@ export class Room {
     if (WEAPONS[item] && !WEAPONS[item].melee) {
       // You buy the gun as you built it, and you pay for what is bolted on.
       const weapon = (this.royale || !player.builds) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
+      if (Room.out('weapon', item)) return this.notice(player, outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
       if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
       const families = MODIFIERS[modifier]?.families;

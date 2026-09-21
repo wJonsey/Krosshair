@@ -2,6 +2,7 @@
 // scoreboard, banners, hit feedback, chat and radio.
 import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIONS, VARIANT_NAMES, WEAPONS, masteryTier, WEAPON_CLASSES, weaponClass } from '../shared/constants.js';
 import { zoneAt } from '../shared/map.js';
+import { outageReason } from '../shared/outage.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
 import { bindLabel, bindsFor, codeLabel, isBound, input, padBindFor } from './input.js';
@@ -71,6 +72,21 @@ export class Hud {
     bus.on('drone', (on) => this.dom.drone.classList.toggle('hidden', !on));
     bus.on('spawned', () => { this.dom.spectate.classList.add('hidden'); this.showPovCard(null); });
     bus.on('pad-ui', (action) => this.onPadUi(action));
+    bus.on('outages', () => this.showOutages());
+  }
+
+  // What is currently pulled from the game, said once per change rather than every frame.
+  showOutages() {
+    const out = game.outages || {};
+    const names = [...Object.keys(out.map || {}), ...Object.keys(out.weapon || {})].sort().join(',');
+    if (names === this.lastOutages) return;
+    this.lastOutages = names;
+    if (!names) return;
+    const lines = [
+      ...Object.entries(out.map || {}).map(([id, entry]) => [id, entry]),
+      ...Object.entries(out.weapon || {}).map(([id, entry]) => [WEAPONS[id]?.name || id, entry]),
+    ];
+    for (const [name, entry] of lines) this.notice(`${name} is disabled. ${outageReason(entry)}`, 'warn');
   }
 
   get blocking() { return this.buyOpen || this.chatOpen || this.quickOpen; }

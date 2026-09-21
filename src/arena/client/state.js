@@ -55,6 +55,7 @@ export const GRAPHICS_PRESETS = {
 export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, viewDistance: settings.viewDistance || 'high', brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
+  outages: { map: {}, weapon: {} },   // what a developer has pulled from the game, with why
   name: tabStored('name', ''),
   token: tabStored('guest', null), // this tab's guest progress; a brand-new Discord account adopts it
   legacyToken: stored('token', null), // progress from before accounts, same deal

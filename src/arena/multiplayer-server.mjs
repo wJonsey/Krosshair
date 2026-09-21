@@ -14,6 +14,8 @@ import { Room, now } from './server/room.js';
 import { RoyaleRoom } from './server/royale.js';
 import { ROYALE } from './shared/royale.js';
 import { installCatalogue, publicCatalogue } from './server/itemsets.js';
+import { OutageBook } from './server/outage.js';
+import { cleanReason, outageLine, OUTAGE_KINDS } from './shared/outage.js';
 import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as socialLists, normalize as normalizeFriends, reject as rejectFriend, relation, request as requestFriend, unblock as unblockPilot, unfriend } from './server/social.js';
 import { PartyBook } from './server/party.js';
@@ -54,6 +56,10 @@ const LOGIN_REQUIRED = ['0', 'false', 'no'].includes(String(process.env.ALLOW_GU
   if (LOGIN_REQUIRED && !discord.enabled) console.warn('discord: NOBODY CAN PLAY until the application ID is set, or ALLOW_GUESTS=0 is removed.');
 }
 const profiles = new ProfileStore(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json'));
+// Things a developer has pulled from the game. Kept beside the profiles so a deploy restart does not
+// quietly put a broken map or gun back.
+const outages = new OutageBook(process.env.ARENA_OUTAGES || path.join(path.dirname(process.env.ARENA_DATA || path.join(root, 'data', 'profiles.json')), 'outages.json'));
+Room.useOutages(outages);
 await profiles.load();
 const accounts = new AccountStore(process.env.ARENA_ACCOUNTS || path.join(path.dirname(profiles.file), 'accounts.json'));
 await accounts.load();
@@ -711,7 +717,7 @@ function place(socket, room, message) {
 wss.on('connection', (socket) => {
   sockets.add(socket);
   // Only the sets that have already been out. A set still to come is not described to anyone.
-  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: publicCatalogue(dateKey()) });
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: publicCatalogue(dateKey()), outages: outages.view() });
   socket.identified = false;
   socket.room = null;
   socket.player = null;
@@ -777,6 +783,21 @@ wss.on('connection', (socket) => {
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       // Saved gun builds. Kept on the profile, and handed to the player so the armoury sells the build.
+      // Pull a map or a gun, or put it back. Developers only, checked here on every call.
+      if (message.type === 'outage') {
+        if (!socket.identified || !profiles.get(socket.token).dev) return;
+        const kind = String(message.kind || ''), id = String(message.id || '');
+        if (!OUTAGE_KINDS.includes(kind)) return;
+        const result = outages.set(kind, id, message.on === true, cleanReason(message.reason), socket.name);
+        if (!result) return send(socket, { type: 'outages', outages: outages.view() });
+        if (result.error) return send(socket, { type: 'error', message: result.error });
+        const view = outages.view();
+        console.log(`outage: ${socket.name} ${result.on ? 'pulled' : 'restored'} ${kind} ${id}`);
+        for (const other of sockets) send(other, { type: 'outages', outages: view });
+        // Rooms fix themselves up straight away: a pulled gun leaves every hand, a pulled map ends its round.
+        for (const room of rooms.values()) room.applyOutages();
+        return;
+      }
       if (message.type === 'builds' && socket.identified) {
         profiles.saveBuilds(socket.token, message.builds);
         const saved = profiles.get(socket.token).builds || {};

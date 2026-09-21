@@ -3,7 +3,9 @@
 // The menu brings its own styles and markup so it touches nothing else in the game.
 import * as THREE from 'three';
 import { DEV_ACTIONS, DEV_FLY_LIFT, DEV_TOOLS } from '../shared/devtools.js';
-import { game, isEnemy } from './state.js';
+import { bus, game, isEnemy } from './state.js';
+import { MAP_IDS } from '../shared/map.js';
+import { WEAPONS } from '../shared/constants.js';
 import { net } from './net.js';
 import { play } from './audio.js';
 
@@ -29,6 +31,15 @@ const CSS = `
 .dev-row.act i::after { content: 'RUN'; position: static; display: block; width: auto; background: none; color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .12em; }
 .dev-panel footer { padding: 8px 12px; color: var(--graphite); font-size: 10px; letter-spacing: .08em; border-top: 1px solid rgba(0, 255, 198, .25); }
 .dev-esp { position: fixed; inset: 0; z-index: 12; pointer-events: none; }
+.dev-outages { padding: 10px 12px; border-top: 1px solid rgba(0, 255, 198, .25); }
+.dev-outages b { display: block; font: 700 10px var(--mono); letter-spacing: .18em; color: #ff9d3d; }
+.dev-outages small { display: block; margin: 3px 0 7px; color: var(--haze); font-size: 10px; line-height: 1.4; }
+.dev-outages input { width: 100%; margin-bottom: 7px; padding: 6px 8px; background: rgba(0, 0, 0, .35); border: 1px solid rgba(230, 237, 241, .2); color: var(--frost); font: 400 11px var(--body); outline: none; }
+.dev-outage-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 148px; overflow-y: auto; }
+.dev-outage-list p { width: 100%; margin: 4px 0 1px; color: var(--graphite); font: 500 9px var(--mono); letter-spacing: .14em; }
+.dev-outage { padding: 4px 7px; background: transparent; border: 1px solid rgba(230, 237, 241, .22); color: var(--haze); font: 500 9px var(--mono); cursor: pointer; }
+.dev-outage:hover { border-color: #ff9d3d; color: #ff9d3d; }
+.dev-outage.on { background: #ff9d3d; border-color: #ff9d3d; color: #12161a; }
 .dev-flag { position: fixed; left: 50%; transform: translateX(-50%); bottom: 152px; z-index: 12; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .2em; text-shadow: 0 0 8px rgba(0, 255, 198, .6); pointer-events: none; }
 `;
 
@@ -42,7 +53,11 @@ export function initDevTools({ player, operators, camera }) {
     ...DEV_TOOLS.map((tool) => `<button type="button" class="dev-row" data-tool="${tool.id}"><b>${tool.name}</b><i></i><small>${tool.desc}</small></button>`),
     ...DEV_ACTIONS.map((action) => `<button type="button" class="dev-row act" data-act="${action.id}"><b>${action.name}</b><i></i><small>${action.desc}</small></button>`),
   ].join('');
-  panel.innerHTML = `<header><b>DEV TOOLS</b><small>K to close</small></header><div class="dev-list">${rows}</div><footer>Your account only. Bots never get these.</footer>`;
+  panel.innerHTML = `<header><b>DEV TOOLS</b><small>K to close</small></header><div class="dev-list">${rows}</div>
+    <div class="dev-outages"><b>PULL SOMETHING</b><small>Disables it for everyone, now. Say why, or leave it blank.</small>
+      <input id="dev-outage-why" maxlength="140" placeholder="Reason (optional)" />
+      <div class="dev-outage-list"></div></div>
+    <footer>Your account only. Bots never get these.</footer>`;
   const esp = document.createElement('canvas');
   esp.className = 'dev-esp';
   const flag = document.createElement('div');
@@ -51,6 +66,28 @@ export function initDevTools({ player, operators, camera }) {
   const context = esp.getContext('2d');
 
   const allowed = () => Boolean(game.profile?.dev);
+  // The list redraws whenever the server says something changed, so two developers never disagree.
+  const why = () => panel.querySelector('#dev-outage-why');
+  function drawOutages() {
+    const list = panel.querySelector('.dev-outage-list');
+    if (!list) return;
+    const out = game.outages || {};
+    const rowFor = (kind, id, name) => {
+      const on = Boolean(out[kind]?.[id]);
+      return `<button type="button" class="dev-outage${on ? ' on' : ''}" data-outage="${kind}:${id}" title="${on ? 'Put it back' : 'Pull it'}">${name}</button>`;
+    };
+    list.innerHTML = `<p>Arenas</p>${MAP_IDS.map((id) => rowFor('map', id, id)).join('')}
+      <p>Weapons</p>${Object.values(WEAPONS).filter((weapon) => !weapon.melee).map((weapon) => rowFor('weapon', weapon.id, weapon.short || weapon.name)).join('')}`;
+  }
+  bus.on('outages', drawOutages);
+  panel.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-outage]');
+    if (!button || !allowed()) return;
+    const [kind, id] = button.dataset.outage.split(':');
+    const on = !button.classList.contains('on');
+    net.send({ type: 'outage', kind, id, on, reason: on ? why()?.value || '' : '' });
+    play(on ? 'deny' : 'ready');
+  });
   const on = {};                      // what is switched on right now
   const serverTool = Object.fromEntries(DEV_TOOLS.map((tool) => [tool.id, Boolean(tool.server)]));
 
@@ -166,6 +203,7 @@ export function initDevTools({ player, operators, camera }) {
   }
 
   paint();
+  drawOutages();
   return {
     update(dt) {
       if (!allowed()) { if (flag.textContent) { flag.textContent = ''; } panel.classList.remove('on'); esp.style.display = 'none'; return; }

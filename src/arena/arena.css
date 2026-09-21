@@ -1831,3 +1831,11 @@ button.cash-out .coins { color: var(--void); }
 /* ---------- movement readout (F3) ---------- */
 .move-debug { position: fixed; left: 14px; bottom: 14px; z-index: 40; padding: 10px 12px; border: 1px solid var(--hairline-strong); background: rgba(10, 14, 18, .72); color: var(--frost); font: 500 11px/1.65 var(--mono); letter-spacing: .04em; white-space: pre; pointer-events: none; }
 .move-debug.hidden { display: none; }
+
+/* Anything a developer has pulled from the game, listed wherever people need to see it. */
+.outage-panel { border-left: 2px solid #ff9d3d; }
+.outage-panel .eyebrow { color: #ff9d3d; }
+.outage-row { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 8px; padding: 5px 0; border-top: 1px solid var(--hairline); }
+.outage-row b { font: 400 13px var(--display); text-transform: uppercase; }
+.outage-row small { color: var(--graphite); font: 500 9px var(--mono); letter-spacing: .12em; }
+.outage-row span { color: var(--haze); font-size: 12px; }

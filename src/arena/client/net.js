@@ -104,6 +104,7 @@ function connect() {
       // The Item Shop catalogue arrives from the server: only the sets that have already been out, so
       // nothing unreleased is ever written into these pages.
       if (message.itemShop) installShopCatalogue(message.itemShop);
+      if (message.outages) { game.outages = message.outages; bus.emit('outages'); }
       bus.emit('config');
     }
     if (message.type === 'auth-required' || message.type === 'logged-out') {

@@ -16,6 +16,7 @@ import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
+import { outageReason } from '../shared/outage.js';
 import { initSocial, socialButtonHtml, toggleSocial } from './social.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -473,6 +474,18 @@ function lockedPageHtml(page) {
   </section>`;
 }
 
+// What a developer has pulled, as a panel. Empty when nothing is pulled, so it costs nothing to include.
+const mapTitle = (id) => (mapRuleOptions().find(([value]) => value === id)?.[1] || id).replace(/ \(.*\)$/, '');
+export function outagesHtml() {
+  const out = game.outages || {};
+  const rows = [];
+  for (const [id, entry] of Object.entries(out.map || {})) rows.push([mapTitle(id), 'Arena', entry]);
+  for (const [id, entry] of Object.entries(out.weapon || {})) rows.push([WEAPONS[id]?.name || id, 'Weapon', entry]);
+  if (!rows.length) return '';
+  return `<div class="panel outage-panel"><p class="eyebrow">Temporarily disabled <small>${rows.length}</small></p>
+    ${rows.map(([name, kind, entry]) => `<div class="outage-row"><b>${escapeHtml(name)}</b><small>${kind}</small><span>${escapeHtml(outageReason(entry))}</span></div>`).join('')}</div>`;
+}
+
 function playPageHtml() {
   const modifier = MODIFIERS[game.dailyModifier] || MODIFIERS.headhunter;
   const profile = game.profile;
@@ -866,6 +879,7 @@ export function renderLobby() {
           <p class="eyebrow">${custom ? 'Ready room' : 'Matchmaking'}</p>
           <h1 class="page-title" id="lobby-title">${custom ? 'Ready <em>room.</em>' : 'Finding a <em>match.</em>'}</h1>
           <p id="lobby-status" class="lobby-status"></p>
+          ${outagesHtml()}
           <div class="teams">${teamColumn('A', 'Alpha')}<div class="versus"><i></i>VS<i></i></div>${teamColumn('B', 'Bravo')}</div>
           <div class="lobby-actions">${custom ? `<button type="button" id="ready-toggle" class="${mine?.ready ? 'secondary-button' : ''}">${mine?.ready ? 'Unready' : wager ? `Ready · stake ${wager.stake}` : 'Ready up'}</button>${host ? `<button type="button" id="start-match" ${canStart ? '' : 'disabled'}>Start match <span>→</span></button>` : '<span class="muted">Waiting for host…</span>'}` : ''}</div>
         </section>
