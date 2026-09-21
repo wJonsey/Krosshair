@@ -250,9 +250,9 @@ export const WEAPONS = {
   // expensive thing in the armoury on purpose: one rocket, a long reload, and it has to be earned.
   // The rocket is a real projectile on the server (room.js `stepRockets`), not a hitscan.
   nin: {
-    id: 'nin', sight: 'iron', slot: 'primary', family: 'launcher', short: 'NIN', name: 'Nin Launcher', tag: 'ROCKET LAUNCHER', cost: 6600,
+    id: 'nin', sight: 'iron', slot: 'primary', family: 'launcher', short: 'NIN', name: 'Nin Launcher', tag: 'ROCKET LAUNCHER', cost: 6200,
     damage: 55, head: 1, limb: 1, armorPen: 0.5, pen: 0.2,
-    mag: 1, reserve: 3, cooldown: 1.1, reload: 6.4, equip: 1.4,
+    mag: 1, reserve: 4, cooldown: 1.1, reload: 5.6, equip: 1.4,
     auto: false, pellets: 1, scope: [52], scopeTime: 0.34,
     spread: { hip: 2.2, ads: 0.5, move: 1.6, air: 4, bloom: 0, bloomMax: 0 },
     falloff: null, recoil: { kick: 5.2, side: 1.2, recover: 4 }, speed: 0.78, loud: 120, tracer: 0,

@@ -364,3 +364,20 @@ test('nothing in the gunsmith is waiting to be saved any more', () => {
   assert.ok(!/'\s?unsaved'/.test(shop), 'no unsaved marker is produced');
   assert.ok(!/\.unsaved\b/.test(css), 'and no style is left for one');
 });
+
+test('every gun has its own voice, so none of them sound like a pistol', () => {
+  // playShot falls back to the P9 for anything it has no entry for, which is how the launcher ended up
+  // firing with a pistol crack. A missing entry is silent in every other way, so it needs a test.
+  const audio = readFileSync(new URL('../client/audio.js', import.meta.url), 'utf8');
+  const table = audio.slice(audio.indexOf('const GUNS = {'), audio.indexOf('\n};', audio.indexOf('const GUNS = {')));
+  const listed = new Set([...table.matchAll(/(\w+):\s*\[/g)].map((match) => match[1]));
+  const missing = Object.values(WEAPONS).filter((weapon) => !weapon.melee && !listed.has(weapon.id)).map((weapon) => weapon.id);
+  assert.deepEqual(missing, [], `these guns fall back to the pistol sound: ${missing.join(', ')}`);
+});
+
+test('a launcher never predicts a bullet on the firing client', () => {
+  // The client predicts its own shot so it feels instant. For a rocket there is no bullet to predict:
+  // doing it anyway drew a tracer and punched impact holes from a weapon that fired no round at all.
+  const source = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  assert.match(source, /weapon\.rocket \? 0 : weapon\.pellets/, 'the local shot prediction no longer skips rockets');
+});

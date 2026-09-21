@@ -378,7 +378,10 @@ export class LocalPlayer {
     const rng = mulberry32(hashString(game.id || '') + this.seq * 7919);
     const muzzle = this.viewmodel.muzzleWorld(this.camera, this.scopeAmount);
     const tracerColor = game.look.tracer || '#ffc857';
-    for (let pellet = 0; pellet < weapon.pellets; pellet += 1) {
+    // A launcher fires a rocket, not a round. The server flies it and broadcasts it back, so predicting
+    // a bullet here drew a tracer and punched holes in whatever was downrange, from a weapon that never
+    // fired a bullet at all.
+    for (let pellet = 0; pellet < (weapon.rocket ? 0 : weapon.pellets); pellet += 1) {
       const shotDir = applySpread(dir, angle, rng);
       const trace = traceShot(this.arena.physics, origin, shotDir, weapon, this.operators.targets(), 260, ballisticsFor(weapon, this.arena.map));
       this.effects.tracer([muzzle.x, muzzle.y, muzzle.z], trace.end, tracerColor, 0.012 + weapon.tracer * 0.012);

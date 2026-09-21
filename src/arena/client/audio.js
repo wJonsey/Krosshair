@@ -225,11 +225,16 @@ const GUN_CLASS = {
   magnum: { sub: [108, 40, 0.32, 0.95], blast: [4800, 330, 0.17, 0.95], crack: [3000, 0.012, 0.85], body: [[400, 3, 0.7], [950, 4, 0.45], [2100, 5, 0.24]], tail: [1.05, 0.42, 1500], action: 'none', ref: 12, send: 0.5 },
   suppressed: { sub: [240, 120, 0.04, 0.16], blast: [2200, 500, 0.05, 0.22], crack: [1500, 0.012, 0.1], body: [[900, 2, 0.16]], tail: [0.12, 0.04, 1500], action: 'semi', ref: 3, send: 0.05 },
 };
+// A launcher: nothing supersonic leaves it, so there is no crack, just a deep push and a long roar
+// that carries a long way.
+GUN_CLASS.launcher = { sub: [70, 26, 0.8, 1.25], blast: [3400, 180, 0.45, 1.1], crack: [900, 0.03, 0.35], body: [[180, 3, 0.9], [520, 4, 0.55], [1400, 5, 0.3]], tail: [2.4, 0.9, 900], action: 'none', ref: 22, send: 0.8 };
+
 const GUNS = {
   m44: ['sniper', 1, 1], vesper: ['sniper', 1.13, 0.9], harbinger: ['sniper', 0.7, 1.22], recon: ['dmr', 1, 1],
   talon: ['rifle', 1, 1], ronin: ['rifle', 0.86, 1.08], halcyon: ['rifle', 1.12, 0.92], anvil: ['lmg', 1, 1],
   wasp: ['smg', 1, 1], hornet: ['smg', 1.2, 0.9], breaker: ['shotgun', 1, 1], maul: ['shotgun', 1.12, 0.92], sawn: ['shotgun', 0.84, 1.12],
   p9: ['pistol', 1, 1], pike: ['pistol', 1.16, 0.9], viper: ['magnum', 1, 1], wren: ['suppressed', 1, 1],
+  nin: ['launcher', 1, 1.15],
 };
 
 function casing(out, at) {
@@ -241,7 +246,7 @@ function casing(out, at) {
 
 export function playShot(weaponId, pos = null, volume = 1) {
   if (!ensure() || ctx.state !== 'running') return;
-  const [className, pitch, level] = GUNS[weaponId] || GUNS.p9;
+  const [className, pitch, level] = GUNS[weaponId] || GUNS.p9;   // anything unlisted falls back, so keep GUNS complete
   const spec = GUN_CLASS[className];
   const own = !pos;
   const { out, at, dist } = route({ pos, volume: volume * level * (own ? 0.54 : 1.5), ref: spec.ref, send: spec.send });
