@@ -112,6 +112,9 @@ export const mouseCode = (event) => `Mouse${event.button}`;
 // what makes a wheel bound to jump useful: one flick is several clean attempts at the landing.
 export const wheelCode = (event) => (event.deltaY < 0 ? 'WheelUp' : 'WheelDown');
 export const WHEEL_HOLD = 0.08;
+// A pad button that stands in for a key is held this long, so anything polling the key set gets a
+// clear look at it. Long enough for several frames, short enough to still be one press.
+export const PAD_TAP_HOLD = 0.12;
 
 const NAMES = { WheelUp: 'WHEEL UP', WheelDown: 'WHEEL DOWN', Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5', Space: 'SPACE', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', AltLeft: 'L-ALT', AltRight: 'R-ALT', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/' };
 export function codeLabel(code) {

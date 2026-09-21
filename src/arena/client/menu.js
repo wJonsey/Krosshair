@@ -271,6 +271,7 @@ function rankPanelHtml(profile) {
 // Top-level entries own a group of pages: the first is where the nav button goes, the rest are its tabs.
 const NAV = [
   ['Play', [['play', 'Matchmaking'], ['ranked', 'Ranked'], ['rooms', 'Rooms']]],
+  ['Gunsmith', [['gunsmith', 'Gunsmith']]],
   ['Locker', [['locker', 'Locker']]],
   ['Shop', [['shop', 'Shop']]],
   ['Games', [['games', 'Games']]],

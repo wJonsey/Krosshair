@@ -56,3 +56,33 @@ test('a wheel notch has a label, so it does not print as a raw code', () => {
   assert.match(input, /WheelUp: 'WHEEL UP'/);
   assert.match(input, /WheelDown: 'WHEEL DOWN'/);
 });
+
+// Picking loot up in royale asks whether the pick up key is held. A pad press only raised an event,
+// which nothing in royale was listening for, so a controller could never pick a gun up: the armoury
+// worked because it listens for that event, and the loot did not because it polls the keys.
+test('a pad press of a key-side action holds the key, not just raises an event', () => {
+  const handler = player.slice(player.indexOf("for (const action of ['interact', 'armoury']"), player.indexOf("if (tap('inspect')"));
+  assert.match(handler, /this\.keys\.add\(code\)/, 'the pad has to put the key in the set, or held() never sees it');
+  assert.match(handler, /bus\.emit\('key', code\)/, 'and still raise the event, for whatever listens for that instead');
+  assert.match(handler, /setTimeout\(\(\) => this\.keys\.delete\(code\)/, 'and let go again, or it would be held forever');
+});
+
+test('royale reads the pick up the way the pad now writes it', () => {
+  const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  assert.match(royale, /held\(player\.keys[^,]*, 'interact'\)/, 'royale polls the key set for interact');
+  // Which is exactly why raising an event alone was never going to reach it.
+  assert.ok(!/bus\.on\('key'/.test(royale), 'and does not listen for the key event');
+});
+
+test('the pad hold is long enough to be seen and short enough to be one press', async () => {
+  const { PAD_TAP_HOLD } = await import('../client/input.js');
+  for (const fps of [30, 60, 144, 240, 360]) assert.ok(PAD_TAP_HOLD > 1 / fps, `a ${PAD_TAP_HOLD}s hold can be missed at ${fps} fps`);
+  assert.ok(PAD_TAP_HOLD < 0.25, 'but it must not linger into a second pickup');
+});
+
+test('interact still has a button on the pad after the sprint rebind', () => {
+  assert.match(input, /interact: 'Pad\d+'/, 'the pad still has a pick up button');
+  const pad = input.slice(input.indexOf('DEFAULT_PAD_BINDS'), input.indexOf('PAD_ACTIONS'));
+  const used = [...pad.matchAll(/'(Pad\d+)'/g)].map((m) => m[1]);
+  assert.equal(new Set(used).size, used.length, 'and no two actions share a button');
+});

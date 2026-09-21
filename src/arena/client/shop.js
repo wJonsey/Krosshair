@@ -23,9 +23,11 @@ export const COIN = '<svg class="coin-icon" viewBox="0 0 20 20" width="14" heigh
 // A coin amount. Anything that isn't a number shows as 0 rather than NaN.
 const whole = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
 export const coins = (n) => `<span class="coins">${COIN}${whole(n).toLocaleString('en')}</span>`;
-// One module, four menu pages. Each page shows its own tabs and remembers the last one opened.
+// One module, five menu pages. Each page shows its own tabs and remembers the last one opened.
 const SECTIONS = {
-  locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['gunsmith', 'Gunsmith'], ['inventory', 'Skins'], ['charms', 'Charms']] },
+  locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
+  // Its own page rather than a tab in the locker: it is where a gun is built, not where it is dressed.
+  gunsmith: { eyebrow: 'Gunsmith', title: 'Build your <em>guns.</em>', tabs: [['gunsmith', 'Gunsmith']] },
   shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['market', 'Crates & Shop'], ['skins', 'Skins']], balance: true },
   games: { eyebrow: 'Games', title: 'Double or <em>nothing.</em>', tabs: [['games', 'Games']], balance: true },
   wallet: { eyebrow: 'Profile', title: 'Your <em>coins.</em>', tabs: [['wallet', 'Wallet']], balance: true },
