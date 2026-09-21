@@ -1,7 +1,7 @@
 // Entry point: boots the renderer, wires server messages to the game systems
 // and runs the frame loop.
 import * as THREE from 'three';
-import { GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
+import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
 import { bus, game, graphics, isEnemy, nameOf, saveSettings } from './state.js';
 import { net } from './net.js';
 import { bindLabel } from './input.js';
@@ -399,6 +399,29 @@ addEventListener('beforeunload', (event) => {
   return '';
 });
 
+// Movement readout: speed, state and the jump feel, for tuning the physics by hand. F3 toggles it,
+// and it is off unless asked for, so it costs nothing in a normal match.
+const moveDebug = document.createElement('div');
+moveDebug.className = 'move-debug hidden';
+document.body.append(moveDebug);
+let debugAt = 0, debugFrames = 0, debugFps = 0;
+function updateMoveDebug(now) {
+  debugFrames += 1;
+  if (now - debugAt >= 0.25) { debugFps = Math.round(debugFrames / (now - debugAt)); debugFrames = 0; debugAt = now; }
+  const on = Boolean(game.settings.moveDebug) && game.screen === 'game';
+  if (moveDebug.classList.contains('hidden') === !on) moveDebug.classList.toggle('hidden', !on);
+  if (!on) return;
+  const v = player.vel, body = player.body;
+  const text = `SPEED ${player.horizontalSpeed.toFixed(2)} m/s\nSTATE ${player.moveState}\nVEL   x ${v.x.toFixed(2)}  y ${body.vy.toFixed(2)}  z ${v.z.toFixed(2)}\nFLOW  ${player.flow.toFixed(2)}\nGROUND ${body.onGround ? 'yes' : 'no'}   FPS ${debugFps}`;
+  if (moveDebug.textContent !== text) moveDebug.textContent = text;
+}
+addEventListener('keydown', (event) => {
+  if (event.code !== 'F3' || event.repeat) return;
+  event.preventDefault();
+  game.settings.moveDebug = !game.settings.moveDebug;
+  saveSettings();
+});
+
 // ---------------------------------------------------------------- pause / leave
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === renderer.domElement;
@@ -551,6 +574,14 @@ function frame(now = 0) {
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));
   hud.update(dt);
+  updateMoveDebug(now / 1000);
+  // The view opens a touch as you get quicker. Small on purpose: enough to feel the speed, not enough
+  // to change what you can see and hit.
+  if (game.screen === 'game' && !viewmodel.scopeWanted()) {
+    const over = Math.max(0, player.horizontalSpeed - BODY.runSpeed) / Math.max(1, BODY.flowMax - BODY.runSpeed);
+    const want = game.settings.speedFov === false ? game.settings.fov : game.settings.fov + Math.min(1, over) * 6;
+    if (Math.abs(camera.fov - want) > 0.05) { camera.fov += (want - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
+  }
   setWorldAudio(game.screen === 'game');
   // Music follows the screen: full in the menus, lower between rounds, out of the way while a round is live.
   setMusicScene(game.screen !== 'game' ? 'menu' : game.room?.phase === 'live' || game.room?.phase === 'overtime' || game.room?.phase === 'range' ? 'combat' : 'match');

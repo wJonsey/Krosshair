@@ -15,7 +15,12 @@ export const BODY = {
   eye: 1.62,
   crouchEye: 1.06,
   step: 0.45,
-  runSpeed: 6.0,
+  runSpeed: 4.8,        // on foot, not sprinting
+  sprintSpeed: 6.8,     // holding sprint, and the pace a slide is meant to be entered from
+  // Weapon spread is scaled against a speed, not against whatever the base happens to be. It is kept
+  // at the old base on purpose: sprint is a movement change, and moving it here would quietly make
+  // everyone less accurate on the move, which is a gunplay change nobody asked for.
+  spreadSpeed: 6.0,
   walkSpeed: 3.1,
   crouchSpeed: 2.3,
   jumpVelocity: 5.7,
@@ -39,6 +44,15 @@ export const BODY = {
   // bunches movement into one update, and a pilot who has earned their speed must never be snapped
   // back for it. Well above anything legitimate, still far under what a speed hack helps itself to.
   speedLimit: 15,
+  // Acceleration, out of the movement code so it can be tuned in one place.
+  groundAccel: 14,      // how hard you are pulled to the speed you asked for, on your feet
+  airAccel: 14,         // and in the air, where it is applied along the wish direction only
+  // The trick that makes air strafing a skill: in the air only this much of the wish speed counts,
+  // so turning while you hold a strafe keeps opening a gap to accelerate into. Raise it and the air
+  // feels like the ground; drop it to nothing and air strafing stops working at all.
+  airControl: 1.5,
+  coyoteTime: 0.09,     // still jumpable this long after walking off an edge
+  jumpBuffer: 0.13,     // a jump pressed this soon before landing still fires on touchdown
 };
 
 // Penetration: a bullet starts with `pen` power. Every metre of material costs

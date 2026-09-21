@@ -1296,8 +1296,8 @@ export class Room {
       const body = decoy.body;
       const beforeX = body.x, beforeZ = body.z;
       body.vy -= BODY.gravity * dt;
-      this.world.moveBody(body, -Math.sin(decoy.yaw) * BODY.runSpeed * dt, body.vy * dt, -Math.cos(decoy.yaw) * BODY.runSpeed * dt);
-      if (Math.hypot(body.x - beforeX, body.z - beforeZ) < BODY.runSpeed * dt * 0.4) {
+      this.world.moveBody(body, -Math.sin(decoy.yaw) * BODY.sprintSpeed * dt, body.vy * dt, -Math.cos(decoy.yaw) * BODY.sprintSpeed * dt);
+      if (Math.hypot(body.x - beforeX, body.z - beforeZ) < BODY.sprintSpeed * dt * 0.4) {
         decoy.stuck += dt;
         if (decoy.stuck > 0.25) { decoy.yaw += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * 0.6); decoy.stuck = 0; }
       } else decoy.stuck = 0;

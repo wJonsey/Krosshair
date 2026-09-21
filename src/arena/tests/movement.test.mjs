@@ -94,3 +94,71 @@ test('speed carried out of a slide survives a full jump arc', () => {
   assert.ok(Math.max(0, carried - BODY.flowDecay * air) > 0 || air < 1, `a ${air.toFixed(2)}s hop must not outlast the chain`);
   assert.equal(Math.max(0, carried - BODY.flowDecay * 1.5), 0, 'standing about for a moment ends it');
 });
+
+// Air acceleration. The old model lerped toward a wish velocity, which dragged a fast pilot back down
+// to walking pace: gaining speed by strafing was arithmetically impossible. These pin the behaviour
+// that replaced it.
+import { airAccelerate } from '../shared/physics.js';
+
+// Hold a strafe and sweep the mouse, which is the whole technique.
+function strafeFor(startSpeed, turnRate, seconds, dt = 1 / 60) {
+  const vel = { x: 0, z: startSpeed };
+  let yaw = 0;
+  for (let i = 0; i < Math.round(seconds / dt); i += 1) {
+    yaw += turnRate * dt;
+    const a = yaw + Math.PI / 4;
+    airAccelerate(vel, Math.sin(a), Math.cos(a), BODY.runSpeed, dt);
+  }
+  return Math.hypot(vel.x, vel.z);
+}
+
+test('air strafing gains speed, and gains more the better it is done', () => {
+  const still = strafeFor(BODY.runSpeed, 0, 1);
+  const gentle = strafeFor(BODY.runSpeed, 0.8, 1);
+  const sharp = strafeFor(BODY.runSpeed, 2.5, 1);
+  assert.ok(Math.abs(still - BODY.runSpeed) < 0.01, 'pointing straight ahead gains nothing, as it should');
+  assert.ok(gentle > still, 'turning into the strafe is what pays');
+  assert.ok(sharp > gentle, `and sweeping harder pays more: ${gentle.toFixed(2)} then ${sharp.toFixed(2)}`);
+});
+
+test('momentum is never washed out by the air model', () => {
+  const vel = { x: 0, z: 9 };
+  for (let i = 0; i < 120; i += 1) airAccelerate(vel, 0, 1, BODY.runSpeed, 1 / 60);
+  assert.ok(Math.hypot(vel.x, vel.z) >= 9 - 0.001, 'holding forward at speed must not drag you back down');
+});
+
+test('air strafing cannot climb past the ceiling however long it goes on', () => {
+  for (const turn of [1, 2.5, 6, 20]) {
+    const top = strafeFor(BODY.flowMax, turn, 12);
+    assert.ok(top <= BODY.flowMax + 0.001, `sweep ${turn} reached ${top.toFixed(2)}, over the ceiling`);
+    assert.ok(top < BODY.speedLimit, `sweep ${turn} reached ${top.toFixed(2)}, which the server rejects`);
+  }
+});
+
+test('the air model gives the same speed at any frame rate', () => {
+  const rates = [30, 60, 144, 360].map((fps) => strafeFor(BODY.runSpeed, 1.5, 1, 1 / fps));
+  const spread = Math.max(...rates) - Math.min(...rates);
+  assert.ok(spread < 0.25, `frame rate changed the outcome by ${spread.toFixed(3)} m/s: ${rates.map((r) => r.toFixed(2)).join(', ')}`);
+});
+
+// The speed ladder. Sprint was added by dropping the base and giving it back on the key, so the order
+// of every tier matters and the top of it still has to sit under what the server will accept.
+test('every speed tier is in the right order and under the limit', () => {
+  const ladder = [BODY.crouchSpeed, BODY.walkSpeed, BODY.runSpeed, BODY.sprintSpeed, BODY.slideSpeed, BODY.flowMax];
+  for (let i = 1; i < ladder.length; i += 1) {
+    assert.ok(ladder[i] > ladder[i - 1], `tier ${i} (${ladder[i]}) is not above the one below it (${ladder[i - 1]})`);
+  }
+  assert.ok(BODY.flowMax < BODY.speedLimit, 'the fastest a pilot can legitimately move is under the reject threshold');
+});
+
+test('sprint is the way into a slide', () => {
+  assert.ok(BODY.sprintSpeed > BODY.slideMin, 'sprinting is comfortably enough to start a slide');
+  assert.ok(BODY.slideSpeed > BODY.sprintSpeed, 'and a slide is still worth more than the sprint into it');
+});
+
+// Dropping the base speed would otherwise have made everyone less accurate on the move, because spread
+// scales against a reference speed. It is its own constant now and must not follow the base around.
+test('adding sprint did not quietly change gunplay', () => {
+  assert.equal(BODY.spreadSpeed, 6.0, 'the spread reference is the speed it always was');
+  assert.notEqual(BODY.spreadSpeed, BODY.runSpeed, 'and is deliberately not tied to the new base');
+});

@@ -1766,3 +1766,7 @@ button.cash-out .coins { color: var(--void); }
 .invite-actions { grid-column: 2; display: flex; gap: 5px; margin-top: 4px; }
 
 @media (max-width: 760px) { .social-chip b { display: none; } }
+
+/* ---------- movement readout (F3) ---------- */
+.move-debug { position: fixed; left: 14px; bottom: 14px; z-index: 40; padding: 10px 12px; border: 1px solid var(--hairline-strong); background: rgba(10, 14, 18, .72); color: var(--frost); font: 500 11px/1.65 var(--mono); letter-spacing: .04em; white-space: pre; pointer-events: none; }
+.move-debug.hidden { display: none; }

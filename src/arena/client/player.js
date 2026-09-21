@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '../shared/constants.js';
 import { SpreadTracker, applySpread, ballisticsFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
-import { bhopSpeed, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
+import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
@@ -36,6 +36,9 @@ export class LocalPlayer {
     // Slide and bhop: `flow` is the speed being carried through a chain, in m/s. 0 means not flowing.
     this.slide = { since: -1, start: 0, endedAt: -1 };
     this.flow = 0;
+    // Jump feel: a press just before landing still counts, and stepping off an edge leaves a moment
+    // where a jump is still owed to you. Both are about the input never being silently dropped.
+    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false;
     this.scopeAmount = 0; this.zoomIndex = 0;
     this.viewY = 0; this.recoilPitch = 0; this.recoilYaw = 0; this.swayX = 0; this.swayY = 0; this.swayTime = 0;
     this.breath = 1; this.holdingBreath = false; this.winded = false;
@@ -146,6 +149,7 @@ export class LocalPlayer {
     this.alive = true; this.mode = 'play';
     this.crouching = false; this.crouchToggle = false; this.scopeToggle = false; this.crouchAmount = 0; this.scopeAmount = 0;
     this.slide = { since: -1, start: 0, endedAt: -1 }; this.flow = 0;
+    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false;
     this.recoilPitch = 0; this.recoilYaw = 0; this.suppression = 0; this.breath = 1;
     this.reloadEnd = 0; this.nextFire = 0;
     this.spectateId = null; this.pendingKillcam = null;
@@ -431,6 +435,7 @@ export class LocalPlayer {
     this.pad.scope = padHeld(down, 'scope');
     this.pad.jump = padHeld(down, 'jump');
     this.pad.walk = padHeld(down, 'walk');
+    this.pad.sprint = padHeld(down, 'sprint');
     if (this.canAct) {
       if (tap('crouch')) this.crouchToggle = !this.crouchToggle;
       if (tap('reload')) this.reload();
@@ -506,6 +511,18 @@ export class LocalPlayer {
     this.sendState(wallDt);
   }
 
+  // Derived from what the body is actually doing, so the readout can never claim one thing while the
+  // physics does another.
+  get moveState() {
+    if (this.slide.since >= 0) return 'SLIDING';
+    if (!this.body.onGround) return this.flow > BODY.runSpeed ? 'FLOWING' : 'AIRBORNE';
+    if (this.crouching) return 'CROUCHING';
+    if (this.speed < 0.4) return 'IDLE';
+    if (this.speed <= BODY.walkSpeed + 0.3) return 'WALKING';
+    return this.speed > BODY.runSpeed + 0.3 ? 'SPRINTING' : 'RUNNING';
+  }
+  get horizontalSpeed() { return Math.hypot(this.vel.x, this.vel.z); }
+
   updatePlay(dt, now, pad) {
     const body = this.body, weapon = this.weapon;
     const blocked = this.uiBlocked();
@@ -543,6 +560,9 @@ export class LocalPlayer {
     if (!wantScope && before > 0 && this.scopeAmount === 0) this.zoomIndex = 0;
     // --- breath
     const walkKey = held(keys, 'walk') || this.pad.walk;
+    // Sprint is the pace a slide is meant to be entered from. Walking wins if both are held, and
+    // scoping already slows you, so sprint quietly does nothing while you are looking down a scope.
+    const sprintKey = !walkKey && (held(keys, 'sprint') || this.pad.sprint);
     this.holdingBreath = walkKey && this.scopeAmount > 0.9 && Boolean(weapon.scope?.[0] < 40) && !this.winded;
     if (this.holdingBreath) { this.breath = Math.max(0, this.breath - dt * 0.3); if (this.breath === 0) { this.winded = true; } } else { this.breath = Math.min(1, this.breath + dt * 0.22); if (this.winded && this.breath > 0.45) this.winded = false; }
     // --- movement
@@ -550,7 +570,7 @@ export class LocalPlayer {
     if (held(keys, 'forward')) mz -= 1; if (held(keys, 'back')) mz += 1; if (held(keys, 'left')) mx -= 1; if (held(keys, 'right')) mx += 1;
     const length = Math.hypot(mx, mz);
     if (length > 1) { mx /= length; mz /= length; }
-    let maxSpeed = BODY.runSpeed * (weapon.speed || 1);
+    let maxSpeed = (sprintKey ? BODY.sprintSpeed : BODY.runSpeed) * (weapon.speed || 1);
     if (this.crouching) maxSpeed = BODY.crouchSpeed; else if (walkKey) maxSpeed = BODY.walkSpeed;
     // A live slide overrides the crouch it came from, and speed carried out of one holds in the air.
     if (this.slide.since >= 0) { this.flow = slideSpeedAt(this.slide.start, now - this.slide.since); maxSpeed = Math.max(maxSpeed, this.flow); }
@@ -574,18 +594,37 @@ export class LocalPlayer {
     }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const wishX = (mx * cos + mz * sin) * maxSpeed, wishZ = (-mx * sin + mz * cos) * maxSpeed;
-    const accel = body.onGround ? 14 : this.drop ? 3.5 : 2.5;
-    const k = Math.min(1, accel * dt);
-    this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
+    if (body.onGround || this.drop) {
+      // On your feet, and under a parachute, you go where you point.
+      const k = Math.min(1, (this.drop ? 3.5 : BODY.groundAccel) * dt);
+      this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
+    } else if (mx || mz) {
+      // Airborne with a direction asked for: add along it only, so turning into a held strafe builds
+      // speed instead of washing it out. Nothing happens with no input, which is how momentum is kept.
+      const len = Math.hypot(wishX, wishZ) || 1;
+      airAccelerate(this.vel, wishX / len, wishZ / len, maxSpeed, dt);
+    }
+    // What the chain is worth now follows the real velocity, so air strafing feeds the next slide.
+    if (!body.onGround && this.flow > 0) this.flow = Math.max(this.flow, Math.min(BODY.flowMax, Math.hypot(this.vel.x, this.vel.z)));
     const jump = !blocked && (held(keys, 'jump') || this.pad.jump);
     // Jumping out of a slide is the whole point of one, so crouch no longer blocks it. Leave it late
     // and there is nothing left to carry, which is what makes the timing worth learning.
     const sliding = this.slide.since >= 0;
-    if (jump && body.onGround && (!this.crouching || sliding)) {
+    // Remember the press, not just the hold: a jump asked for a frame before landing is owed.
+    if (jump && !this.jumpHeld) this.jumpPressedAt = now;
+    this.jumpHeld = jump;
+    if (body.onGround) this.leftGroundAt = -1; else if (this.leftGroundAt < 0) this.leftGroundAt = now;
+    // Auto bhop holds the rhythm for you; without it the press has to be its own.
+    const asked = game.settings.autoBhop === false
+      ? this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer
+      : jump;
+    const footing = body.onGround || (this.leftGroundAt >= 0 && now - this.leftGroundAt <= BODY.coyoteTime && body.vy <= 0);
+    if (asked && footing && (!this.crouching || sliding)) {
       // Out of a slide it is a low fast arc that keeps the speed. Stand up first and you get the full
       // height instead, which is the trade when you need to reach something rather than cover ground.
       body.vy = jumpArc(sliding, this.scopeAmount > 0.3) * (clock < this.boost.jumpUntil ? this.boost.jump : 1);
       body.onGround = false;
+      this.jumpPressedAt = -1; this.leftGroundAt = now;
       if (sliding) { this.flow = bhopSpeed(slideSpeedAt(this.slide.start, now - this.slide.since)); this.slide = { since: -1, start: 0, endedAt: now }; }
       play('jump'); bus.emit('tutorial', 'jump');
     }

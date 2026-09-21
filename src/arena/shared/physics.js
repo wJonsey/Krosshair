@@ -248,3 +248,31 @@ export function strafeAir(flow, airborne, strafing) {
   if (!airborne || !strafing || !(flow > 0)) return flow;
   return Math.min(BODY.flowMax, flow * BODY.strafeBonus);
 }
+
+// Air acceleration, the Quake-descended kind that makes air strafing worth learning. Speed is added
+// only along the direction asked for, and only while the speed you already have in that direction is
+// under the target. Point the wish direction across your travel and the projection stays small, so
+// there is always room to add: that is where the speed comes from. A lerp toward a wish velocity
+// cannot do this, because it drags you back to the wish speed instead.
+//
+// `cap` is the horizontal ceiling and exists so none of this can reach the speed the server rejects.
+export function airAccelerate(vel, dirX, dirZ, wishSpeed, dt, cap = BODY.flowMax) {
+  const along = vel.x * dirX + vel.z * dirZ;
+  const room = Math.min(wishSpeed, BODY.airControl) - along;
+  if (room > 0) {
+    const gain = Math.min(BODY.airAccel * BODY.airControl * dt, room);
+    vel.x += dirX * gain;
+    vel.z += dirZ * gain;
+  }
+  const speed = Math.hypot(vel.x, vel.z);
+  if (speed > cap) { const k = cap / speed; vel.x *= k; vel.z *= k; }
+  return speed;
+}
+
+// On the ground the old behaviour is right: you go where you point, quickly. Kept here so both kinds
+// of acceleration are read in one place.
+export function groundAccelerate(vel, wishX, wishZ, dt) {
+  const k = Math.min(1, BODY.groundAccel * dt);
+  vel.x += (wishX - vel.x) * k;
+  vel.z += (wishZ - vel.z) * k;
+}

@@ -6,7 +6,7 @@ import { bus, game, saveSettings } from './state.js';
 
 export const ACTIONS = [
   ['forward', 'Move forward', 'Movement'], ['back', 'Move back', 'Movement'], ['left', 'Strafe left', 'Movement'], ['right', 'Strafe right', 'Movement'],
-  ['jump', 'Jump', 'Movement'], ['crouch', 'Crouch (silent)', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
+  ['jump', 'Jump', 'Movement'], ['sprint', 'Sprint', 'Movement'], ['crouch', 'Crouch · slide', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
   ['fire', 'Fire', 'Weapons'], ['scope', 'Aim / scope', 'Weapons'], ['reload', 'Reload', 'Weapons'],
   ['primary', 'Primary weapon', 'Weapons'], ['sidearm', 'Sidearm', 'Weapons'], ['melee', 'Blade', 'Weapons'],
   ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'], ['inspect', 'Inspect weapon', 'Weapons'],
@@ -15,7 +15,7 @@ export const ACTIONS = [
 
 export const DEFAULT_BINDS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  jump: ['Space', null], crouch: ['ControlLeft', 'KeyC'], walk: ['ShiftLeft', 'ShiftRight'],
+  jump: ['Space', null], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'], walk: ['AltLeft', 'KeyG'],
   fire: ['Mouse0', null], scope: ['Mouse2', null], reload: ['KeyR', null],
   primary: ['Digit1', null], sidearm: ['Digit2', null], melee: ['Digit3', null],
   gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null], inspect: ['KeyV', null],
@@ -64,13 +64,13 @@ export const padName = (code) => PAD_LAYOUTS[padLayout()].names[code] || String(
 
 // Controller binds live in their own table.
 export const DEFAULT_PAD_BINDS = {
-  fire: 'Pad7', scope: 'Pad6', jump: 'Pad0', crouch: 'Pad1', walk: 'Pad10', reload: 'Pad2',
+  fire: 'Pad7', scope: 'Pad6', jump: 'Pad0', sprint: 'Pad10', crouch: 'Pad1', reload: 'Pad2',
   swap: 'Pad3', gadget1: 'Pad4', gadget2: 'Pad5', melee: 'Pad11', ping: 'Pad12', interact: 'Pad14',
   armoury: 'Pad15', inspect: 'Pad13', scoreboard: 'Pad8', menu: 'Pad9',
 };
 // Actions a controller can hold, in the order the settings page lists them.
 export const PAD_ACTIONS = [
-  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['crouch', 'Crouch'], ['walk', 'Walk · hold breath'],
+  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['sprint', 'Sprint'], ['crouch', 'Crouch · slide'],
   ['reload', 'Reload'], ['swap', 'Swap weapon'], ['melee', 'Blade'], ['gadget1', 'Gadget 1'], ['gadget2', 'Gadget 2'],
   ['interact', 'Pick up (royale)'], ['armoury', 'Armoury'], ['inspect', 'Inspect weapon'], ['ping', 'Ping location'],
   ['scoreboard', 'Scoreboard'], ['menu', 'Pause / back'],
