@@ -42,7 +42,7 @@ test('match coins: wins beat losses, bots are worth less than people, higher lev
   const loss = profiles.recordMatch(token, { won: false, vsHumans: true }).coins;
   // Daily contracts can complete along the way, so compare lines rather than totals.
   const line = (report, label) => report.lines.find((entry) => entry.label === label)?.amount || 0;
-  assert.equal(line(pvp, 'Match') + line(pvp, 'Win') + line(pvp, 'Top kills') + line(pvp, 'Kills'), COINS.finish + COINS.win + COINS.topKills + 8);
+  assert.equal(line(pvp, 'Match') + line(pvp, 'Win') + line(pvp, 'Top kills') + line(pvp, 'Kills'), COINS.finish + COINS.win + COINS.topKills + COINS.playerKill * 4);
   assert.ok(line(bots, 'Win') + line(bots, 'Kills') < (line(pvp, 'Win') + line(pvp, 'Kills')) / 2, 'a bot match pays far less');
   assert.equal(line(loss, 'Win'), 0);
   assert.equal(line(loss, 'Match'), COINS.finish);
