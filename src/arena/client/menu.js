@@ -15,7 +15,7 @@ import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
-import { initSocial, keepSocialInput, onSocialClick, onSocialInput, restoreSocialInput, socialBadge, socialPageHtml } from './social.js';
+import { initSocial, socialButtonHtml, toggleSocial } from './social.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -272,7 +272,7 @@ const NAV = [
   ['Locker', [['locker', 'Locker']]],
   ['Shop', [['shop', 'Shop']]],
   ['Games', [['games', 'Games']]],
-  ['Profile', [['career', 'Career'], ['social', 'Social'], ['wallet', 'Wallet']]],
+  ['Profile', [['career', 'Career'], ['wallet', 'Wallet']]],
   ['Leaderboard', [['leaderboard', 'Leaderboard']]],
 ];
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
@@ -288,7 +288,7 @@ const groupOf = (page) => NAV.find(([, pages]) => pages.some(([id]) => id === pa
 function groupTabsHtml(page) {
   const pages = groupOf(page)?.[1] || [];
   if (pages.length < 2) return '';
-  return `<div class="segmented group-tabs" role="tablist">${pages.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" class="${id === page ? 'active' : ''}${guestLocked(id) ? ' shut' : ''}" aria-selected="${id === page}">${label}${id === 'rooms' && game.publicRooms.length ? ` <i class="badge">${game.publicRooms.length}</i>` : ''}${id === 'social' && socialBadge() ? ` <i class="badge">${socialBadge()}</i>` : ''}</button>`).join('')}</div>`;
+  return `<div class="segmented group-tabs" role="tablist">${pages.map(([id, label]) => `<button type="button" role="tab" data-page="${id}" class="${id === page ? 'active' : ''}${guestLocked(id) ? ' shut' : ''}" aria-selected="${id === page}">${label}${id === 'rooms' && game.publicRooms.length ? ` <i class="badge">${game.publicRooms.length}</i>` : ''}</button>`).join('')}</div>`;
 }
 let homePage = pageFromHash();
 let pageEntering = true;
@@ -565,27 +565,26 @@ function roomsPageHtml() {
     <aside class="page-side"><div class="panel"><p class="eyebrow">Live rooms <small>${game.publicRooms.length}</small></p><div id="room-list">${rooms}</div></div></aside>`;
 }
 
-initSocial(() => { if (game.screen === 'home' && homePage === 'social') renderHome(); });
+initSocial(() => { if (game.screen === 'home') renderHome(); });
 
 export function renderHome() {
   const level = game.profile?.level || 1;
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
   if ($('#room-input')) roomDraft = { code: $('#room-input').value, isPublic: $('#room-public').checked };
   const kept = keepShopInput();
-  const keptSocial = keepSocialInput();
   if ($('#wager-stake')) wagerDraft = { ...wagerDraft, stake: $('#wager-stake').value, isPublic: $('#wager-public').checked };
   const keep = { name: $('#name-input')?.value, username: $('#auth-username')?.value, password: $('#auth-password')?.value, confirm: $('#auth-confirm')?.value, status: $('#auth-status')?.outerHTML, focus: document.activeElement?.id, tab: home.querySelector('.tab.active')?.dataset.tab };
   const feedbackDraft = readFeedbackDraft();
   if (homePage === 'controls') settingsTab = 'binds'; else if (homePage === 'settings' && settingsTab === 'binds') settingsTab = 'aim';
   if (homePage !== 'settings' && homePage !== 'controls') { listening = null; padListening = null; }
-  const pageHtml = guestLocked(homePage) ? lockedPageHtml(homePage) : SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : homePage === 'social' ? socialPageHtml(groupTabsHtml('social')) : playPageHtml();
+  const pageHtml = guestLocked(homePage) ? lockedPageHtml(homePage) : SHOP_PAGES.includes(homePage) ? (homePage === 'locker' && !game.username ? operatorPageHtml(level) : shopPageHtml(homePage, groupTabsHtml(homePage))) : homePage === 'leaderboard' ? leaderboardPageHtml() : homePage === 'ranked' ? rankedPageHtml() : homePage === 'settings' ? settingsPageHtml() : homePage === 'controls' ? controlsPageHtml() : homePage === 'feedback' ? feedbackPageHtml() : homePage === 'career' ? `<section class="page-wide">${groupTabsHtml('career')}<p class="eyebrow">Career</p><h1 class="page-title">Your <em>record.</em></h1>${game.username ? `<div class="panel account-panel">${accountRowHtml()}</div>` : ''}<div class="career-grid">${careerHtml()}</div></section>` : homePage === 'rooms' ? roomsPageHtml() : playPageHtml();
   const toolPage = TOOL_PAGES.some(([id]) => id === homePage);
   home.innerHTML = `
     <div class="menu-shell">
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
         <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); const shut = guestLocked(pages[0][0]); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}${shut ? ' shut' : ''}" ${on ? 'aria-current="page"' : ''}${shut ? ' title="Needs an account"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
-        <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
+        <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${socialButtonHtml()}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
       <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}</nav></footer>
@@ -605,7 +604,6 @@ export function renderHome() {
   if ($('#operator-preview')) { ensurePreview($('#operator-preview')); refreshPreviewLook(); }
   if (feedbackDraft && home.querySelector('#feedback-form')) writeFeedbackDraft(feedbackDraft);
   restoreShopInput(kept);
-  restoreSocialInput(keptSocial);
   mountShop();
 }
 
@@ -632,12 +630,7 @@ initShop({
   rerender: () => renderHome(), onShop: () => game.screen === 'home' && SHOP_PAGES.includes(homePage), goto: (page) => { if (game.screen === 'home') setHomePage(page); }, toast, saveLook, refreshCoins,
   onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind].find((item) => item.id === id).name} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
 });
-home.addEventListener('input', (event) => {
-  if (homePage === 'social') { if (onSocialInput(event.target)) renderHome(); return; }
-  if (!SHOP_PAGES.includes(homePage)) return;
-  const redraw = onShopInput(event.target);
-  if (redraw) renderHome();
-});
+home.addEventListener('input', (event) => { if (!SHOP_PAGES.includes(homePage)) return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
 
 function saveLook() { store('look', game.look); refreshPreviewLook(); net.send({ type: 'look', look: game.look }); bus.emit('look'); uploadPrefs(); }
 
@@ -743,7 +736,7 @@ home.addEventListener('click', (event) => {
   if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
   if (onSettingsClick(event)) return;
   if (SHOP_PAGES.includes(homePage) && onShopClick(target)) { renderHome(); return; }
-  if (homePage === 'social' && onSocialClick(target)) { renderHome(); return; }
+  if (target.id === 'social-button') { toggleSocial(); renderHome(); return; }
   if (target.dataset.gear) { chooseGear(target.dataset.gearKind, target.dataset.gear, target.dataset.lookKey); return; }
   if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
   if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }

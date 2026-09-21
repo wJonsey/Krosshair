@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -178,4 +178,24 @@ test('blocking a party member removes them from the party', async (t) => {
   nova.send({ type: 'friends', action: 'add', name: 'Vex' });
   const denied = await nova.settle('friends-result', (m) => Boolean(m.error));
   assert.equal(denied.error, 'They are not taking requests.');
+});
+
+// The invite worked on the server and went nowhere, because the client had no handler for it.
+// This is the cheap check that would have caught it: every message the social system sends has
+// somewhere to land.
+test('every social message the server sends is handled by the client', async () => {
+  const server = await readFile(new URL('../multiplayer-server.mjs', import.meta.url), 'utf8');
+  const client = await readFile(new URL('../client/social.js', import.meta.url), 'utf8');
+  const main = await readFile(new URL('../client/main.js', import.meta.url), 'utf8');
+
+  // What the friends and party handlers send back.
+  const sent = new Set();
+  for (const [, type] of server.matchAll(/type:\s*'(social|party-[a-z]+|friends-[a-z]+)'/g)) sent.add(type);
+  assert.ok(sent.has('party-invite'), 'the server does send party invites');
+  assert.ok(sent.size >= 4, `expected the social messages, saw ${[...sent].join(', ')}`);
+
+  const handled = new Set();
+  for (const source of [client, main]) for (const [, type] of source.matchAll(/net\.on\('([^']+)'/g)) handled.add(type);
+  const orphans = [...sent].filter((type) => !handled.has(type));
+  assert.deepEqual(orphans, [], `these arrive at the browser and nothing listens: ${orphans.join(', ')}`);
 });
