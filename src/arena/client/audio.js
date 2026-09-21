@@ -14,7 +14,7 @@
 import { game } from './state.js';
 
 let ctx = null;
-let master = null;
+let master = null, musicOut = null;
 let sfx = null;          // the match: shots, steps, impacts, weather, reverb returns
 let uiBus = null;        // menu clicks and chimes, which must keep working when the match is silenced
 let verbSend = null;
@@ -62,6 +62,11 @@ function ensure() {
   const limiter = ctx.createDynamicsCompressor();
   limiter.threshold.value = -9; limiter.knee.value = 6; limiter.ratio.value = 10; limiter.attack.value = 0.002; limiter.release.value = 0.18;
   master.connect(limiter).connect(ctx.destination);
+  // Music has its own way out. On the master bus a burst of gunfire pins the limiter and drags the music
+  // down with it, which sounded like the track cutting out whenever a fight started.
+  musicOut = ctx.createGain();
+  musicOut.gain.value = game.settings.volume;
+  musicOut.connect(ctx.destination);
   sfx = ctx.createGain();
   sfx.connect(master);
   uiBus = ctx.createGain();
@@ -106,7 +111,7 @@ export function unlockAudio() {
   if (ctx.state === 'suspended') ctx.resume();
   startMusic();
 }
-export function setVolume(value) { if (master) master.gain.setTargetAtTime(value, ctx.currentTime, 0.05); applyMusicVolume(); }
+export function setVolume(value) { if (master) master.gain.setTargetAtTime(value, ctx.currentTime, 0.05); if (musicOut) musicOut.gain.setTargetAtTime(value, ctx.currentTime, 0.05); applyMusicVolume(); }
 
 export function setListener(camera) {
   if (!ctx) return;
@@ -381,6 +386,12 @@ const SOUNDS = {
   ghost: (out, at) => { noise(out, at, { type: 'bandpass', freq: 2400, sweepTo: 180, q: 2, attack: 0.03, decay: 0.7, gain: 0.25 }); tone(out, at, { freq: 660, to: 110, attack: 0.03, decay: 0.7, gain: 0.05 }); },
   droneDown: (out, at) => { tone(out, at, { wave: 'sawtooth', freq: 340, to: 50, attack: 0.002, decay: 0.55, gain: 0.25 }); noise(out, at, { freq: 2200, sweepTo: 300, attack: 0.002, decay: 0.3, gain: 0.4, drive: true }); grains(out, at + 0.3, 6, 0.3, { low: 1500, high: 4000, decay: 0.012, gain: 0.15 }); },
   // Thunder: the crack, then the roll: the same event arriving by longer and longer paths.
+  explosion: (out, at) => {
+    noise(out, at, { type: 'highpass', freq: 1800, attack: 0.001, decay: 0.09, gain: 0.7, drive: true });
+    noise(out, at + 0.01, { freq: 420, sweepTo: 55, attack: 0.006, decay: 0.9, gain: 1, drive: true });
+    tone(out, at + 0.01, { freq: 90, sweepTo: 32, type: 'sine', attack: 0.004, decay: 0.7, gain: 0.8 });
+    for (let i = 0; i < 6; i += 1) noise(out, at + 0.12 + i * rnd(0.04, 0.12), { type: 'bandpass', freq: rnd(700, 2600), attack: 0.002, decay: rnd(0.05, 0.16), gain: 0.16 / (i * 0.5 + 1) });
+  },
   thunder: (out, at) => { noise(out, at, { type: 'highpass', freq: 1200, attack: 0.002, decay: 0.18, gain: 0.5, drive: true }); noise(out, at + 0.04, { freq: 900, sweepTo: 90, attack: 0.03, decay: 1.2, gain: 0.9, drive: true }); for (let i = 0; i < 5; i += 1) noise(out, at + 0.5 + i * rnd(0.35, 0.6), { freq: rnd(90, 190), attack: 0.2, decay: rnd(0.8, 1.5), gain: 0.55 / (i + 1) }); },
 };
 
@@ -537,7 +548,7 @@ async function loopPlayer(entry, phase = 0, phaseNow = null) {
   source.loopEnd = Math.min(buffer.duration, Number(entry.loopEnd) || buffer.duration);
   const length = source.loopEnd - source.loopStart;
   gain.gain.value = 0;
-  source.connect(gain).connect(master);
+  source.connect(gain).connect(musicOut || master);
   const startedAt = ctx.currentTime + 0.02;
   const live = phaseNow?.();
   const from = live === null || live === undefined ? phase : live + 0.02;
@@ -596,7 +607,7 @@ function startPad() {
   const out = ctx.createGain(); out.gain.value = 0;
   const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 700; filter.Q.value = 0.6;
   const lfo = ctx.createOscillator(); lfo.frequency.value = 0.045; const sweep = ctx.createGain(); sweep.gain.value = 380; lfo.connect(sweep).connect(filter.frequency); lfo.start();
-  filter.connect(out); out.connect(master);
+  filter.connect(out); out.connect(musicOut || master);
   const wet = ctx.createGain(); wet.gain.value = 0.9; out.connect(wet).connect(verbSend);
   let chord = Math.floor(Math.random() * PAD_CHORDS.length);
   const voice = () => {

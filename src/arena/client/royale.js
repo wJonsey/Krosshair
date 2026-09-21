@@ -4,7 +4,7 @@
 // when you are knocked out or win. It brings its own styles and HUD elements.
 import * as THREE from 'three';
 import { ARMOR, GADGETS, WEAPONS } from '../shared/constants.js';
-import { DROP, LOOT_TABLE, POWERS, ROYALE, STORM, weaponTier } from '../shared/royale.js';
+import { DROP, LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { bus, game } from './state.js';
 import { net } from './net.js';
 import { bindLabel, held } from './input.js';
@@ -12,8 +12,8 @@ import { play } from './audio.js';
 import { buildWeapon, stripHands } from './guns.js';
 
 const TOP_GUNS = new Set(LOOT_TABLE[2].pool), MID_GUNS = new Set(LOOT_TABLE[1].pool);
-const LOOT_COLOURS = { common: '#c9d3db', mid: '#5fa8ff', top: '#ffb547', armor: '#6ce6d1', helmet: '#6ce6d1', heal: '#7dff8a', gadget: '#b07cff', ammo: '#ff9a3a', power: '#ff5fd2' };
-const lootKind = (item) => (item.kind === 'weapon' ? (TOP_GUNS.has(item.id) ? 'top' : MID_GUNS.has(item.id) ? 'mid' : 'common') : item.kind);
+const LOOT_COLOURS = { common: ROYALE_RARITIES.common.color, rare: ROYALE_RARITIES.rare.color, epic: ROYALE_RARITIES.epic.color, legendary: ROYALE_RARITIES.legendary.color, mid: '#5fa8ff', top: '#ffb547', armor: '#6ce6d1', helmet: '#6ce6d1', heal: '#7dff8a', gadget: '#b07cff', ammo: '#ff9a3a', power: '#ff5fd2' };
+const lootKind = (item) => (item.kind === 'weapon' ? (item.rarity || weaponRarity(item.id)) : item.kind);
 const lootLabel = (item) => (item.kind === 'weapon' ? WEAPONS[item.id]?.short || item.id : item.kind === 'armor' ? ARMOR[item.id]?.name : item.kind === 'helmet' ? 'Helmet' : item.kind === 'gadget' ? GADGETS[item.id]?.name : item.kind === 'heal' ? 'Medkit' : item.kind === 'power' ? POWERS[item.id]?.name : 'Ammo');
 
 const CSS = `
@@ -247,8 +247,9 @@ export function initRoyale({ arena, hud, player }) {
     const mine = game.you?.weapons || {};
     let head = '', body = '', can = true, verb = 'Pick up';
     if (item.kind === 'weapon') {
-      const weapon = WEAPONS[item.id], held = WEAPONS[mine[weapon.slot]];
-      head = `<small>${['Common', 'Uncommon', 'Rare'][weaponTier(item.id)]} · ${weapon.slot === 'primary' ? 'Primary' : 'Secondary'}</small><h4>${weapon.name}</h4><p>${weapon.tag.toLowerCase().replace(/^./, (c) => c.toUpperCase())}</p>`;
+      const rarity = ROYALE_RARITIES[item.rarity || weaponRarity(item.id)] || ROYALE_RARITIES.common;
+      const weapon = royaleWeapon(WEAPONS[item.id], rarity.id), held = royaleWeapon(WEAPONS[mine[weapon.slot]], game.you?.rarity?.[weapon.slot]);
+      head = `<small style="color:${rarity.color}">${rarity.name} · ${weapon.slot === 'primary' ? 'Primary' : 'Secondary'}</small><h4>${weapon.name}</h4><p>${weapon.tag.toLowerCase().replace(/^./, (c) => c.toUpperCase())}</p>`;
       body = STATS.map(([label, read, max]) => { const value = read(weapon), was = held && held.id !== weapon.id ? read(held) : null; const diff = was === null ? '' : value > was ? 'up' : value < was ? 'down' : ''; return `<div class="stat"><span>${label}</span><i style="--v:${Math.min(100, Math.round((value / max) * 100))}%"></i><em class="${diff}">${value}${diff === 'up' ? ' ▲' : diff === 'down' ? ' ▼' : ''}</em></div>`; }).join('');
       if (held?.id === weapon.id) verb = 'Take ammo'; else if (held) verb = `Swap · drops ${held.short}`;
     } else if (item.kind === 'armor') { head = `<small>Armour</small><h4>${ARMOR[item.id].name}</h4><p>${ARMOR[item.id].points} armour points.</p>`; can = (game.you?.armor || 0) < ARMOR[item.id].points; if (!can) verb = 'Yours is as good'; }

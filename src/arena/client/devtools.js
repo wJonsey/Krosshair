@@ -82,8 +82,8 @@ export function initDevTools({ player, operators, camera }) {
       // Where you are looking, a step back from whatever it hits.
       const dir = camera.getWorldDirection(new THREE.Vector3());
       const from = camera.position;
-      const hit = player.arena.physics.raycast?.([from.x, from.y, from.z], [dir.x, dir.y, dir.z], 300);
-      const reach = hit?.distance ? Math.max(0.5, hit.distance - 0.6) : 40;
+      const [hit] = player.arena.physics.raycast?.([from.x, from.y, from.z], [dir.x, dir.y, dir.z], 300) || [];
+      const reach = hit ? Math.max(0.5, hit.t0 - 0.6) : 40;
       net.send({ type: 'dev', action: 'teleport', to: [from.x + dir.x * reach, from.y + dir.y * reach + 0.1, from.z + dir.z * reach] });
     } else net.send({ type: 'dev', action: button.dataset.act });
     play('ready');

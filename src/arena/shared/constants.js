@@ -86,7 +86,7 @@ export const WEAPONS = {
     falloff: null, recoil: { kick: 3.4, side: 0.5, recover: 5 }, speed: 0.9, loud: 95, tracer: 1,
   },
   recon: {
-    id: 'recon', sight: 'prism', slot: 'primary', family: 'marksman', short: 'RC-9', sway: 0.7, name: 'RC-9 Recon', tag: 'SEMI-AUTO MARKSMAN', cost: 1700,
+    id: 'recon', sight: 'prism', slot: 'primary', family: 'marksman', short: 'RC-9', sway: 0.7, name: 'RC-9 Recon', tag: 'SEMI-AUTO MARKSMAN', cost: 1500,
     damage: 45, head: 2.3, limb: 0.8, armorPen: 0.4, pen: 0.6,
     mag: 10, reserve: 30, cooldown: 0.3, reload: 2.4, equip: 0.6,
     auto: false, pellets: 1, scope: [30], scopeTime: 0.17,
@@ -102,7 +102,7 @@ export const WEAPONS = {
     falloff: [32, 85, 0.7], recoil: { kick: 0.8, side: 0.4, recover: 9 }, speed: 0.96, loud: 75, tracer: 0.6,
   },
   wasp: {
-    id: 'wasp', sight: 'dot', slot: 'primary', family: 'smg', short: 'WASP-9', name: 'Wasp-9', tag: 'SUBMACHINE GUN', cost: 1250,
+    id: 'wasp', sight: 'dot', slot: 'primary', family: 'smg', short: 'WASP-9', name: 'Wasp-9', tag: 'SUBMACHINE GUN', cost: 1350,
     damage: 20, head: 1.8, limb: 0.85, armorPen: 0, pen: 0.25,
     mag: 30, reserve: 90, cooldown: 0.078, reload: 1.9, equip: 0.4,
     auto: true, pellets: 1, scope: [56], scopeTime: 0.1,
@@ -110,7 +110,7 @@ export const WEAPONS = {
     falloff: [12, 36, 0.45], recoil: { kick: 0.55, side: 0.3, recover: 10 }, speed: 1.04, loud: 60, tracer: 0.5,
   },
   breaker: {
-    id: 'breaker', sight: 'bead', slot: 'primary', family: 'shotgun', short: 'BREAKER', action: 'pump', name: 'Breaker-12', tag: 'PUMP SHOTGUN', cost: 1100,
+    id: 'breaker', sight: 'bead', slot: 'primary', family: 'shotgun', short: 'BREAKER', action: 'pump', name: 'Breaker-12', tag: 'PUMP SHOTGUN', cost: 1900,
     damage: 14, head: 1.5, limb: 0.85, armorPen: 0, pen: 0.12,
     mag: 6, reserve: 18, cooldown: 0.8, reload: 2.6, equip: 0.55,
     auto: false, pellets: 9, scope: [60], scopeTime: 0.1,
@@ -118,7 +118,7 @@ export const WEAPONS = {
     falloff: [8, 26, 0.2], recoil: { kick: 3.0, side: 0.6, recover: 6 }, speed: 1.0, loud: 85, tracer: 0.35,
   },
   vesper: {
-    id: 'vesper', sight: 'scope', slot: 'primary', family: 'sniper', short: 'VESPER', action: 'bolt', trail: true, name: 'Vesper SR', tag: 'LIGHT BOLT-ACTION', cost: 1400,
+    id: 'vesper', sight: 'scope', slot: 'primary', family: 'sniper', short: 'VESPER', action: 'bolt', trail: true, name: 'Vesper SR', tag: 'LIGHT BOLT-ACTION', cost: 1100,
     damage: 88, head: 3.5, limb: 0.7, armorPen: 0.45, pen: 0.8,
     mag: 6, reserve: 24, cooldown: 0.95, reload: 2.4, equip: 0.55,
     auto: false, pellets: 1, scope: [24, 12], scopeTime: 0.15,
@@ -158,7 +158,7 @@ export const WEAPONS = {
     falloff: [35, 90, 0.75], recoil: { kick: 0.9, side: 0.55, recover: 7 }, speed: 0.84, loud: 95, tracer: 0.7,
   },
   hornet: {
-    id: 'hornet', sight: 'holo', slot: 'primary', family: 'smg', short: 'HORNET', name: 'Hornet PDW', tag: 'PERSONAL DEFENCE WEAPON', cost: 1000,
+    id: 'hornet', sight: 'holo', slot: 'primary', family: 'smg', short: 'HORNET', name: 'Hornet PDW', tag: 'PERSONAL DEFENCE WEAPON', cost: 1250,
     damage: 16, head: 1.8, limb: 0.9, armorPen: 0.15, pen: 0.2,
     mag: 40, reserve: 120, cooldown: 0.062, reload: 2.2, equip: 0.35,
     auto: true, pellets: 1, scope: [58], scopeTime: 0.08,
@@ -166,7 +166,7 @@ export const WEAPONS = {
     falloff: [10, 30, 0.4], recoil: { kick: 0.45, side: 0.35, recover: 12 }, speed: 1.07, loud: 55, tracer: 0.4,
   },
   maul: {
-    id: 'maul', sight: 'iron', slot: 'primary', family: 'shotgun', short: 'MAUL', name: 'Maul-S', tag: 'SEMI-AUTO SHOTGUN', cost: 1800,
+    id: 'maul', sight: 'iron', slot: 'primary', family: 'shotgun', short: 'MAUL', name: 'Maul-S', tag: 'SEMI-AUTO SHOTGUN', cost: 1500,
     damage: 11, head: 1.4, limb: 0.85, armorPen: 0, pen: 0.1,
     mag: 7, reserve: 21, cooldown: 0.34, reload: 3.0, equip: 0.6,
     auto: false, pellets: 8, scope: [62], scopeTime: 0.12,
@@ -206,12 +206,26 @@ export const WEAPONS = {
     falloff: [14, 40, 0.5], recoil: { kick: 0.5, side: 0.2, recover: 12 }, speed: 1.08, loud: 18, tracer: 0.15,
   },
   sawn: {
-    id: 'sawn', sight: 'bead', slot: 'sidearm', family: 'shotgun', short: 'SAWN-OFF', name: 'Sawn-Off', tag: 'DOUBLE-BARREL', cost: 700,
+    id: 'sawn', sight: 'bead', slot: 'sidearm', family: 'shotgun', short: 'SAWN-OFF', name: 'Sawn-Off', tag: 'DOUBLE-BARREL', cost: 1000,
     damage: 12, head: 1.4, limb: 0.85, armorPen: 0, pen: 0.1,
     mag: 2, reserve: 16, cooldown: 0.22, reload: 2.2, equip: 0.35,
     auto: false, pellets: 8, scope: [64], scopeTime: 0.08,
     spread: { hip: 5.2, ads: 4.6, move: 0.3, air: 1.5, bloom: 0, bloomMax: 0 },
     falloff: [4, 14, 0.15], recoil: { kick: 3.2, side: 0.9, recover: 6 }, speed: 1.04, loud: 90, tracer: 0.3,
+  },
+  // Nin's launcher. A pilot called Nin asked for this every day until it existed. It is the most
+  // expensive thing in the armoury on purpose: one rocket, a long reload, and it has to be earned.
+  // The rocket is a real projectile on the server (room.js `stepRockets`), not a hitscan.
+  nin: {
+    id: 'nin', sight: 'iron', slot: 'primary', family: 'launcher', short: 'NIN', name: 'Nin Launcher', tag: 'ROCKET LAUNCHER', cost: 7200,
+    damage: 55, head: 1, limb: 1, armorPen: 0.5, pen: 0.2,
+    mag: 1, reserve: 3, cooldown: 1.1, reload: 6.4, equip: 1.4,
+    auto: false, pellets: 1, scope: [52], scopeTime: 0.34,
+    spread: { hip: 2.2, ads: 0.5, move: 1.6, air: 4, bloom: 0, bloomMax: 0 },
+    falloff: null, recoil: { kick: 5.2, side: 1.2, recover: 4 }, speed: 0.78, loud: 120, tracer: 0,
+    // The rocket itself: how fast it flies, and what the blast does where it lands.
+    rocket: { speed: 46, gravity: 2.6, radius: 6.4, damage: 118, minDamage: 26, selfScale: 0.55, armorPen: 0.55 },
+    noMods: true,
   },
   knife: {
     id: 'knife', slot: 'melee', family: 'melee', short: 'BLADE', name: 'Kestrel Blade', tag: 'MELEE', cost: 0,
@@ -236,6 +250,7 @@ export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair78';
 export const WEAPON_CLASSES = [
   { id: 'long', name: 'Long range', families: ['sniper', 'marksman'] },
   { id: 'rifle', name: 'Rifles', families: ['rifle', 'lmg'] },
+  { id: 'heavy', name: 'Heavy', families: ['launcher'] },
   { id: 'close', name: 'Close quarters', families: ['smg', 'shotgun'] },
   { id: 'sidearm', name: 'Sidearms', slot: 'sidearm' },
 ];

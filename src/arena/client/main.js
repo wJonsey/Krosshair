@@ -261,6 +261,9 @@ net.on('s', (message) => operators.onSnapshot(message));
 net.on('gone', (message) => operators.remove(message.id));
 net.on('correct', (message) => player.onCorrect(message));
 
+// The launcher: the rocket flies the same arc the server gave it, and the blast lands where it says.
+net.on('rocket', (message) => effects.rocket(message.id, message.o, message.d, message.s, message.g));
+net.on('boom', (message) => { effects.boom(message.at, message.r); play('explosion', { pos: message.at }); });
 net.on('shot', (message) => {
   if (game.screen !== 'game') return; // a shot still in flight when you left the match
   const weapon = WEAPONS[message.w];

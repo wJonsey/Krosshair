@@ -4,17 +4,17 @@
 
 export const COINS = {
   starter: 50,        // once, on an account's first look at its wallet
-  finish: 4,          // any finished match
-  win: 12,            // a win against a team with at least one human on it
-  winVsBots: 3,       // a win against bots only
-  topKills: 8,        // most kills in a match with two or more humans
-  playerKill: 2,      // per human killed, scaled by level difference below
-  botKill: 0.4,       // per bot killed
+  finish: 7,          // any finished match
+  win: 18,            // a win against a team with at least one human on it
+  winVsBots: 5,       // a win against bots only
+  topKills: 11,        // most kills in a match with two or more humans
+  playerKill: 3,      // per human killed, scaled by level difference below
+  botKill: 0.6,       // per bot killed
   levelStep: 0.05,    // +5% per level the victim is above you…
   levelMax: 0.5,      // …up to +50%
   levelMin: -0.3,     // and down to -30% for much lower levels
-  contract: 5,        // per daily contract completed
-  cap: 60,            // most one match can pay (wager pots aside)
+  contract: 7,        // per daily contract completed
+  cap: 85,            // most one match can pay (wager pots aside)
 };
 // What one human kill is worth to the killer.
 export function killCoins(killerLevel, victimLevel) {
@@ -137,21 +137,21 @@ export const finishValue = (id) => RARITY[finishInfo(id)?.rarity]?.value || 0;
 // can drop (rarities with nothing in the pool are skipped). `pity`: an Epic or better is guaranteed within
 // that many opens of the same crate.
 export const CRATES = {
-  field: { id: 'field', name: 'Field crate', cost: 120, color: '#8fa0ad', blurb: 'Anything can drop.', pity: 10, weights: { common: 64, rare: 26, epic: 8, legendary: 1.7, mythic: 0.3 } },
-  camo: { id: 'camo', name: 'Camo crate', cost: 90, color: '#7d8a4c', blurb: 'Patterns only. Cheap.', weights: { common: 68, rare: 29, epic: 3 },
+  field: { id: 'field', name: 'Field crate', cost: 100, color: '#8fa0ad', blurb: 'Anything can drop.', pity: 10, weights: { common: 64, rare: 26, epic: 8, legendary: 1.7, mythic: 0.3 } },
+  camo: { id: 'camo', name: 'Camo crate', cost: 75, color: '#7d8a4c', blurb: 'Patterns only. Cheap.', weights: { common: 68, rare: 29, epic: 3 },
     pool: ['olive', 'sand', 'slate', 'woodland', 'midnight', 'flecktarn', 'coyote', 'multicam', 'snowcamo', 'nightcamo', 'digital', 'desert', 'splinter', 'tiger', 'arctic', 'zebra', 'leopard', 'topo', 'bubblegum'] },
-  elite: { id: 'elite', name: 'Elite crate', cost: 450, color: '#b07cff', blurb: 'No commons.', pity: 10, weights: { rare: 62, epic: 29, legendary: 7.5, mythic: 1.5 } },
-  neon: { id: 'neon', name: 'Neon crate', cost: 650, color: '#3ff2ff', blurb: 'Loud colours. Best Mythic odds.', weights: { epic: 78, legendary: 17, mythic: 5 },
+  elite: { id: 'elite', name: 'Elite crate', cost: 360, color: '#b07cff', blurb: 'No commons.', pity: 10, weights: { rare: 62, epic: 29, legendary: 7.5, mythic: 1.5 } },
+  neon: { id: 'neon', name: 'Neon crate', cost: 600, color: '#3ff2ff', blurb: 'Loud colours. Best Mythic odds.', weights: { epic: 78, legendary: 17, mythic: 5 },
     pool: ['hazard', 'graffiti', 'bubblegum', 'tide', 'sakura', 'vaporwave', 'comic', 'pixel', 'koi', 'blueprint', 'royal', 'redline', 'neon', 'circuit', 'toxic', 'frost', 'gilded', 'void', 'lava', 'dragon', 'hexcore', 'aurora', 'inferno', 'hologram', 'prism', 'glitch', 'synthwave', 'plasma'] },
-  wild: { id: 'wild', name: 'Wild crate', cost: 150, color: '#d9822b', blurb: 'Stripes, spots and scales.', weights: { common: 58, rare: 32, epic: 8, legendary: 1.7, mythic: 0.3 },
+  wild: { id: 'wild', name: 'Wild crate', cost: 125, color: '#d9822b', blurb: 'Stripes, spots and scales.', weights: { common: 58, rare: 32, epic: 8, legendary: 1.7, mythic: 0.3 },
     pool: ['woodland', 'multicam', 'walnut', 'tiger', 'zebra', 'leopard', 'python', 'giraffe', 'sakura', 'crimson', 'koi', 'scrimshaw', 'dragon'] },
-  street: { id: 'street', name: 'Street crate', cost: 180, color: '#ff3d7f', blurb: 'Loud paint from the city.', pity: 12, weights: { common: 60, rare: 28, epic: 10, legendary: 1.6, mythic: 0.4 },
+  street: { id: 'street', name: 'Street crate', cost: 150, color: '#ff3d7f', blurb: 'Loud paint from the city.', pity: 12, weights: { common: 60, rare: 28, epic: 10, legendary: 1.6, mythic: 0.4 },
     pool: ['brick', 'navy', 'denim', 'racing', 'checker', 'ducttape', 'digital', 'graffiti', 'comic', 'pixel', 'vaporwave', 'terrazzo', 'bubblegum', 'redline', 'blueprint', 'neon', 'glitch', 'synthwave'] },
-  winter: { id: 'winter', name: 'Winter crate', cost: 200, color: '#9fd0ea', blurb: 'Cold colours. Frostbite inside.', weights: { common: 55, rare: 33, epic: 9, legendary: 2.3, mythic: 0.7 },
+  winter: { id: 'winter', name: 'Winter crate', cost: 165, color: '#9fd0ea', blurb: 'Cold colours. Frostbite inside.', weights: { common: 55, rare: 33, epic: 9, legendary: 2.3, mythic: 0.7 },
     pool: ['snowcamo', 'slate', 'bone', 'arctic', 'marble', 'glacier', 'tide', 'pearl', 'abyss', 'frost', 'aurora', 'spectre'] },
-  forge: { id: 'forge', name: 'Forge crate', cost: 420, color: '#ff7a2a', blurb: 'Metal and fire. No commons.', pity: 10, weights: { rare: 60, epic: 30, legendary: 8, mythic: 2 },
+  forge: { id: 'forge', name: 'Forge crate', cost: 340, color: '#ff7a2a', blurb: 'Metal and fire. No commons.', pity: 10, weights: { rare: 60, epic: 30, legendary: 8, mythic: 2 },
     pool: ['gunmetal', 'carbon', 'kevlar', 'honeycomb', 'damascus', 'patina', 'hazard', 'obsidian', 'meteorite', 'royal', 'gilded', 'lava', 'inferno', 'quicksilver', 'plasma'] },
-  cosmic: { id: 'cosmic', name: 'Cosmic crate', cost: 1200, color: '#8a5cff', blurb: 'Epic or better. Best Mythic odds.', weights: { epic: 70, legendary: 22, mythic: 8 },
+  cosmic: { id: 'cosmic', name: 'Cosmic crate', cost: 950, color: '#8a5cff', blurb: 'Epic or better. Best Mythic odds.', weights: { epic: 70, legendary: 22, mythic: 8 },
     pool: ['stained', 'vaporwave', 'tide', 'abyss', 'pearl', 'blueprint', 'void', 'nebula', 'aurora', 'prism', 'hologram', 'plasma', 'synthwave', 'glitch'] },
 };
 export const crateFinishes = (crate) => FINISHES.filter((finish) => !shopOnly(finish.id) && (!crate.pool || crate.pool.includes(finish.id)) && crate.weights[finish.rarity]);

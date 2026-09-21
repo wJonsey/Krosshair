@@ -17,7 +17,7 @@ const forward = new THREE.Vector3();
 const scratchDir = new THREE.Vector3(), scratchTo = new THREE.Vector3();
 // Controller aim assist. Deliberately mild: it slows the stick near a pilot and drifts the aim a little
 // while you are already moving it. No snapping, no auto fire, no help through walls.
-const AIM_ASSIST = { cone: 0.16, range: 95, pull: 2.4 };
+const AIM_ASSIST = { cone: 0.26, range: 110, pull: 6.5, slow: 0.62 };
 
 export class LocalPlayer {
   constructor({ camera, arena, viewmodel, effects, operators, canvas }) {
@@ -419,7 +419,7 @@ export class LocalPlayer {
     }
     const zoom = this.scopeAmount > 0.5 ? 0.35 : 1;
     // Aim assist eases the stick down when the crosshair is near a pilot, so a small stick move stays small.
-    const slow = 1 - this.pad.aim * 0.42;
+    const slow = 1 - this.pad.aim * AIM_ASSIST.slow;
     if (lx || ly) this.look(lx * Math.abs(lx) * 3.2 * dt * game.settings.padSensitivity * zoom * slow, ly * Math.abs(ly) * 2.4 * dt * game.settings.padSensitivity * zoom * slow * (game.settings.invertY ? -1 : 1));
     this.pad.stick = Math.hypot(lx, ly);
     this.pad.fire = padHeld(down, 'fire');
@@ -464,8 +464,7 @@ export class LocalPlayer {
       const angle = Math.acos(Math.min(1, Math.max(-1, to.dot(forward))));
       if (angle > bestAngle) continue;
       // Only for a pilot you can actually see.
-      const hit = this.arena.physics.raycast([origin.x, origin.y, origin.z], [to.x, to.y, to.z], dist - 0.6);
-      if (hit) continue;
+      if (!this.arena.physics.lineOfSight(origin.x, origin.y, origin.z, target.x, target.y + (target.crouch ? 0.95 : 1.35), target.z)) continue;
       bestAngle = angle; best = { to: to.clone(), angle, dist };
     }
     if (!best) return;

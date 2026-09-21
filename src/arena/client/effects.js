@@ -14,6 +14,9 @@ export class Effects {
     this.decals = [];
     this.rings = [];
     this.pings = [];
+    this.rockets = [];
+    this.blasts = [];
+    this.boomAt = new THREE.Vector3();
     // One shared particle cloud, simulated on the CPU.
     this.positions = new Float32Array(MAX_PARTICLES * 3);
     this.colors = new Float32Array(MAX_PARTICLES * 3);
@@ -34,6 +37,13 @@ export class Effects {
     this.tracerGeometry = new THREE.CylinderGeometry(1, 1, 1, 5, 1, true);
     this.tracerGeometry.rotateX(Math.PI / 2);
     this.decalGeometry = new THREE.CircleGeometry(1, 8);
+    // Rocket: a cone with its nose down +z, so lookAt points it the way it is going.
+    this.rocketGeometry = new THREE.ConeGeometry(0.075, 0.42, 10);
+    this.rocketGeometry.rotateX(Math.PI / 2);
+    this.rocketMaterial = new THREE.MeshStandardMaterial({ color: '#2f363e', roughness: 0.6, metalness: 0.3 });
+    this.flameGeometry = new THREE.SphereGeometry(0.11, 8, 6);
+    this.flameMaterial = new THREE.MeshBasicMaterial({ color: '#ffb45e', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+    this.blastGeometry = new THREE.SphereGeometry(1, 16, 12);
     this.decalMaterial = new THREE.MeshBasicMaterial({ color: '#0b0d10', transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
     this.color = new THREE.Color();
     // Fixed pool: adding or removing lights at runtime would force shader recompiles mid-fight.
@@ -116,14 +126,51 @@ export class Effects {
   hitPuff(point) { this.emit(point, 12, { color: DUST.flesh, speed: 2.6, spread: 1.4, life: 0.35, gravity: 6, size: 0.06 }); }
   burst(point, color, count = 30) { this.emit(point, count, { color, speed: 4, spread: 2, life: 0.7, gravity: 4, size: 0.08 }); }
 
-  muzzleLight(position, color = '#ffb45e', power = 22) {
+  muzzleLight(position, color = '#ffb45e', power = 22, life = 0.07) {
     const slot = this.lightPool[this.lightCursor];
     this.lightCursor = (this.lightCursor + 1) % this.lightPool.length;
     slot.light.color.set(color);
     slot.light.position.copy(position);
     slot.light.intensity = power;
-    slot.life = 0.07;
+    slot.life = life;
   }
+
+  // A rocket the server is already flying. The client only follows the same arc so it can be seen: `o`
+  // where it left the tube, `d` its direction, `s` its speed, `g` the drop.
+  rocket(id, o, d, s, g = 0) {
+    const mesh = new THREE.Mesh(this.rocketGeometry, this.rocketMaterial);
+    mesh.position.set(o[0], o[1], o[2]);
+    mesh.frustumCulled = false;
+    const flame = new THREE.Mesh(this.flameGeometry, this.flameMaterial);
+    flame.position.z = -0.24;
+    mesh.add(flame);
+    this.scene.add(mesh);
+    this.rockets.push({ id, mesh, flame, pos: new THREE.Vector3(o[0], o[1], o[2]), vel: new THREE.Vector3(d[0], d[1], d[2]).normalize().multiplyScalar(s), gravity: g, life: 8, puff: 0 });
+  }
+
+  // Where it went off. `radius` is the blast the server used, so the fireball matches what actually hurt.
+  boom(at, radius = 6) {
+    const [x, y, z] = at;
+    // No id comes back with the blast, so the rocket nearest it is the one that just stopped.
+    this.boomAt.set(x, y, z);
+    this.rockets = this.rockets.filter((item) => {
+      if (item.pos.distanceTo(this.boomAt) > Math.max(2.5, radius * 0.6)) return true;
+      this.scene.remove(item.mesh);
+      return false;
+    });
+    const shell = new THREE.MeshBasicMaterial({ color: '#ffd08a', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+    const mesh = new THREE.Mesh(this.blastGeometry, shell);
+    mesh.position.set(x, y, z);
+    mesh.scale.setScalar(radius * 0.25);
+    this.scene.add(mesh);
+    this.blasts.push({ mesh, life: 0.45, max: 0.45, radius });
+    this.ring(x, y, z, radius, '#ffb45e');
+    this.emit([x, y, z], 26, { color: '#ffb45e', speed: radius * 1.6, spread: 2, life: 0.5, gravity: 4, size: 0.3 });
+    this.emit([x, y, z], 24, { color: '#5e646b', speed: radius * 0.5, spread: 2.2, up: 1.4, life: 1.6, gravity: -0.8, size: 0.55 });
+    this.emit([x, y, z], 18, { color: '#b9b4aa', speed: radius * 1.1, spread: 2, life: 0.9, gravity: 11, size: 0.12 });
+    this.muzzleLight(mesh.position, '#ffa040', 120, 0.3);
+  }
+
 
   ring(x, y, z, radius, color = '#6ce6d1') {
     const mesh = new THREE.Mesh(new THREE.RingGeometry(0.96, 1, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
@@ -151,6 +198,10 @@ export class Effects {
   }
 
   clearRound() {
+    this.rockets.forEach((item) => this.scene.remove(item.mesh));
+    this.rockets = [];
+    this.blasts.forEach((item) => { this.scene.remove(item.mesh); item.mesh.material.dispose(); });
+    this.blasts = [];
     this.decals.forEach((decal) => this.scene.remove(decal));
     this.decals = [];
     this.pings.forEach((ping) => { this.scene.remove(ping.sprite); ping.sprite.material.map.dispose(); });
@@ -185,6 +236,28 @@ export class Effects {
       if (k >= 1) { this.scene.remove(item.mesh); item.mesh.geometry.dispose(); return false; }
       item.mesh.scale.setScalar(Math.max(0.01, item.radius * (1 - (1 - k) ** 2)));
       item.mesh.material.opacity = 0.8 * (1 - k);
+      return true;
+    });
+    // Rockets fly the arc the server gave them and lay smoke behind. A stray one times out on its own.
+    this.rockets = this.rockets.filter((item) => {
+      item.life -= dt;
+      item.vel.y -= item.gravity * dt;
+      item.pos.addScaledVector(item.vel, dt);
+      item.mesh.position.copy(item.pos);
+      item.mesh.lookAt(item.pos.x + item.vel.x, item.pos.y + item.vel.y, item.pos.z + item.vel.z);
+      item.flame.scale.setScalar(0.75 + Math.random() * 0.6);
+      item.puff -= dt;
+      if (item.puff <= 0) { item.puff = 0.022; this.emit([item.pos.x, item.pos.y, item.pos.z], 2, { color: '#c6ccd2', speed: 0.6, spread: 0.7, up: 0.2, life: 1.1, gravity: -0.7, size: 0.2 }); }
+      if (item.life > 0) return true;
+      this.scene.remove(item.mesh);
+      return false;
+    });
+    this.blasts = this.blasts.filter((item) => {
+      item.life -= dt;
+      const k = Math.max(0, item.life / item.max);
+      if (item.life <= 0) { this.scene.remove(item.mesh); item.mesh.material.dispose(); return false; }
+      item.mesh.scale.setScalar(item.radius * (0.25 + (1 - k) * 0.85));
+      item.mesh.material.opacity = 0.85 * k * k;
       return true;
     });
     for (const slot of this.lightPool) if (slot.life > 0) { slot.life -= dt; if (slot.life <= 0) slot.light.intensity = 0; }

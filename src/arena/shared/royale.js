@@ -45,6 +45,26 @@ export const AIRDROP_LOOT = [{ kind: 'weapon', pool: ['m44', 'anvil', 'harbinger
 // How good a gun is, from the loot table it comes from: 0 common, 1 mid, 2 top. Bots trade up with it.
 export const weaponTier = (id) => Math.max(0, LOOT_TABLE.findIndex((entry) => entry.kind === 'weapon' && entry.pool.includes(id)));
 
+// Rarity, the thing you read off the floor before you decide whether the walk is worth it. The tier a gun
+// rolls from sets it, and an airdrop upgrades whatever is in it by one. Rarity is not just a colour: a
+// better gun is a better kept gun, so it holds more and reloads faster. Nothing else changes, so a
+// Legendary pistol never beats a Common sniper at what the sniper is for.
+export const ROYALE_RARITIES = {
+  common: { id: 'common', name: 'Common', color: '#c9d3db', mag: 1, reload: 1 },
+  rare: { id: 'rare', name: 'Rare', color: '#5fa8ff', mag: 1.15, reload: 0.95 },
+  epic: { id: 'epic', name: 'Epic', color: '#b07cff', mag: 1.3, reload: 0.9 },
+  legendary: { id: 'legendary', name: 'Legendary', color: '#ffb547', mag: 1.5, reload: 0.82 },
+};
+export const RARITY_ORDER = ['common', 'rare', 'epic', 'legendary'];
+export const weaponRarity = (id, fromAirdrop = false) => RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, weaponTier(id) + (fromAirdrop ? 1 : 0))];
+// The gun as that rarity carries it. Damage and handling are untouched on purpose.
+export function royaleWeapon(weapon, rarity) {
+  const tier = ROYALE_RARITIES[rarity];
+  if (!weapon || !tier || tier.mag === 1) return weapon;
+  return { ...weapon, spread: { ...weapon.spread }, recoil: { ...weapon.recoil },
+    mag: Math.max(1, Math.round(weapon.mag * tier.mag)), reload: weapon.reload * tier.reload, rarity };
+}
+
 // The drop: everyone starts this high above the spot they picked and comes down under a parachute.
 export const DROP = { height: 190, offset: 45, fall: 32, chuteFall: 8, chuteAt: 70, glide: 11, chuteGlide: 9 };
 // Pickups that change how you move for a while.
