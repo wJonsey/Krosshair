@@ -694,6 +694,9 @@ function enter(socket, message) {
 }
 // Seat one socket in a room. Returns false when the room is full.
 function place(socket, room, message) {
+  // Say which it is: a second tab on the same account reads as a full room otherwise.
+  const taken = room.seatOf(socket.token);
+  if (taken && taken.connected) { send(socket, { type: 'error', message: 'You are already in that match in another tab.' }); return false; }
   const look = profiles.sanitizeCosmetics(socket.token, message.look || {});
   socket.lastLook = message.look || socket.lastLook || {};
   const player = room.join(socket, { token: socket.token, session: socket.session, name: socket.name }, look);
