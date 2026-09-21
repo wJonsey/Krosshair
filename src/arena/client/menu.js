@@ -16,6 +16,7 @@ import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
+import { initSocial, socialButtonHtml, toggleSocial } from './social.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -279,7 +280,10 @@ const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedba
 const PAGE_ALIAS = { operator: 'locker' }; // old links
 // A guest gets the game and the settings. Everything that belongs to an account stays shut until there
 // is an account to hang it on: a locker with nothing saved in it is worse than no locker at all.
-const GUEST_PAGES = new Set(['play', 'settings', 'controls', 'feedback']);
+// Rooms is open to guests: a callsign is enough to browse the public list, join a code, or start a
+// custom room. Ranked stays out, because a guest profile never reaches disk and a rating that vanishes
+// with the tab would drag real ones around with it. The wager panel says its own piece to a guest.
+const GUEST_PAGES = new Set(['play', 'rooms', 'settings', 'controls', 'feedback']);
 const guestLocked = (page) => !game.username && !GUEST_PAGES.has(page);
 const ALL_PAGES = [...NAV.flatMap(([, pages]) => pages), ...TOOL_PAGES].map(([id]) => id);
 const pageFromHash = () => { const id = PAGE_ALIAS[location.hash.slice(1)] || location.hash.slice(1); return ALL_PAGES.includes(id) ? id : 'play'; };
@@ -565,6 +569,8 @@ function roomsPageHtml() {
     <aside class="page-side"><div class="panel"><p class="eyebrow">Live rooms <small>${game.publicRooms.length}</small></p><div id="room-list">${rooms}</div></div></aside>`;
 }
 
+initSocial(() => { if (game.screen === 'home') renderHome(); });
+
 export function renderHome() {
   const level = game.profile?.level || 1;
   // Re-renders happen whenever the profile or look changes; keep whatever the pilot has typed.
@@ -582,7 +588,7 @@ export function renderHome() {
       <header class="menu-bar">
         <button type="button" class="brand" data-page="play" aria-label="Krosshair: play"><img class="brand-mark" src="brand/krosshair-logo.svg" alt="" width="40" height="40" /><b>Kross<em>hair</em></b></button>
         <nav class="menu-nav" aria-label="Menu">${NAV.map(([label, pages], index) => { const on = pages.some(([id]) => id === homePage); const shut = guestLocked(pages[0][0]); return `<button type="button" data-page="${pages[0][0]}" class="${on ? 'active' : ''}${shut ? ' shut' : ''}" ${on ? 'aria-current="page"' : ''}${shut ? ' title="Needs an account"' : ''}><small>0${index + 1}</small>${label}${label === 'Play' && game.publicRooms.length ? `<i class="badge">${game.publicRooms.length}</i>` : ''}</button>`; }).join('')}</nav>
-        <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
+        <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${socialButtonHtml()}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
       <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}</nav></footer>
@@ -734,6 +740,7 @@ home.addEventListener('click', (event) => {
   if (target.closest('#feedback-form')) { if (target.dataset.kind) switchFeedbackKind(target.dataset.kind); return; }
   if (onSettingsClick(event)) return;
   if (SHOP_PAGES.includes(homePage) && onShopClick(target)) { renderHome(); return; }
+  if (target.id === 'social-button') { toggleSocial(); renderHome(); return; }
   if (target.dataset.gear) { chooseGear(target.dataset.gearKind, target.dataset.gear, target.dataset.lookKey); return; }
   if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
   if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }
@@ -1016,7 +1023,7 @@ function settingsBodyHtml(tab) {
   }
   if (tab === 'binds') {
     const groups = [...new Set(ACTIONS.map((action) => action.group))];
-    const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS A KEY…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
+    const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS ANYTHING…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
     return `<div class="bind-cols">${groups.map((group) => `<div class="panel"><p class="eyebrow">${group}</p>${ACTIONS.filter((action) => action.group === group).map((action) => `<div class="bind-row"><span>${action.label}</span>${slot(action, 0)}${slot(action, 1)}</div>`).join('')}</div>`).join('')}</div>
       <p class="hint bind-help">Click a slot, press a key. <b>Esc</b> cancels, <b>Backspace</b> clears. The mouse wheel always zooms and switches weapons.</p>
       <div class="panel pad-panel"><p class="eyebrow">Controller <small>${input.padName ? escapeHtml(input.padName.slice(0, 40)) : 'none connected'}</small></p>
@@ -1027,7 +1034,7 @@ function settingsBodyHtml(tab) {
         <div class="button-row"><button type="button" id="reset-pad-binds" class="ghost-button">Reset controller</button></div></div>`;
   }
   return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Sensitivity</p>${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, 'x2')}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, 'x2', s.scopeSensitivity, 'While aiming.')}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, 'x1')}</div>
-    <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}</div></div>`;
+    <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}${toggle('autoBhop', 'Auto bunny hop', 'Hold jump and you hop the moment you land. Off means every hop is its own press.')}${toggle('speedFov', 'Speed field of view', 'The view opens a little as you get quicker.')}${toggle('moveDebug', 'Movement readout', 'Speed, state and velocity while you play. F3 also toggles it.')}</div></div>`;
 }
 // The same rail sits on Settings, Controls and Feedback. In a match (the overlay) Feedback is left out.
 function settingsNavButtons(tab) {
@@ -1134,11 +1141,11 @@ function watchPad() {
   padWatch = requestAnimationFrame(tick);
 }
 
-// While a bind slot is waiting, the next key or mouse button goes to it and nowhere else.
+// While a bind slot is waiting, the next key, mouse button or wheel notch goes to it and nowhere else.
 function captureBind(event) {
   if (!listening) return;
   event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
-  const code = event.type === 'keydown' ? event.code : `Mouse${event.button}`;
+  const code = event.type === 'keydown' ? event.code : event.type === 'wheel' ? (event.deltaY < 0 ? 'WheelUp' : 'WheelDown') : `Mouse${event.button}`;
   const { action, slot } = listening;
   if (code === 'Escape') { listening = null; padListening = null; play('uiBack'); return refreshSettings(); }
   if (RESERVED.includes(code)) { toast(`${codeLabel(code)} is reserved.`, 'warn'); play('deny'); return; }
@@ -1152,6 +1159,8 @@ function captureBind(event) {
 }
 addEventListener('keydown', captureBind, true);
 addEventListener('mousedown', captureBind, true);
+// Not passive: a wheel offered to a waiting bind slot must not also scroll the settings page.
+addEventListener('wheel', captureBind, { capture: true, passive: false });
 home.addEventListener('input', applySetting);
 home.addEventListener('change', onSettingsChange);
 settingsCard.addEventListener('input', applySetting);

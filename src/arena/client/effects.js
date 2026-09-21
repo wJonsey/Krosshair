@@ -209,9 +209,10 @@ export class Effects {
   }
 
   update(dt) {
+    let moved = false;
     for (let i = 0; i < MAX_PARTICLES; i += 1) {
       const p = this.particles[i];
-      if (p.life <= 0) { if (this.sizes[i] !== 0) this.sizes[i] = 0; continue; }
+      if (p.life <= 0) { if (this.sizes[i] !== 0) { this.sizes[i] = 0; moved = true; } continue; }
       p.life -= dt;
       const index = i * 3;
       p.vy -= p.gravity * dt;
@@ -219,9 +220,14 @@ export class Effects {
       const k = Math.max(0, p.life / p.max);
       this.sizes[i] = p.size * (0.4 + k * 0.6);
       this.colors[index] = p.r * k; this.colors[index + 1] = p.g * k; this.colors[index + 2] = p.b * k;
+      moved = true;
     }
-    const attributes = this.cloud.geometry.attributes;
-    attributes.position.needsUpdate = true; attributes.color.needsUpdate = true; attributes.size.needsUpdate = true;
+    // The whole cloud goes back to the card every time one of these is set, and between firefights
+    // nothing in it has moved. Nine hundred particles of position, colour and size is not free.
+    if (moved) {
+      const attributes = this.cloud.geometry.attributes;
+      attributes.position.needsUpdate = true; attributes.color.needsUpdate = true; attributes.size.needsUpdate = true;
+    }
     const fade = (list, shape) => list.filter((item) => {
       item.life -= dt;
       if (item.life <= 0) { this.scene.remove(item.mesh); item.mesh.material.dispose(); return false; }

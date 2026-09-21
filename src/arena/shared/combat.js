@@ -44,7 +44,7 @@ export class SpreadTracker {
 export function spreadAngle(weapon, state) {
   const s = weapon.spread;
   let angle = state.scoped ? s.ads : s.hip;
-  angle += s.move * clamp(state.speed / BODY.runSpeed, 0, 1.2) * (state.scoped ? 0.6 : 1);
+  angle += s.move * clamp(state.speed / BODY.spreadSpeed, 0, 1.2) * (state.scoped ? 0.6 : 1);
   if (state.airborne) angle += s.air;
   if (state.crouched) angle *= 0.75;
   return angle + (state.bloom || 0);

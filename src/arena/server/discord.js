@@ -20,7 +20,7 @@ export class DiscordAuth {
     this.clientId = String(env.DISCORD_CLIENT_ID || DISCORD_CLIENT_ID || '').trim();
     this.clientSecret = String(env.DISCORD_CLIENT_SECRET || '').trim();
     this.botToken = String(env.DISCORD_BOT_TOKEN || '').trim().replace(/^Bot\s+/i, '');
-    this.guildId = env.DISCORD_GUILD_ID || '1550214491696799824'; // the Krosshair server behind discord.gg/uFVygVtKzt
+    this.guildId = env.DISCORD_GUILD_ID || '1550214491696799824'; // the Krosshair server behind discord.com/invite/2K2XJQK9yd
     this.publicUrl = (env.PUBLIC_URL || '').replace(/\/$/, '');
     this.api = env.DISCORD_API || DISCORD_API; // overridable so the flow can be tested against a stand-in
     this.states = new Map(); // state → created at; proves the callback belongs to a login we started

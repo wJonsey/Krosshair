@@ -158,11 +158,20 @@ export class Room {
     return a <= b ? 'A' : 'B';
   }
 
+  // One profile, one seat. A second tab on the same account would otherwise sit on the other team and
+  // farm itself: real coins, real XP, real rating, both sides played by one person.
+  seatOf(token) {
+    if (!token) return null;
+    return [...this.players.values()].find((player) => !player.bot && player.token === token) || null;
+  }
+
   join(socket, hello, look) {
-    // Reconnect to a held slot?
-    for (const existing of this.players.values()) {
-      if (!existing.bot && !existing.connected && existing.session && existing.session === hello.session) {
-        existing.socket = socket; existing.connected = true; existing.disconnectedAt = 0;
+    // Reconnect to a held slot? The tab that left is matched first, then any held seat on the same
+    // profile, so coming back in a new tab takes the seat over instead of opening a second one.
+    for (const match of [(p) => p.session && p.session === hello.session, (p) => hello.token && p.token === hello.token]) {
+      for (const existing of this.players.values()) {
+        if (existing.bot || existing.connected || !match(existing)) continue;
+        existing.socket = socket; existing.connected = true; existing.disconnectedAt = 0; existing.session = hello.session;
         socket.player = existing; socket.room = this;
         this.welcome(existing, true);
         this.pushRoom();
@@ -170,6 +179,8 @@ export class Room {
         return existing;
       }
     }
+    // Still here and already seated means a second live tab, not a reconnect.
+    if (this.seatOf(hello.token)) return null;
     if (this.wager && this.humans().length >= this.wager.size * 2) return null;
     const seats = this.team('A').length + this.team('B').length;
     if (this.mode === 'range' ? this.connectedHumans().length >= 4 : seats >= this.capacity) {
@@ -818,7 +829,7 @@ export class Room {
     const speed = dist / elapsed;
     // Dev tools loosen the checks for that account only: flying goes through walls, speed moves faster.
     const fly = Boolean(player.devTools?.fly);
-    const limit = fly ? 60 : player.devTools?.speed ? 13 * DEV_SPEED : 13;
+    const limit = fly ? 60 : player.devTools?.speed ? BODY.speedLimit * DEV_SPEED : BODY.speedLimit;
     let reject = speed > limit && dist > 0.9;
     // During the buy phase pilots stay behind their gate.
     if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
@@ -917,7 +928,10 @@ export class Room {
     player.match.shots += 1;
     const scoped = Boolean(player.flags & FLAG.scoped) && t - player.scopedSince >= weapon.scopeTime * 0.5; // generous: the flag arrives a little late over the wire
     const bloom = player.spread[player.active]?.shot(weapon, t) || 0;
-    const angle = player.bot ? 0 : spreadAngle(weapon, { scoped, speed: player.speed, airborne: !(player.flags & FLAG.ground), crouched: Boolean(player.flags & FLAG.crouch), bloom });
+    // Bots miss through their own aim error, so weapon spread is not stacked on top of it. A shotgun is
+    // the exception: its spread is the pattern, not a penalty. At zero angle all nine pellets land on the
+    // same spot and a bot one-shots across the map, so a multi-pellet weapon keeps its tightest pattern.
+    const angle = player.bot ? (weapon.pellets > 1 ? weapon.spread.ads : 0) : spreadAngle(weapon, { scoped, speed: player.speed, airborne: !(player.flags & FLAG.ground), crouched: Boolean(player.flags & FLAG.crouch), bloom });
     const rng = mulberry32(hashString(player.id) + seq * 7919);
     if (weapon.rocket) {
       const shotDir = applySpread(dir, angle, rng);
@@ -1370,8 +1384,8 @@ export class Room {
       const body = decoy.body;
       const beforeX = body.x, beforeZ = body.z;
       body.vy -= BODY.gravity * dt;
-      this.world.moveBody(body, -Math.sin(decoy.yaw) * BODY.runSpeed * dt, body.vy * dt, -Math.cos(decoy.yaw) * BODY.runSpeed * dt);
-      if (Math.hypot(body.x - beforeX, body.z - beforeZ) < BODY.runSpeed * dt * 0.4) {
+      this.world.moveBody(body, -Math.sin(decoy.yaw) * BODY.sprintSpeed * dt, body.vy * dt, -Math.cos(decoy.yaw) * BODY.sprintSpeed * dt);
+      if (Math.hypot(body.x - beforeX, body.z - beforeZ) < BODY.sprintSpeed * dt * 0.4) {
         decoy.stuck += dt;
         if (decoy.stuck > 0.25) { decoy.yaw += (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2 + Math.random() * 0.6); decoy.stuck = 0; }
       } else decoy.stuck = 0;

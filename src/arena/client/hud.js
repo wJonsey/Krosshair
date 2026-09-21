@@ -10,7 +10,15 @@ import { play, announce } from './audio.js';
 import { skinArt, skinArtReady, weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
+// The HUD redraws every frame, but health, ammo and credits change on a hit or a reload, not on a
+// frame. Writing to the DOM costs far more than remembering what was written, so these skip the write
+// when nothing moved. What ends up on screen is identical either way.
+const setText = (node, value) => { if (node.__text !== value) { node.__text = value; node.textContent = value; } };
+const setWidth = (node, percent) => { if (node.__width !== percent) { node.__width = percent; node.style.width = `${percent}%`; } };
+const setOpacity = (node, value) => { if (node.__opacity !== value) { node.__opacity = value; node.style.opacity = String(value); } };
+const setFlag = (node, name, on) => { const key = `__f_${name}`; if (node[key] !== on) { node[key] = on; node.classList.toggle(name, on); } };
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const PHASE_LABEL = { buy: 'BUY PHASE', live: 'LIVE', overtime: 'SUDDEN DEATH', roundEnd: 'ROUND OVER', matchEnd: 'MATCH OVER', range: 'PRACTICE RANGE', lobby: 'LOBBY' };
 const WEAPON_SHORT = new Proxy({}, { get: (_, id) => WEAPONS[id]?.short || WEAPONS[id]?.name?.toUpperCase() });
 
 export class Hud {
@@ -504,17 +512,17 @@ export class Hud {
     // Clock
     const remaining = room.phaseEnds ? Math.max(0, room.phaseEnds - net.time()) : 0;
     const seconds = Math.ceil(remaining);
-    dom.clock.textContent = room.phase === 'range' ? '∞' : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-    dom.clock.classList.toggle('urgent', (room.phase === 'live' && seconds <= 10) || room.phase === 'overtime');
+    setText(dom.clock, room.phase === 'range' ? '∞' : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+    setFlag(dom.clock, 'urgent', (room.phase === 'live' && seconds <= 10) || room.phase === 'overtime');
     if (seconds !== this.lastClockSecond) {
       this.lastClockSecond = seconds;
       if (room.phase === 'buy' && seconds <= 3 && seconds > 0) play('tick');
       if (room.phase === 'live' && seconds <= 5 && seconds > 0) play('tick');
     }
-    dom.phase.textContent = { buy: 'BUY PHASE', live: 'LIVE', overtime: 'SUDDEN DEATH', roundEnd: 'ROUND OVER', matchEnd: 'MATCH OVER', range: 'PRACTICE RANGE', lobby: 'LOBBY' }[room.phase] || '';
-    dom.round.textContent = room.mode === 'range' ? 'FREE FIRE' : `ROUND ${room.round} · FIRST TO ${room.rules.roundsToWin}`;
-    dom.scoreMine.textContent = room.scores[mine]; dom.scoreTheirs.textContent = room.scores[theirs];
-    dom.labelMine.textContent = mine === 'A' ? 'ALPHA' : 'BRAVO'; dom.labelTheirs.textContent = theirs === 'A' ? 'ALPHA' : 'BRAVO';
+    setText(dom.phase, PHASE_LABEL[room.phase] || '');
+    setText(dom.round, room.mode === 'range' ? 'FREE FIRE' : `ROUND ${room.round} · FIRST TO ${room.rules.roundsToWin}`);
+    setText(dom.scoreMine, room.scores[mine]); setText(dom.scoreTheirs, room.scores[theirs]);
+    setText(dom.labelMine, mine === 'A' ? 'ALPHA' : 'BRAVO'); setText(dom.labelTheirs, theirs === 'A' ? 'ALPHA' : 'BRAVO');
     const pips = (team) => room.players.filter((p) => p.team === team).map((p) => `<i class="${p.alive ? 'alive' : ''}"></i>`).join('');
     const mineHtml = pips(mine), theirsHtml = pips(theirs);
     if (dom.pipsMine.innerHTML !== mineHtml) dom.pipsMine.innerHTML = mineHtml;
@@ -523,22 +531,22 @@ export class Hud {
     // Vitals + loadout
     if (you) {
       const spectated = player.mode === 'spectate' && player.spectateId ? game.roster.get(player.spectateId) : null;
-      dom.health.textContent = you.hp; dom.healthMeter.style.width = `${you.hp}%`;
-      dom.healthMeter.classList.toggle('low', you.hp < 35);
-      dom.armor.textContent = you.armor; dom.armorMeter.style.width = `${you.armor}%`;
-      dom.helmet.classList.toggle('hidden', !you.helmet);
-      dom.credits.textContent = room.mode === 'range' ? '∞' : you.credits;
+      setText(dom.health, you.hp); setWidth(dom.healthMeter, you.hp);
+      setFlag(dom.healthMeter, 'low', you.hp < 35);
+      setText(dom.armor, you.armor); setWidth(dom.armorMeter, you.armor);
+      setFlag(dom.helmet, 'hidden', !you.helmet);
+      setText(dom.credits, room.mode === 'range' ? '∞' : you.credits);
       const weapon = player.weapon, ammo = player.ammo;
-      dom.weaponName.textContent = spectated ? `WATCHING ${spectated.name.toUpperCase()}` : weapon.name.toUpperCase();
-      dom.weaponTag.textContent = player.reloadEnd ? 'RELOADING…' : weapon.tag;
-      dom.ammo.textContent = weapon.melee ? '-' : String(ammo?.mag ?? 0).padStart(2, '0');
-      dom.ammo.classList.toggle('empty', !weapon.melee && (ammo?.mag ?? 0) === 0);
-      dom.reserve.textContent = weapon.melee ? '' : ` / ${room.mode === 'range' ? '∞' : ammo?.reserve ?? 0}`;
+      setText(dom.weaponName, spectated ? `WATCHING ${spectated.name.toUpperCase()}` : weapon.name.toUpperCase());
+      setText(dom.weaponTag, player.reloadEnd ? 'RELOADING…' : weapon.tag);
+      setText(dom.ammo, weapon.melee ? '-' : String(ammo?.mag ?? 0).padStart(2, '0'));
+      setFlag(dom.ammo, 'empty', !weapon.melee && (ammo?.mag ?? 0) === 0);
+      setText(dom.reserve, weapon.melee ? '' : ` / ${room.mode === 'range' ? '∞' : ammo?.reserve ?? 0}`);
       const slots = ['primary', 'sidearm', 'melee'].filter((slot) => you.weapons[slot]).map((slot, index) => `<div class="${slot === player.active ? 'active' : ''}"><b>${['primary', 'sidearm', 'melee'].indexOf(slot) + 1}</b>${WEAPON_SHORT[you.weapons[slot]]}</div>`).join('');
       if (dom.slots.innerHTML !== slots) dom.slots.innerHTML = slots;
       const gadgets = [0, 1].map((index) => { const gadget = GADGETS[you.gadgets[index]]; return `<div class="${gadget ? 'ready' : 'empty'}"><b>${bindLabel(index ? 'gadget2' : 'gadget1')}</b><span>${gadget ? `${gadget.icon} ${gadget.name}` : 'EMPTY'}</span></div>`; }).join('');
       if (dom.gadgets.innerHTML !== gadgets) dom.gadgets.innerHTML = gadgets;
-      dom.fxLow.style.opacity = player.alive && you.hp < 40 ? String((40 - you.hp) / 40) : '0';
+      setOpacity(dom.fxLow, player.alive && you.hp < 40 ? (40 - you.hp) / 40 : 0);
     }
 
     // Aim UI

@@ -1,7 +1,7 @@
 // Entry point: boots the renderer, wires server messages to the game systems
 // and runs the frame loop.
 import * as THREE from 'three';
-import { GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
+import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
 import { bus, game, graphics, isEnemy, nameOf, saveSettings } from './state.js';
 import { net } from './net.js';
 import { bindLabel } from './input.js';
@@ -16,6 +16,7 @@ import { announce, meter, musicState, play, playImpact, playShot, setAmbience, s
 import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
 import { initDevTools } from './devtools.js';
+import { startGuard } from './guard.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
 
 // Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
@@ -379,7 +380,50 @@ net.on('streak', (message) => {
   play(message.at >= 7 ? 'matchWin' : 'xp');
   feed(`${message.name} · ${message.desc}`, 'good');
 });
-net.on('notice', (message) => { feed(message.text, message.tone); if (message.tone === 'warn') play('deny', { volume: 0.6 }); });
+net.on('notice', (message) => {
+  // A restart ends the match you are in the middle of, so mid-game it takes the banner rather than a
+  // line in the feed. In the menus the feed is the right place for it.
+  if (message.kind === 'restart' && game.screen === 'game') {
+    hud.banner('SERVER RESTARTING', `Your match ends in ${message.seconds}s.`, 'UPDATE INCOMING', 'danger', Math.min(8000, (message.seconds || 5) * 1000));
+    play('deny', { volume: 0.6 });
+    return;
+  }
+  feed(message.text, message.tone);
+  if (message.tone === 'warn') play('deny', { volume: 0.6 });
+});
+
+// Crouch is Ctrl, so Ctrl+W lands on the tab close instead of the game more often than you would think.
+// The browser only offers this while you are actually in a match, and only after you have clicked in,
+// so it never nags anyone reading the menus.
+addEventListener('beforeunload', (event) => {
+  if (game.screen !== 'game') return;
+  event.preventDefault();
+  event.returnValue = '';
+  return '';
+});
+
+// Movement readout: speed, state and the jump feel, for tuning the physics by hand. F3 toggles it,
+// and it is off unless asked for, so it costs nothing in a normal match.
+const moveDebug = document.createElement('div');
+moveDebug.className = 'move-debug hidden';
+document.body.append(moveDebug);
+let debugAt = 0, debugFrames = 0, debugFps = 0;
+function updateMoveDebug(now) {
+  debugFrames += 1;
+  if (now - debugAt >= 0.25) { debugFps = Math.round(debugFrames / (now - debugAt)); debugFrames = 0; debugAt = now; }
+  const on = Boolean(game.settings.moveDebug) && game.screen === 'game';
+  if (moveDebug.classList.contains('hidden') === !on) moveDebug.classList.toggle('hidden', !on);
+  if (!on) return;
+  const v = player.vel, body = player.body;
+  const text = `SPEED ${player.horizontalSpeed.toFixed(2)} m/s\nSTATE ${player.moveState}\nVEL   x ${v.x.toFixed(2)}  y ${body.vy.toFixed(2)}  z ${v.z.toFixed(2)}\nFLOW  ${player.flow.toFixed(2)}\nGROUND ${body.onGround ? 'yes' : 'no'}   FPS ${debugFps}`;
+  if (moveDebug.textContent !== text) moveDebug.textContent = text;
+}
+addEventListener('keydown', (event) => {
+  if (event.code !== 'F3' || event.repeat) return;
+  event.preventDefault();
+  game.settings.moveDebug = !game.settings.moveDebug;
+  saveSettings();
+});
 
 // ---------------------------------------------------------------- pause / leave
 document.addEventListener('pointerlockchange', () => {
@@ -533,6 +577,14 @@ function frame(now = 0) {
   setListener(camera);
   setAmbienceShelter(Math.max(arena.shelter, camera.position.y < -0.8 ? 1 : 0));
   hud.update(dt);
+  updateMoveDebug(now / 1000);
+  // The view opens a touch as you get quicker. Small on purpose: enough to feel the speed, not enough
+  // to change what you can see and hit.
+  if (game.screen === 'game' && !viewmodel.scopeWanted()) {
+    const over = Math.max(0, player.horizontalSpeed - BODY.runSpeed) / Math.max(1, BODY.flowMax - BODY.runSpeed);
+    const want = game.settings.speedFov === false ? game.settings.fov : game.settings.fov + Math.min(1, over) * 6;
+    if (Math.abs(camera.fov - want) > 0.05) { camera.fov += (want - camera.fov) * Math.min(1, dt * 6); camera.updateProjectionMatrix(); }
+  }
   setWorldAudio(game.screen === 'game');
   // Music follows the screen: full in the menus, lower between rounds, out of the way while a round is live.
   setMusicScene(game.screen !== 'game' ? 'menu' : game.room?.phase === 'live' || game.room?.phase === 'overtime' || game.room?.phase === 'range' ? 'combat' : 'match');
@@ -571,4 +623,7 @@ showScreen('home');
 bus.on('net-status', ({ state }) => { if (state === 'open') boot?.step('link'); else if (state === 'closed') boot?.step('link', 'warn'); });
 net.connect();
 frame();
-window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState } };
+// debugCam stays writable for the screenshot harness; the anti-cheat seals the
+// handle so nothing can bolt extra entry points onto it.
+window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState }, debugCam: null };
+startGuard({ player, api: window.__arena, notify: feed });

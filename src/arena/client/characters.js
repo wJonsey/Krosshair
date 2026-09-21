@@ -81,14 +81,20 @@ class Entity {
     this.mark.position.y = 2.15;
     this.mark.visible = false;
     this.root.add(this.mark);
-    this.styleKey = '';
+    this.styleKey = null;
     this.ghost = false;
   }
 
   style(entry, friendly, hologram = false) {
-    const key = `${entry.color}|${entry.accent}|${entry.headgear}|${entry.face}|${entry.pack}|${entry.pattern}|${entry.charm}|${JSON.stringify(entry.skins || {})}|${friendly}|${entry.name}|${hologram}`;
-    if (key === this.styleKey) return;
-    this.styleKey = key;
+    // A look changes when someone edits it, not every frame, so this only has to be cheap when it has
+    // not. The roster hands out a fresh object on a change, so skins compare by identity.
+    const was = this.styleKey;
+    if (was && was.color === entry.color && was.accent === entry.accent && was.headgear === entry.headgear
+      && was.face === entry.face && was.pack === entry.pack && was.pattern === entry.pattern
+      && was.charm === entry.charm && was.skins === entry.skins && was.name === entry.name
+      && was.friendly === friendly && was.hologram === hologram) return;
+    this.styleKey = { color: entry.color, accent: entry.accent, headgear: entry.headgear, face: entry.face,
+      pack: entry.pack, pattern: entry.pattern, charm: entry.charm, skins: entry.skins, name: entry.name, friendly, hologram };
     styleOperator(this.model, { ...lookOf(entry), team: friendly ? 'friend' : 'foe' });
     if (this.tag) { this.root.remove(this.tag); this.tag.material.map.dispose(); this.tag = null; }
     if (friendly && entry.name) { this.tag = nameTag(entry.name, TEAM_COLORS.friend); this.tag.position.y = 2.1; this.root.add(this.tag); }
@@ -294,7 +300,6 @@ export class Operators {
       if (replay.time >= replay.data.duration + 0.7) { const done = replay.onDone; this.stopReplay(); done?.(); }
     } else {
       const renderTime = serverTime - INTERP_DELAY;
-      const now = performance.now() / 1000;
       for (const [id, entity] of this.entities) {
         const entry = game.roster.get(id) || (entity.dummy ? DUMMY_LOOK : null);
         const alive = this.present?.has(id) && entry;
@@ -306,7 +311,6 @@ export class Operators {
         const mark = game.marks.get(id);
         entity.mark.visible = Boolean(mark && mark.until > serverTime && isEnemy(id));
         if (entity.tag) entity.tag.visible = true;
-        void now;
       }
       for (const entity of this.decoys.values()) {
         const owner = game.roster.get(entity.owner);

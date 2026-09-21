@@ -377,6 +377,7 @@ export class Arena {
 
   setVariant(name) {
     const v = VARIANTS[name] || VARIANTS.dusk;
+    this.sunDir = new THREE.Vector3(...v.sunDir).normalize();
     this.variant = v; this.variantName = name;
     this.scene.fog.color.set(v.fog); this.applyViewDistance();
     this.hemi.color.set(v.hemiSky); this.hemi.groundColor.set(v.hemiGround); this.hemi.intensity = v.hemi;
@@ -468,7 +469,7 @@ export class Arena {
     const v = this.variant;
     // Keep the shadow frustum centred near the player for crisper shadows.
     this.sun.target.position.set(Math.round(camera.position.x / 8) * 8, 0, Math.round(camera.position.z / 8) * 8);
-    this.sun.position.copy(this.sun.target.position).addScaledVector(new THREE.Vector3(...v.sunDir).normalize(), 130);
+    this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 130);
     this.barrierMeshes.forEach((mesh) => { if (mesh.visible) mesh.material.opacity = 0.18 + Math.sin(this.time * 3) * 0.06; });
     this.shields.forEach((mesh) => {
       if (mesh.userData.grow < 1) { mesh.userData.grow = Math.min(1, mesh.userData.grow + dt * 5); mesh.scale.y = mesh.userData.grow; }

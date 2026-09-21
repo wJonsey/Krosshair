@@ -50,7 +50,7 @@ function cleanCrosshair(c) {
 const SETTING_RULES = {
   sensitivity: [0.1, 5], scopeSensitivity: [0.1, 3], padSensitivity: [0.1, 5], fov: [50, 120], volume: [0, 1], ambience: [0, 1], music: [0, 1], musicInMatch: 'bool', settingsVersion: [1, 99],
   quality: ['ultra', 'high', 'medium', 'low', 'custom'], renderScale: [0.4, 2], shadows: ['off', 'low', 'high', 'ultra'], streetLights: 'bool', brightness: [0.5, 2], fpsCap: [0, 360], autoQuality: 'bool', showFps: 'bool',
-  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
+  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', autoBhop: 'bool', speedFov: 'bool', moveDebug: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
 };
 
 export class ProfileStore {
@@ -232,7 +232,7 @@ export class ProfileStore {
       // be worked out here, and it is only ever sent to them.
       ...(profile.dev ? { itemRunway: runway() } : {}),
       coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], finishes: profile.finishes || [], pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
-      gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
+      gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       builds: profile.builds || {},
@@ -302,8 +302,10 @@ export class ProfileStore {
     if (summary.won) lines.push(['Win', summary.vsHumans ? COINS.win : COINS.winVsBots]);
     if (summary.topKills) lines.push(['Top kills', COINS.topKills]);
     const kills = (summary.coinKills || 0) + (summary.botKills || 0) * COINS.botKill;
-    if (kills >= 1) lines.push(['Kills', Math.floor(kills)]);
+    // Contracts are paid before kills: the cap should trim a big kill count, never a daily you
+    // finished and were told about.
     if (contracts) lines.push(['Contracts', contracts * COINS.contract]);
+    if (kills >= 1) lines.push(['Kills', Math.floor(kills)]);
     let total = 0;
     const paid = lines.map(([label, amount]) => { const take = Math.max(0, Math.min(Math.floor(amount), COINS.cap - total)); total += take; return { label, amount: take }; }).filter((line) => line.amount > 0);
     if (total > 0) this.credit(token, total, 'match', `${summary.won ? 'Win' : summary.draw ? 'Draw' : 'Loss'} · ${summary.mode || 'match'}`);

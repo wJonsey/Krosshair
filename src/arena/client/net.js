@@ -8,6 +8,8 @@ let offsetSamples = [];
 let retry = 0;
 let pingTimer = null;
 let build = null; // the server's build stamp when this page loaded
+// Set while the anti-cheat has this tab locked out: no socket, no retries.
+let suspended = false;
 const configuredServer = new URLSearchParams(location.search).get('server') || globalThis.KROSSHAIR_SERVER_URL || '';
 const serverOrigin = configuredServer ? new URL(configuredServer, location.href) : location;
 // Room to rejoin after a dropped connection or a page refresh (the tab keeps its session id).
@@ -36,6 +38,9 @@ export const net = {
   enter(payload) { net.send({ type: 'enter', look: game.look, ...payload }); },
   leaveRoom() { remember(null); net.send({ type: 'leave-room' }); },
   holdRoom(name) { remember(name); },
+  // Used by the anti-cheat kick screen.
+  suspend() { suspended = true; clearInterval(pingTimer); try { socket?.close(4003, 'anti-cheat'); } catch { /* already gone */ } },
+  resume() { if (!suspended) return; suspended = false; retry = 0; connect(); },
 };
 
 function sample(message) {
@@ -49,6 +54,7 @@ function sample(message) {
 }
 
 function connect() {
+  if (suspended) return;
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return;
   const protocol = serverOrigin.protocol === 'https:' ? 'wss' : 'ws';
   bus.emit('net-status', { state: 'connecting' });
@@ -119,6 +125,7 @@ function connect() {
 }
 
 function scheduleRetry() {
+  if (suspended) return;
   retry += 1;
   setTimeout(connect, Math.min(5000, 400 * retry));
 }

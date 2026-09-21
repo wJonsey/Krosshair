@@ -66,7 +66,9 @@ export function royaleWeapon(weapon, rarity) {
 }
 
 // The drop: everyone starts this high above the spot they picked and comes down under a parachute.
-export const DROP = { height: 190, offset: 45, fall: 32, chuteFall: 8, chuteAt: 70, glide: 11, chuteGlide: 9 };
+// botChuteAt/botChuteFall: nobody is flying a bot, so it dives deep and pulls late instead of drifting
+// down from 70m at walking pace. That halves the wait for the match to start without it looking wrong.
+export const DROP = { height: 190, offset: 45, fall: 32, chuteFall: 8, chuteAt: 70, glide: 11, chuteGlide: 9, botChuteAt: 24, botChuteFall: 10 };
 // Pickups that change how you move for a while.
 export const POWERS = {
   speed: { name: 'Adrenaline', desc: 'Run 35% faster.', seconds: 25, speed: 1.35 },

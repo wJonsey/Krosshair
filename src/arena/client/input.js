@@ -1,4 +1,5 @@
-// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW'), a mouse button ('Mouse0') or a
+// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW'), a mouse button ('Mouse0'), a
+// wheel notch ('WheelUp'/'WheelDown') or a
 // controller button ('Pad0'). Keyboard and controller keep their own bind tables, so a pad never takes
 // a key away from anyone. Every keyboard action has two slots so the classic doubles (CTRL / C to
 // crouch) still work after rebinding.
@@ -6,7 +7,7 @@ import { bus, game, saveSettings } from './state.js';
 
 export const ACTIONS = [
   ['forward', 'Move forward', 'Movement'], ['back', 'Move back', 'Movement'], ['left', 'Strafe left', 'Movement'], ['right', 'Strafe right', 'Movement'],
-  ['jump', 'Jump', 'Movement'], ['crouch', 'Crouch (silent)', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
+  ['jump', 'Jump', 'Movement'], ['sprint', 'Sprint', 'Movement'], ['crouch', 'Crouch · slide', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
   ['fire', 'Fire', 'Weapons'], ['scope', 'Aim / scope', 'Weapons'], ['reload', 'Reload', 'Weapons'],
   ['primary', 'Primary weapon', 'Weapons'], ['sidearm', 'Sidearm', 'Weapons'], ['melee', 'Blade', 'Weapons'],
   ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'], ['inspect', 'Inspect weapon', 'Weapons'],
@@ -15,7 +16,7 @@ export const ACTIONS = [
 
 export const DEFAULT_BINDS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  jump: ['Space', null], crouch: ['ControlLeft', 'KeyC'], walk: ['ShiftLeft', 'ShiftRight'],
+  jump: ['Space', null], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'], walk: ['AltLeft', 'KeyG'],
   fire: ['Mouse0', null], scope: ['Mouse2', null], reload: ['KeyR', null],
   primary: ['Digit1', null], sidearm: ['Digit2', null], melee: ['Digit3', null],
   gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null], inspect: ['KeyV', null],
@@ -64,13 +65,13 @@ export const padName = (code) => PAD_LAYOUTS[padLayout()].names[code] || String(
 
 // Controller binds live in their own table.
 export const DEFAULT_PAD_BINDS = {
-  fire: 'Pad7', scope: 'Pad6', jump: 'Pad0', crouch: 'Pad1', walk: 'Pad10', reload: 'Pad2',
+  fire: 'Pad7', scope: 'Pad6', jump: 'Pad0', sprint: 'Pad10', crouch: 'Pad1', reload: 'Pad2',
   swap: 'Pad3', gadget1: 'Pad4', gadget2: 'Pad5', melee: 'Pad11', ping: 'Pad12', interact: 'Pad14',
   armoury: 'Pad15', inspect: 'Pad13', scoreboard: 'Pad8', menu: 'Pad9',
 };
 // Actions a controller can hold, in the order the settings page lists them.
 export const PAD_ACTIONS = [
-  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['crouch', 'Crouch'], ['walk', 'Walk · hold breath'],
+  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['sprint', 'Sprint'], ['crouch', 'Crouch · slide'],
   ['reload', 'Reload'], ['swap', 'Swap weapon'], ['melee', 'Blade'], ['gadget1', 'Gadget 1'], ['gadget2', 'Gadget 2'],
   ['interact', 'Pick up (royale)'], ['armoury', 'Armoury'], ['inspect', 'Inspect weapon'], ['ping', 'Ping location'],
   ['scoreboard', 'Scoreboard'], ['menu', 'Pause / back'],
@@ -106,8 +107,13 @@ export const isBound = (action, code) => bindsFor(action).includes(code);
 export const held = (keys, action) => bindsFor(action).some((code) => code && keys.has(code));
 export const actionsFor = (code) => ACTIONS.filter((action) => isBound(action.id, code)).map((action) => action.id);
 export const mouseCode = (event) => `Mouse${event.button}`;
+// A wheel notch is a pulse, not a hold, so binding one means synthesising a brief press. The window is
+// long enough for a frame to see it at any sane rate and short enough to still feel like a tap. This is
+// what makes a wheel bound to jump useful: one flick is several clean attempts at the landing.
+export const wheelCode = (event) => (event.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+export const WHEEL_HOLD = 0.08;
 
-const NAMES = { Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5', Space: 'SPACE', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', AltLeft: 'L-ALT', AltRight: 'R-ALT', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/' };
+const NAMES = { WheelUp: 'WHEEL UP', WheelDown: 'WHEEL DOWN', Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5', Space: 'SPACE', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', AltLeft: 'L-ALT', AltRight: 'R-ALT', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/' };
 export function codeLabel(code) {
   if (!code) return '-';
   if (NAMES[code]) return NAMES[code];

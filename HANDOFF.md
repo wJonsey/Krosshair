@@ -51,6 +51,52 @@ finish, exclude `finish.shop === 'item'` and add a test.
 sets a client is never told about, so it is computed on the server and attached to the profile view for
 dev accounts only. Do not move it client side: it will read zero.
 
+## Friends and parties
+
+Mutual friendship and the party you queue with. It is a drawer off the menu bar, not a page: the
+button sits in the tool row next to the online count, and the panel slides in over whatever you were
+doing. Checking who is on should not cost you your place.
+
+| Piece | File | What it holds |
+| --- | --- | --- |
+| The rules | `server/social.js` | Requests, accepting, blocking, and the migration off the old list. Pure functions over two profiles, so the tests drive them with no sockets. |
+| The parties | `server/party.js` | `PartyBook`: in memory, never on disk, like rooms. A pilot is always in exactly one party, their own party of one to start with. |
+| The wiring | `multiplayer-server.mjs` `handleFriends`, `handleParty` | Resolves a name to an account and a profile, then pushes a `social` snapshot to everyone affected. |
+| The drawer | `client/social.js` | Owns its own DOM (appended to `body`, like the settings card), draws itself, and handles its own clicks. `menu.js` only renders `socialButtonHtml()` into the bar and calls `toggleSocial()`. |
+
+**`friends` used to be a one-way address book** for sending coins: you added a name and that was that.
+It is mutual now, so `normalize()` moves any entry the other side never agreed to into a pending request
+rather than deleting it. It runs whenever a snapshot is built and is idempotent. Sending coins still works
+by name through `lookup`, so nobody lost the ability to pay anyone.
+
+**One message, every list.** The server sends `social` holding friends, requestsIn, requestsOut, blocked,
+recent and the party. The page never patches a list itself: act, then draw whatever comes back. Anything
+that changes a relationship has to push to both sides (`pushSocialTo`) or one of them sees stale rows.
+
+**Presence is derived, never stored.** `presenceOf` reads the live sockets and their room. Only connected
+friends are told when you move (`tellFriends`), because nobody else can see it.
+
+**A party follows its leader.** `enter()` seats the leader, then seats the rest in the same room through
+`place()`. It reuses the leader's room object rather than the room name, because a quick or ranked room
+is not joinable by name. Anyone who cannot be seated is told and stays in the menu: the leader still goes.
+
+**An unhandled message is invisible.** The first version of this shipped with the server sending
+`party-invite` correctly and the client never listening for it, so every invite vanished and the
+tests stayed green: they asserted the server *sent* it. `socialwire.test.mjs` now scans the server
+for social message types and fails if any has no `net.on` on the client. Worth copying for other
+systems.
+
+**Traps.**
+- `friends` messages go through the coins rate limiter in `handleCoins`: two actions inside 200ms get
+  `coins-error: Slow down`. Fine for clicking, but a test has to pace itself.
+- Blocking has to break the party too, or the blocked pilot is still sitting in it.
+- `party.queued` is cleared when the last member leaves the room, not when the leader does, or a party
+  that finished a match can never queue again.
+- A party join is only honoured if the party actually invited you, checked on the party, not the client.
+- The drawer redraws itself wholesale, so the search box is preserved by hand in `drawFriends()`.
+  Same problem the shop pages have, same shape of fix.
+- Adding a server message means adding `net.on` for it in the same change, or it goes nowhere.
+
 ## Ranked
 
 One rating, four sizes: `ranked-1v1`, `ranked-2v2`, `ranked-3v3`, `ranked-5v5`, each matchmaking on its

@@ -2,19 +2,21 @@
 // the minigames, sent between pilots, and staked in wager matches. Shared so the menus show the same
 // prices and odds the server enforces. Coins are never bought with money.
 
+// Roughly a cheap crate every couple of good matches. Matches take minutes, so paying 12 coins for a
+// hard-fought loss made the crates feel out of reach and the dailies not worth reading.
 export const COINS = {
-  starter: 50,        // once, on an account's first look at its wallet
-  finish: 7,          // any finished match
-  win: 18,            // a win against a team with at least one human on it
-  winVsBots: 5,       // a win against bots only
-  topKills: 11,        // most kills in a match with two or more humans
-  playerKill: 3,      // per human killed, scaled by level difference below
-  botKill: 0.6,       // per bot killed
+  starter: 250,       // once, on an account's first look at its wallet: two crates, so the first one is now
+  finish: 10,         // any finished match
+  win: 25,            // a win against a team with at least one human on it
+  winVsBots: 6,       // a win against bots only, still clearly the lesser prize
+  topKills: 16,       // most kills in a match with two or more humans
+  playerKill: 4,      // per human killed, scaled by level difference below
+  botKill: 0.8,       // per bot killed
   levelStep: 0.05,    // +5% per level the victim is above you…
   levelMax: 0.5,      // …up to +50%
   levelMin: -0.3,     // and down to -30% for much lower levels
-  contract: 7,        // per daily contract completed
-  cap: 85,            // most one match can pay (wager pots aside)
+  contract: 15,       // per daily contract completed
+  cap: 140,           // most one match can pay (wager pots aside): a strong match and its dailies both fit
 };
 // What one human kill is worth to the killer.
 export function killCoins(killerLevel, victimLevel) {

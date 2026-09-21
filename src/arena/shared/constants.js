@@ -15,11 +15,44 @@ export const BODY = {
   eye: 1.62,
   crouchEye: 1.06,
   step: 0.45,
-  runSpeed: 6.0,
+  runSpeed: 4.8,        // on foot, not sprinting
+  sprintSpeed: 6.8,     // holding sprint, and the pace a slide is meant to be entered from
+  // Weapon spread is scaled against a speed, not against whatever the base happens to be. It is kept
+  // at the old base on purpose: sprint is a movement change, and moving it here would quietly make
+  // everyone less accurate on the move, which is a gunplay change nobody asked for.
+  spreadSpeed: 6.0,
   walkSpeed: 3.1,
   crouchSpeed: 2.3,
   jumpVelocity: 5.7,
   gravity: 15,
+  // Slide and bhop. Crouch at a run and you go faster for a moment instead of slower; jump out of that
+  // slide and you keep most of it, so a slide, jump, slide chain holds its speed while the timing is
+  // good and bleeds off when it is not. flowMax is the ceiling on the whole chain and is deliberately
+  // under the 13 m/s the server rejects, so nobody gets snapped back for moving well.
+  slideSpeed: 8.2,      // what a plain slide out of a run is worth, before any chaining
+  slideMin: 4.4,        // you have to already be running to start one
+  slideTime: 0.62,      // how long the burst lasts before it is just a crouch
+  slideCooldown: 0.28,  // from the end of one slide to the start of the next
+  bhopKeep: 0.93,       // share of the slide carried out of a well timed jump
+  bhopGain: 0.8,        // added to each chained slide, so hops build instead of only holding
+  flowMax: 11.0,        // where the chain tops out. bhopGain and bhopKeep are picked to land here
+  flowDecay: 8.5,       // m/s bled each second once the slide is over and you are back on your feet
+  slideArc: 0.82,       // a slide hop is a low fast arc, not a leap
+  scopeArc: 0.76,       // scoped is the short hop: less height, back on the ground sooner
+  strafeBonus: 1.06,    // strafing while airborne mid chain, the reason to air strafe at all
+  // What the server treats as impossible. It has to clear flowMax with room to spare: a network hitch
+  // bunches movement into one update, and a pilot who has earned their speed must never be snapped
+  // back for it. Well above anything legitimate, still far under what a speed hack helps itself to.
+  speedLimit: 15,
+  // Acceleration, out of the movement code so it can be tuned in one place.
+  groundAccel: 14,      // how hard you are pulled to the speed you asked for, on your feet
+  airAccel: 14,         // and in the air, where it is applied along the wish direction only
+  // The trick that makes air strafing a skill: in the air only this much of the wish speed counts,
+  // so turning while you hold a strafe keeps opening a gap to accelerate into. Raise it and the air
+  // feels like the ground; drop it to nothing and air strafing stops working at all.
+  airControl: 1.5,
+  coyoteTime: 0.09,     // still jumpable this long after walking off an edge
+  jumpBuffer: 0.13,     // a jump pressed this soon before landing still fires on touchdown
 };
 
 // Penetration: a bullet starts with `pen` power. Every metre of material costs
@@ -241,8 +274,8 @@ export const ACCOUNTS_ENABLED = false;
 // Portal → General Information). Safe to commit, unlike the client secret or bot token, which go in .env.
 export const DISCORD_CLIENT_ID = '1550238088758825050';
 // Community server. Logging in with Discord adds pilots to it; this link is for everyone else.
-export const DISCORD_INVITE = 'https://discord.gg/uFVygVtKzt';
-export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair78';
+export const DISCORD_INVITE = 'https://discord.com/invite/2K2XJQK9yd';
+export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair.online';
 
 // Sight types (weapon.sight): scope = full scope overlay, prism = magnified lens, dot = red dot,
 // holo = holographic window, iron = iron sights on the model, bead = shotgun bead.
