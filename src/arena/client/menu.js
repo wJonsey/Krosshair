@@ -279,7 +279,10 @@ const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedba
 const PAGE_ALIAS = { operator: 'locker' }; // old links
 // A guest gets the game and the settings. Everything that belongs to an account stays shut until there
 // is an account to hang it on: a locker with nothing saved in it is worse than no locker at all.
-const GUEST_PAGES = new Set(['play', 'settings', 'controls', 'feedback']);
+// Rooms is open to guests: a callsign is enough to browse the public list, join a code, or start a
+// custom room. Ranked stays out, because a guest profile never reaches disk and a rating that vanishes
+// with the tab would drag real ones around with it. The wager panel says its own piece to a guest.
+const GUEST_PAGES = new Set(['play', 'rooms', 'settings', 'controls', 'feedback']);
 const guestLocked = (page) => !game.username && !GUEST_PAGES.has(page);
 const ALL_PAGES = [...NAV.flatMap(([, pages]) => pages), ...TOOL_PAGES].map(([id]) => id);
 const pageFromHash = () => { const id = PAGE_ALIAS[location.hash.slice(1)] || location.hash.slice(1); return ALL_PAGES.includes(id) ? id : 'play'; };
