@@ -14,20 +14,28 @@ export function buildCampanile() {
   add(-5, 17.5, 5, 38, 0, 0.02, 'paving', { ...DECO, sym: true });
   // Canal walk: quay, kerb, water, retaining walls.
   add(28, -35, 36, 35, -2.9, -2.4, 'cobble');
-  add(28, -35, 29, 35, -2.9, -0.5, 'stone');
+  // The retaining wall stops short of the centre stairs on both sides. It used to run the whole length
+  // and bury them, which left the canal with no way out at all: you dropped in and stayed there.
+  add(28, -35, 29, -2.1, -2.9, -0.5, 'stone');
+  add(28, 2.1, 29, 35, -2.9, -0.5, 'stone');
   add(28, 34, 36, 35, -2.9, -0.5, 'stone', SYM);
   add(32.6, -28, 33, 28, -2.4, -1.9, 'stone');
   add(33, -34, 35, 34, -2.4, -2.05, 'water', DECO);
-  stairs('z', 34, 28, 29, 32.6, -2.4, 0, 7, 'stone', SYM);
+  // Six steps, not seven, so every tread is a full metre. At seven they were 0.86 m and a body standing
+  // on one clipped three millimetres into the next riser, which is under a pilot's notice but leaves the
+  // bot grid with no foothold on the flight at all.
+  stairs('z', 34, 28, 29, 32.6, -2.4, 0, 6, 'stone', SYM);
   add(32.6, 28, 33, 34, -2.4, 0, 'stone', SYM);
   // Centre stairs climb west out of the canal onto the piazza.
-  stairs('x', 29, 23, -1.5, 1.5, -2.4, 0, 7, 'stone');
+  stairs('x', 29, 23, -1.5, 1.5, -2.4, 0, 6, 'stone');
   add(22.4, -2.1, 29, -1.5, -2.9, -0.5, 'stone');
   add(22.4, 1.5, 29, 2.1, -2.9, -0.5, 'stone');
   add(22.4, -1.5, 23, 1.5, -2.9, -0.5, 'stone');
   add(23, 1.5, 28.6, 1.9, 0, 1, 'stone', SYM);
-  // Parapet along the canal edge, open at the three stairheads.
-  add(28.6, 1.9, 29, 34, 0, 1, 'stone', SYM);
+  // Parapet along the canal edge, open at the three stairheads. The gap at z 28 to 29 is the one the
+  // side stairs come up through: without it the flight climbs the full three metres and dead ends.
+  add(28.6, 1.9, 29, 28, 0, 1, 'stone', SYM);
+  add(28.6, 29, 29, 34, 0, 1, 'stone', SYM);
 
   // --- Perimeter ------------------------------------------------------------
   add(-38, -48, -36, 48, 0, 9, 'ochre');
@@ -144,9 +152,11 @@ export function buildCampanile() {
   lights.push({ pos: [13, 3, 26], color: '#ffd59a', intensity: 12, distance: 15 }, { pos: [13, 3, -26], color: '#ffd59a', intensity: 12, distance: 15 });
   lights.push({ pos: [13, 6.8, 26], color: '#ffd59a', intensity: 10, distance: 14 }, { pos: [13, 6.8, -26], color: '#ffd59a', intensity: 10, distance: 14 });
 
-  // A wayside shrine on the centre line closes the long view down the east lane.
-  add(21, -1.1, 22.7, 1.1, 0, 3.2, 'stone');
-  add(20.8, -1.3, 22.9, 1.3, 3.2, 3.5, 'terracotta', { deco: true });
+  // Two wayside shrines break the long view down the east lane. There was one, on the centre line,
+  // and it sat square across the head of the canal stairs: the flight climbed out of the water and
+  // ended at a wall. A pair either side leaves the stairs their landing and still breaks the lane.
+  add(21, 2.2, 22.7, 4.4, 0, 3.2, 'stone', SYM);
+  add(20.8, 2, 22.9, 4.6, 3.2, 3.5, 'terracotta', { ...DECO, sym: true });
 
   // --- East lane market between the casa and the canal -----------------------------------
   stall(22, 21.5, 'cloth');

@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BODY, MATERIALS } from '../shared/constants.js';
 import { getMap, MAP_IDS, MAP_INFO, zoneAt } from '../shared/map.js';
-import { World } from '../shared/physics.js';
+import { World, makeBody } from '../shared/physics.js';
 import { NavGrid } from '../server/nav.js';
 
 const only = process.env.MAP ? process.env.MAP.split(',') : MAP_IDS;
@@ -70,6 +70,55 @@ for (const id of only) {
     };
     const traps = groups.filter((group) => group.length <= 4 && !group.some(escapes)).map((group) => [group[0].x, group[0].y, group[0].z]);
     assert.deepEqual(traps, [], 'a pilot could stand here with no way out');
+  });
+
+  test(`${id}: anywhere you can get to, you can get back from`, () => {
+    // The check above only catches a ledge barely big enough to stand on. A whole sunken walk with the
+    // one way out walled off is far bigger than four cells and slipped straight past it, so this asks
+    // the question the other way round: walking is one way, because a drop you cannot climb back up is
+    // still an edge. Spread forward from the spawns for everywhere a pilot can reach, then backward for
+    // everywhere that can reach a spawn. Anything in the first and not the second is a pit.
+    const nav = new NavGrid(world, map);
+    const back = new Map();
+    for (const node of nav.nodes) for (const edge of node.edges) {
+      if (!back.has(edge.to)) back.set(edge.to, []);
+      back.get(edge.to).push(node.id);
+    }
+    const spread = (starts, next) => {
+      const hit = new Set(starts), queue = [...starts];
+      while (queue.length) { const at = queue.pop(); for (const other of next(at)) if (!hit.has(other)) { hit.add(other); queue.push(other); } }
+      return hit;
+    };
+    const spawns = ['A', 'B'].flatMap((team) => map.spawns[team].map((spawn) => nav.nearest(spawn.x, spawn.y, spawn.z))).filter(Boolean).map((node) => node.id);
+    const reached = spread(spawns, (at) => nav.nodes[at].edges.map((edge) => edge.to));
+    const home = spread(spawns, (at) => back.get(at) || []);
+    // The grid only links what can be walked, so a kerb worth hopping reads as a wall. Anything a jump
+    // gets out of is a way home too, and so is anything that can walk to it.
+    const jumpsOut = (node) => {
+      for (let a = 0; a < 8; a += 1) {
+        const angle = (a / 8) * Math.PI * 2;
+        for (const speed of [BODY.runSpeed, BODY.sprintSpeed]) {
+          const body = makeBody(node.x, node.y + 0.02, node.z);
+          body.onGround = true;
+          let vy = BODY.jumpVelocity;
+          for (let tick = 0; tick < 70; tick += 1) {
+            vy -= BODY.gravity / 60;
+            body.vy = vy;
+            world.moveBody(body, (Math.cos(angle) * speed) / 60, vy / 60, (Math.sin(angle) * speed) / 60);
+            vy = body.vy;
+            if (body.onGround && tick > 6) break;
+          }
+          const landed = nav.nearest(body.x, body.y, body.z);
+          if (landed && home.has(landed.id) && Math.abs(landed.y - body.y) < 0.6) return true;
+        }
+      }
+      return false;
+    };
+    const stuck = [...reached].filter((at) => !home.has(at));
+    const seeds = stuck.filter((at) => jumpsOut(nav.nodes[at]));
+    const reachable = seeds.length ? spread([...home, ...seeds], (at) => back.get(at) || []) : home;
+    const pits = stuck.filter((at) => !reachable.has(at)).map((at) => nav.nodes[at]);
+    assert.deepEqual(pits.slice(0, 6).map((node) => [node.x, node.y, node.z]), [], `${pits.length} spots a pilot can drop into and never leave`);
   });
 
   test(`${id}: mirrored across z = 0`, () => {
