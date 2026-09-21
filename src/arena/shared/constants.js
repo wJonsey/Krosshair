@@ -20,6 +20,25 @@ export const BODY = {
   crouchSpeed: 2.3,
   jumpVelocity: 5.7,
   gravity: 15,
+  // Slide and bhop. Crouch at a run and you go faster for a moment instead of slower; jump out of that
+  // slide and you keep most of it, so a slide, jump, slide chain holds its speed while the timing is
+  // good and bleeds off when it is not. flowMax is the ceiling on the whole chain and is deliberately
+  // under the 13 m/s the server rejects, so nobody gets snapped back for moving well.
+  slideSpeed: 8.2,      // what a plain slide out of a run is worth, before any chaining
+  slideMin: 4.4,        // you have to already be running to start one
+  slideTime: 0.62,      // how long the burst lasts before it is just a crouch
+  slideCooldown: 0.28,  // from the end of one slide to the start of the next
+  bhopKeep: 0.93,       // share of the slide carried out of a well timed jump
+  bhopGain: 0.8,        // added to each chained slide, so hops build instead of only holding
+  flowMax: 11.0,        // where the chain tops out. bhopGain and bhopKeep are picked to land here
+  flowDecay: 8.5,       // m/s bled each second once the slide is over and you are back on your feet
+  slideArc: 0.82,       // a slide hop is a low fast arc, not a leap
+  scopeArc: 0.76,       // scoped is the short hop: less height, back on the ground sooner
+  strafeBonus: 1.06,    // strafing while airborne mid chain, the reason to air strafe at all
+  // What the server treats as impossible. It has to clear flowMax with room to spare: a network hitch
+  // bunches movement into one update, and a pilot who has earned their speed must never be snapped
+  // back for it. Well above anything legitimate, still far under what a speed hack helps itself to.
+  speedLimit: 15,
 };
 
 // Penetration: a bullet starts with `pen` power. Every metre of material costs

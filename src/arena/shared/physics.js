@@ -211,3 +211,40 @@ export function rayBox(origin, dir, box, maxDist) {
 export function makeBody(x = 0, y = 0, z = 0) {
   return { x, y, z, radius: BODY.radius, height: BODY.height, vy: 0, onGround: false };
 }
+
+// Slide and bhop, shared so the browser and the server agree on how fast a pilot can legitimately be
+// going. A slide starts as a burst and bleeds back to a crouch; the curve is steep at the end so the
+// speed is only worth something while the slide is young, which is what makes the timing matter.
+export function slideSpeedAt(start, elapsed) {
+  if (elapsed >= BODY.slideTime) return BODY.crouchSpeed;
+  const left = 1 - elapsed / BODY.slideTime;
+  return BODY.crouchSpeed + (start - BODY.crouchSpeed) * left * left;
+}
+
+// What a slide opens at. Landing one while still carrying speed adds to it, so a clean chain climbs
+// instead of merely holding, which is the whole appeal of slide hopping. bhopGain and bhopKeep are
+// chosen so a perfect chain converges on flowMax rather than running away: flowMax is under the speed
+// the server treats as cheating, so moving well never gets you snapped back.
+export function slideEntry(carried) {
+  if (!(carried > 0)) return BODY.slideSpeed;
+  return Math.min(BODY.flowMax, Math.max(BODY.slideSpeed, carried + BODY.bhopGain));
+}
+
+// What a jump out of a slide carries into the air. Jump late and there is little left to take.
+export function bhopSpeed(slideNow) {
+  return Math.min(BODY.flowMax, slideNow * BODY.bhopKeep);
+}
+
+// How high a jump goes. A slide hop stays low and fast; scoped is lower still, which is the short hop
+// used to get back on the ground and into the next slide sooner. Standing up first gives full height,
+// and that is the moon jump: trade the speed for the reach.
+export function jumpArc(sliding, scoped) {
+  return BODY.jumpVelocity * (sliding ? BODY.slideArc : 1) * (scoped ? BODY.scopeArc : 1);
+}
+
+// Air strafing pays only while a chain is live and only in the air, so it rewards the technique
+// without making every pilot walk diagonally everywhere on the ground.
+export function strafeAir(flow, airborne, strafing) {
+  if (!airborne || !strafing || !(flow > 0)) return flow;
+  return Math.min(BODY.flowMax, flow * BODY.strafeBonus);
+}

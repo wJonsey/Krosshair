@@ -820,7 +820,7 @@ export class Room {
     const speed = dist / elapsed;
     // Dev tools loosen the checks for that account only: flying goes through walls, speed moves faster.
     const fly = Boolean(player.devTools?.fly);
-    const limit = fly ? 60 : player.devTools?.speed ? 13 * DEV_SPEED : 13;
+    const limit = fly ? 60 : player.devTools?.speed ? BODY.speedLimit * DEV_SPEED : BODY.speedLimit;
     let reject = speed > limit && dist > 0.9;
     // During the buy phase pilots stay behind their gate.
     if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
