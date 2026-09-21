@@ -1,6 +1,8 @@
 // One Room = one lobby + match. The room owns all truth: health, ammo, credits,
 // hit detection (with lag compensation), round flow, gadgets and bots.
 import { performance } from 'node:perf_hooks';
+import { royaleWeapon } from '../shared/royale.js';
+import { resolveWeapon, cleanBuild, buildCost } from '../shared/attachments.js';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
   CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, isRanked, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,
@@ -12,7 +14,7 @@ import { getMap, zoneAt } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
 import { World, makeBody } from '../shared/physics.js';
-import { SpreadTracker, applySpread, ballisticsFor, damageFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
+import { SpreadTracker, applySpread, ballisticsFor, damageFor, hashString, mulberry32, spreadAngle, traceShot, rayPlayer } from '../shared/combat.js';
 import { createBot, createDummy, updateBot, resetBot, botBuy, botOnHurt, botOnSound } from './bots.js';
 
 export const now = () => performance.now() / 1000;
@@ -59,6 +61,7 @@ export class Room {
     this.swapped = false;
     this.variant = 'dusk';
     this.decoys = new Map();
+    this.rockets = [];
     this.shields = new Map();
     this.rematch = new Set();
     this.autoStartAt = 0;
@@ -128,6 +131,8 @@ export class Room {
     return {
       type: 'you', hp: Math.ceil(player.hp), armor: Math.ceil(player.armor), helmet: player.helmet, credits: player.credits, alive: player.alive,
       weapons: player.weapons, ammo: player.ammo, active: player.active, gadgets: player.gadgets, bought: Object.keys(player.bought),
+      // Royale only: what rarity the guns in hand were found at, so the pickup card can compare properly.
+      ...(this.royale && player.rarity ? { rarity: player.rarity } : {}),
     };
   }
   pushYou(player) { if (!player.bot) this.send(player, this.youState(player)); }
@@ -190,6 +195,8 @@ export class Room {
       level: levelFromXp(profile.xp), rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       dev: Boolean(profile.dev),
     });
+    // Saved gun builds come with the pilot. Royale ignores them: guns come off the floor there.
+    player.builds = this.royale ? null : (profile.builds || {});
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
     const replaceable = midMatch && [...this.players.values()].some((p) => p.bot && !p.dummy) && this.queue !== 'custom';
     player.team = this.mode === 'range' ? 'A' : this.pickTeam();
@@ -340,6 +347,7 @@ export class Room {
     this.world.clearDynamic();
     this.shields.clear();
     this.decoys.clear();
+    this.rockets.length = 0;
     this.roundDamage = { A: 0, B: 0 };
     this.clutch = { A: null, B: null };
     this.roundKills = new Map();
@@ -656,6 +664,7 @@ export class Room {
       if (this.rematchAt && t >= this.rematchAt) { this.rematchAt = 0; beginMatch(this); } else if (t >= this.phaseEnds) { this.rematchAt = 0; this.toLobby(); }
     }
 
+    if (this.live) this.stepRockets(dt, t);
     for (const player of this.players.values()) {
       if (!player.alive) {
         if (player.dummy && player.respawnAt && t >= player.respawnAt) { player.respawnAt = 0; this.spawn(player); }
@@ -848,7 +857,21 @@ export class Room {
 
   eyeOf(player) { return [player.x, player.y + ((player.flags & FLAG.crouch) ? BODY.crouchEye : BODY.eye), player.z]; }
 
-  currentWeapon(player) { return WEAPONS[player.weapons[player.active]] || null; }
+  // The gun as this pilot built it. Royale never reads builds: guns come off the floor there.
+  currentWeapon(player) { return this.weaponFor(player, player.active); }
+  weaponFor(player, slot) {
+    const id = player.weapons[slot];
+    if (!id) return null;
+    // Royale ignores builds, but a floor gun still carries the rarity it was found at.
+    if (this.royale) return royaleWeapon(WEAPONS[id], player.rarity?.[slot]) || null;
+    if (!player.builds) return WEAPONS[id] || null;
+    if (!player.kit) player.kit = {};
+    if (player.kit[slot]?.id !== id || player.kitFor?.[slot] !== player.builds[id]) {
+      player.kit[slot] = resolveWeapon(id, player.builds[id]);
+      (player.kitFor = player.kitFor || {})[slot] = player.builds[id];
+    }
+    return player.kit[slot] || WEAPONS[id] || null;
+  }
 
   switchWeapon(player, slot) {
     if (!player.alive || !['primary', 'sidearm', 'melee'].includes(slot) || !player.weapons[slot] || slot === player.active) return;
@@ -910,6 +933,16 @@ export class Room {
     // same spot and a bot one-shots across the map, so a multi-pellet weapon keeps its tightest pattern.
     const angle = player.bot ? (weapon.pellets > 1 ? weapon.spread.ads : 0) : spreadAngle(weapon, { scoped, speed: player.speed, airborne: !(player.flags & FLAG.ground), crouched: Boolean(player.flags & FLAG.crouch), bloom });
     const rng = mulberry32(hashString(player.id) + seq * 7919);
+    if (weapon.rocket) {
+      const shotDir = applySpread(dir, angle, rng);
+      this.rockets.push({ id: `r${this.rocketSeq = (this.rocketSeq || 0) + 1}`, owner: player.id, team: player.team, weapon,
+        x: origin[0], y: origin[1], z: origin[2], vx: shotDir[0] * weapon.rocket.speed, vy: shotDir[1] * weapon.rocket.speed, vz: shotDir[2] * weapon.rocket.speed, born: t });
+      this.broadcast({ type: 'rocket', id: player.id, o: origin.map(round2), d: shotDir.map(round3), s: weapon.rocket.speed, g: weapon.rocket.gravity, seq });
+      this.logShot(player, { t, weapon: weapon.id, origin: origin.map(round2), ends: [], lag: t - rewindTo, hit: false, mag: ammo.mag });
+      if (weapon.loud > 0) for (const other of this.players.values()) if (other.bot && other.alive && other.team !== player.team) botOnSound(this, other, player, weapon.loud);
+      this.pushYou(player);
+      return true;
+    }
     const friendly = this.rules.friendlyFire;
     const targets = [];
     for (const other of this.players.values()) {
@@ -982,6 +1015,60 @@ export class Room {
     const victimForward = [-Math.sin(victim.yaw), -Math.cos(victim.yaw)];
     const behind = victimForward[0] * forward[0] + victimForward[1] * forward[2] > 0.45;
     this.applyDamage(victim, player, behind ? weapon.backstab : weapon.damage, 'torso', weapon, { distance: best.dist, backstab: behind, origin: eye, end: [victim.x, victim.y + 1.2, victim.z], lag: now() - rewindTo });
+  }
+
+  // Rockets fly on the server. They travel a segment per tick, stop at whatever they touch first, and
+  // the blast reaches anyone the explosion can actually see: cover works.
+  stepRockets(dt, t) {
+    if (!this.rockets.length) return;
+    for (const rocket of [...this.rockets]) {
+      const { rocket: spec } = rocket.weapon;
+      rocket.vy -= spec.gravity * dt;
+      const step = [rocket.vx * dt, rocket.vy * dt, rocket.vz * dt];
+      const travel = Math.hypot(...step);
+      let hit = null;
+      if (travel > 0.0001) {
+        const dir = step.map((value) => value / travel);
+        const [wall] = this.world.raycast([rocket.x, rocket.y, rocket.z], dir, travel);
+        if (wall) hit = [rocket.x + dir[0] * wall.t0, rocket.y + dir[1] * wall.t0, rocket.z + dir[2] * wall.t0];
+        // A direct hit on a pilot sets it off early.
+        if (!hit) {
+          for (const other of this.players.values()) {
+            if (!other.alive || other.id === rocket.owner) continue;
+            const near = rayPlayer([rocket.x, rocket.y, rocket.z], dir, { x: other.x, y: other.y, z: other.z, crouch: Boolean(other.flags & FLAG.crouch) });
+            if (near && near.distance <= travel) { hit = [rocket.x + dir[0] * near.distance, rocket.y + dir[1] * near.distance, rocket.z + dir[2] * near.distance]; break; }
+          }
+        }
+      }
+      rocket.x += step[0]; rocket.y += step[1]; rocket.z += step[2];
+      const { bounds } = this.map;
+      const stray = rocket.x < bounds.minX - 4 || rocket.x > bounds.maxX + 4 || rocket.z < bounds.minZ - 4 || rocket.z > bounds.maxZ + 4 || rocket.y < bounds.minY - 6;
+      if (hit || stray || t - rocket.born > 6) {
+        this.rockets.splice(this.rockets.indexOf(rocket), 1);
+        if (hit) this.detonate(rocket, hit, t); else if (!stray) this.detonate(rocket, [rocket.x, rocket.y, rocket.z], t);
+      }
+    }
+  }
+  detonate(rocket, at, t) {
+    const spec = rocket.weapon.rocket;
+    const owner = this.players.get(rocket.owner) || null;
+    this.broadcast({ type: 'boom', at: at.map(round2), r: spec.radius });
+    for (const victim of this.players.values()) {
+      if (!victim.alive) continue;
+      const mid = [victim.x, victim.y + 0.9, victim.z];
+      const gap = Math.hypot(mid[0] - at[0], mid[1] - at[1], mid[2] - at[2]);
+      if (gap > spec.radius) continue;
+      if (!this.rules.friendlyFire && victim.team === rocket.team && victim.id !== rocket.owner) continue;
+      // Cover stops a blast: something solid between the two and it never lands.
+      // Standing in it: there is nothing to hide behind at arm's length, and the direction would be
+      // a zero length vector anyway.
+      // lineOfSight lets glass through, which is right: a window is not cover from a rocket.
+      if (gap > 0.5 && !this.world.lineOfSight(at[0], at[1], at[2], mid[0], mid[1], mid[2])) continue;
+      const fade = 1 - Math.min(1, gap / spec.radius);
+      let amount = spec.minDamage + (spec.damage - spec.minDamage) * fade * fade;
+      if (victim.id === rocket.owner) amount *= spec.selfScale;
+      this.applyDamage(victim, owner || victim, amount, 'torso', rocket.weapon, { distance: gap, blast: true, origin: at, end: mid, lag: 0 });
+    }
   }
 
   applyDamage(victim, attacker, amount, zone, weapon, meta = {}) {
@@ -1161,7 +1248,8 @@ export class Room {
       return true;
     };
     if (WEAPONS[item] && !WEAPONS[item].melee) {
-      const weapon = WEAPONS[item];
+      // You buy the gun as you built it, and you pay for what is bolted on.
+      const weapon = (this.royale || !player.builds) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
       if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
       const families = MODIFIERS[modifier]?.families;

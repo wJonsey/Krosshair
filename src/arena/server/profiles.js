@@ -1,5 +1,6 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
+import { cleanBuild, isEmptyBuild } from '../shared/attachments.js';
 import { runway } from '../shared/itemshop.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -234,6 +235,7 @@ export class ProfileStore {
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
+      builds: profile.builds || {},
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
         ...contract, text: contractText(contract),
@@ -244,6 +246,20 @@ export class ProfileStore {
   }
 
   // Look, settings and tutorial progress follow the account between browsers.
+  // Saved gun builds, one per weapon. Cleaned against the attachment rules so a crafted message cannot
+  // bolt a scope onto a knife or a part that does not fit the family.
+  saveBuilds(token, builds) {
+    const profile = this.get(token);
+    if (!builds || typeof builds !== 'object') return;
+    profile.builds = profile.builds || {};
+    for (const [weaponId, build] of Object.entries(builds).slice(0, 40)) {
+      if (!WEAPONS[weaponId] || WEAPONS[weaponId].melee) continue;
+      const clean = cleanBuild(weaponId, build);
+      if (isEmptyBuild(clean)) delete profile.builds[weaponId]; else profile.builds[weaponId] = clean;
+    }
+    this.scheduleSave();
+  }
+
   savePrefs(token, { look, settings, tutorialDone } = {}) {
     const profile = this.get(token);
     if (look && typeof look === 'object') profile.look = this.sanitizeCosmetics(token, look);

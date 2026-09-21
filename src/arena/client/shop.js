@@ -3,6 +3,8 @@
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
 import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
+// SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
+import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachmentsUnlocked, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
 import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, PUBLIC_FINISHES, PUBLIC_RARITIES } from '../shared/economy.js';
@@ -23,7 +25,7 @@ const whole = (n) => (Number.isFinite(Number(n)) ? Number(n) : 0);
 export const coins = (n) => `<span class="coins">${COIN}${whole(n).toLocaleString('en')}</span>`;
 // One module, four menu pages. Each page shows its own tabs and remembers the last one opened.
 const SECTIONS = {
-  locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
+  locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['gunsmith', 'Gunsmith'], ['inventory', 'Skins'], ['charms', 'Charms']] },
   shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['market', 'Crates & Shop'], ['skins', 'Skins']], balance: true },
   games: { eyebrow: 'Games', title: 'Double or <em>nothing.</em>', tabs: [['games', 'Games']], balance: true },
   wallet: { eyebrow: 'Profile', title: 'Your <em>coins.</em>', tabs: [['wallet', 'Wallet']], balance: true },
@@ -60,6 +62,7 @@ let gearKind = 'headgear';
 let tryOn = null;            // a gear item being tried on, not yet equipped
 let charmTry = null;
 let charmWeapon = 'talon';
+let smithDrafts = {};        // builds being worked on, by weapon. Nothing here is on the profile yet.
 let friends = null;          // [{ name, avatar, level, title, online }] once fetched
 let friendName = '';
 let stake = 10, target = 50, pick = 'heads';
@@ -274,7 +277,7 @@ function sizeStage(s) {
   s.camera.aspect = width / height;
   s.camera.updateProjectionMatrix();
 }
-// subject: { kind: 'gun', weapon, finish, charm? } or { kind: 'operator', look }. Rebuilt only when it changes.
+// subject: { kind: 'gun', weapon, finish, charm?, build? } or { kind: 'operator', look }. Rebuilt only when it changes.
 function showOnStage(subject) {
   const s = ensureStage(), key = JSON.stringify(subject);
   if (s.key === key) return;
@@ -302,7 +305,7 @@ function showOnStage(subject) {
     s.fit();
     return;
   }
-  const model = buildWeapon(subject.weapon, '#ffb547', subject.finish);
+  const model = buildWeapon(subject.weapon, '#ffb547', subject.finish, subject.build);
   stripHands(model);
   if (subject.charm) {
     // Hung where it hangs in hand, a little larger so it reads on the turntable.
@@ -370,6 +373,7 @@ function stageSubject() {
     return itemSubject();
   }
   if (tab === 'gear') return { kind: 'operator', look: tryLook() };
+  if (tab === 'gunsmith') return { kind: 'gun', weapon: weaponId, finish: equippedFinish(), build: workingBuild(weaponId) };
   if (tab === 'charms') return { kind: 'gun', weapon: charmWeapon, finish: game.look.skins?.[charmWeapon] || null, charm: charmTry ?? game.look.charm };
   return { kind: 'gun', weapon: weaponId, finish: showingFinish() };
 }
@@ -398,17 +402,17 @@ function skinsHtml() {
   const shelf = isDev() ? FINISHES : PUBLIC_FINISHES;
   // An exclusive is only listed once it has been out. One still to come is not named anywhere.
   const pool = shelf.filter((finish) => finish.shop !== 'item' || seenLine('finish', finish.id));
-  const guns = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map(weaponButton).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
+  const guns = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map((weapon) => weaponButton(weapon)).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
   const card = (finish) => {
     const info = finishInfo(finish.id), rarity = RARITY[info.rarity];
     const mine = owned.includes(finish.id) || (devFinish(finish.id) && isDev()), on = equipped === finish.id;
     const key = `skin:${finish.id}`;
     const seen = finish.shop === 'item' ? seenLine('finish', finish.id) : null;
     const action = on ? '<em class="state on">On every gun</em>' : mine ? `<button type="button" class="mini" data-equip="${finish.id}">Equip</button>`
-      : seen ? `<em class="state item-only">Item Shop · ${seenText(seen.days)}</em>`
+      : seen ? `<em class="state item-only">Item Shop · ${seenText(seen?.days)}</em>`
       : !rarity.price ? '<em class="state crates-only">Crates only</em>'
       : `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-buy-skin="${finish.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(rarity.price)}</button>`;
-    return `<div class="finish-card rarity-${info.rarity}${seen && !mine ? ' away' : ''}${animatedFinish(finish.id) ? ' fx' : ''}${showing === finish.id ? ' showing' : ''}${on ? ' on' : ''}" style="--rarity:${rarity.color}"><button type="button" class="finish-look" data-preview="${finish.id}"><img src="${finishSwatch(finish.id)}" alt="" /><b>${info.name}</b><small>${devFinish(finish.id) ? devChip : seen ? escapeHtml(seen.name) : rarity.name}</small></button>${action}</div>`;
+    return `<div class="finish-card rarity-${info.rarity}${seen && !mine ? ' away' : ''}${animatedFinish(finish.id) ? ' fx' : ''}${showing === finish.id ? ' showing' : ''}${on ? ' on' : ''}" style="--rarity:${rarity.color}"><button type="button" class="finish-look" data-preview="${finish.id}"><img src="${finishSwatch(finish.id)}" alt="" /><b>${info.name}</b><small>${devFinish(finish.id) ? devChip : seen?.name ? escapeHtml(seen.name) : rarity.name}</small></button>${action}</div>`;
   };
   const stock = `<div class="finish-card${!showing ? ' showing' : ''}${!equipped ? ' on' : ''}"><button type="button" class="finish-look" data-preview=""><i class="finish-plain"></i><b>Factory</b><small>Default</small></button>${equipped ? '<button type="button" class="mini" data-equip="">Strip it off</button>' : '<em class="state on">On every gun</em>'}</div>`;
   const info = showing && finishInfo(showing);
@@ -431,9 +435,10 @@ function skinsHtml() {
       <div class="finish-grid">${rarityFilter === 'all' ? stock : ''}${pool.filter((finish) => rarityFilter === 'all' || finish.rarity === rarityFilter).map(card).join('')}</div>
     </section></div>`;
 }
-// A finish is global, so a gun here only decides what the turntable holds.
-function weaponButton(weapon) {
-  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}" data-weapon="${weapon.id}" title="${weapon.name}">${weapon.short}</button>`;
+// A finish is global, so a gun here only decides what the turntable holds. `mark` is the Gunsmith's dot:
+// which guns already carry a build, and which have edits still to save.
+function weaponButton(weapon, mark = '') {
+  return `<button type="button" class="shop-weapon${weapon.id === weaponId ? ' active' : ''}${mark}" data-weapon="${weapon.id}" title="${weapon.name}">${weapon.short}</button>`;
 }
 function ownedCount() {
   const count = (game.profile.finishes || []).length;
@@ -637,8 +642,127 @@ function charmsHtml() {
     </section></div>`;
 }
 
+// ------------------------------------------------------------------ gunsmith
+// Build a gun from parts and save it. The armoury then sells that gun with the parts on it, at the price
+// shown here, so nothing is committed until Save: an unsaved build only ever lives in this tab.
+const moddable = (weapon) => Boolean(weapon) && !weapon.melee && !weapon.noMods;
+const smithGuns = skinnable.filter(moddable);
+const SIGHT_NAMES = { iron: 'Iron sights', dot: 'Red dot', holo: 'Holo', prism: 'Prism 2x', scope: 'Scope 4x', bead: 'Bead' };
+// Every number a part can move, grouped the way a pilot reads them. `up` is which way is better: most of
+// these are timers and spreads where lower wins, so the arrow comes from here, never from the sign.
+const SMITH_STATS = [
+  ['Handling', [['scopeTime', 'Aim time', false, 's'], ['equip', 'Draw', false, 's'], ['reload', 'Reload', false, 's'], ['speed', 'Mobility', true, '%']]],
+  ['Ammo', [['mag', 'Magazine', true, ''], ['reserve', 'Reserve', true, '']]],
+  ['Recoil', [['recoil.kick', 'Kick', false, ''], ['recoil.side', 'Sideways', false, ''], ['recoil.recover', 'Recovery', true, '']]],
+  ['Spread', [['spread.hip', 'Hip', false, ''], ['spread.ads', 'Aimed', false, ''], ['spread.move', 'Moving', false, ''], ['spread.air', 'In the air', false, ''], ['spread.bloom', 'Bloom', false, ''], ['spread.bloomMax', 'Bloom cap', false, '']]],
+  ['Power', [['pen', 'Penetration', true, '%'], ['armorPen', 'Armour pen', true, '%'], ['falloff.0', 'Full damage to', true, 'm'], ['falloff.1', 'Range', true, 'm'], ['loud', 'Noise', false, '']]],
+];
+const STAT_INFO = Object.fromEntries(SMITH_STATS.flatMap(([, rows]) => rows.map(([key, label, up, unit]) => [key, { label, up, unit }])));
+const statAt = (weapon, key) => key.split('.').reduce((at, step) => (at == null ? at : at[step]), weapon);
+const savedBuild = (id) => cleanBuild(id, game.profile?.builds?.[id]);
+const workingBuild = (id) => smithDrafts[id] || savedBuild(id);
+const sameBuild = (a, b) => GUN_SLOTS.every((slot) => (a?.[slot] || null) === (b?.[slot] || null));
+const smithDirty = () => Object.keys(smithDrafts).filter((id) => !sameBuild(smithDrafts[id], savedBuild(id)));
+const smithMark = (id) => (smithDrafts[id] && !sameBuild(smithDrafts[id], savedBuild(id)) ? ' unsaved' : isEmptyBuild(savedBuild(id)) ? '' : ' built');
+function smithValue(value, unit) {
+  if (unit === '%') return `${Math.round(value * 100)}%`;
+  if (unit === 's') return `${value.toFixed(2)}s`;
+  if (unit === 'm') return `${Math.round(value)} m`;
+  return String(Math.round(value * 100) / 100);
+}
+// One stat, stock against built. A stat the gun does not have (falloff on a sniper) has no row at all.
+function smithRow(base, built, [key, label, up, unit]) {
+  const was = statAt(base, key), now = statAt(built, key);
+  if (typeof was !== 'number' || typeof now !== 'number') return '';
+  if (Math.abs(now - was) < 1e-6) return `<div class="smith-row"><span>${label}</span><b>${smithValue(was, unit)}</b></div>`;
+  const better = (now > was) === up;
+  const shift = was ? `${now > was ? '+' : ''}${Math.round((now / was - 1) * 100)}%` : better ? 'better' : 'worse';
+  // The arrow follows the number, the colour says whether that is good: on a timer, up is bad.
+  return `<div class="smith-row ${better ? 'up' : 'down'}"><span>${label}</span><i>${smithValue(was, unit)}</i><b>${now > was ? '↑' : '↓'} ${smithValue(now, unit)}</b><em>${shift}</em></div>`;
+}
+// What a part does, on this gun: a mod on a stat the gun hasn't got does nothing, so it is not listed.
+function partChips(part, base) {
+  const chips = [];
+  for (const [key, factor] of Object.entries(part.mods || {})) {
+    const info = STAT_INFO[key];
+    if (!info || factor === 1 || typeof statAt(base, key) !== 'number') continue;
+    chips.push(`<em class="${(factor > 1) === info.up ? 'up' : 'down'}">${info.label} ${factor > 1 ? '+' : ''}${Math.round((factor - 1) * 100)}%</em>`);
+  }
+  for (const [key, delta] of Object.entries(part.add || {})) {
+    const info = STAT_INFO[key];
+    if (!info || !delta || typeof statAt(base, key) !== 'number') continue;
+    chips.push(`<em class="${(delta > 0) === info.up ? 'up' : 'down'}">${info.label} ${delta > 0 ? '+' : ''}${smithValue(delta, info.unit)}</em>`);
+  }
+  if (part.set?.suppressed) chips.push('<em class="flat">Off the minimap</em>');
+  return chips.join('');
+}
+function partCard(base, slot, part, fitted, unlocked) {
+  const on = fitted === part.id;
+  return `<button type="button" class="smith-part${on ? ' on' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
+    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Fitted</em>' : `<em class="smith-part-cost">${part.cost ? coins(part.cost) : 'Free'}</em>`}</span>
+    <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
+}
+function smithSlot(base, build, slot, index, unlocked) {
+  const parts = partsFor(base, slot);
+  if (!parts.length) return '';
+  const part = ATTACHMENTS[build[slot]];
+  return `<section class="mode-block smith-slot">
+    <header class="block-head"><small>${String(index + 3).padStart(2, '0')} // ${SLOT_NAMES[slot].toUpperCase()}</small><b>${part ? part.name : 'Empty'}</b><span>${part ? part.blurb : 'Nothing on it.'}</span></header>
+    <div class="gear-grid smith-grid">${parts.map((entry) => partCard(base, slot, entry, build[slot], unlocked)).join('')}</div>
+  </section>`;
+}
+function gunsmithHtml() {
+  // The Skins tab shares this gun and lets you pick the knife, which takes no parts.
+  if (!moddable(WEAPONS[weaponId])) weaponId = smithGuns[0].id;
+  const base = WEAPONS[weaponId];
+  const build = workingBuild(weaponId);
+  const built = resolveWeapon(weaponId, build) || base;
+  const level = game.profile.level || 1;
+  const unlocked = attachmentsUnlocked(level);
+  const partsCost = buildCost(build);
+  const dirty = smithDirty();
+  const fitted = GUN_SLOTS.filter((slot) => build[slot]).length;
+  const guns = WEAPON_CLASSES.map((c) => {
+    const list = smithGuns.filter((weapon) => weaponClass(weapon) === c.id);
+    return list.length ? `<p class="shop-class">${c.name}</p>${list.map((weapon) => weaponButton(weapon, smithMark(weapon.id))).join('')}` : '';
+  }).join('');
+  const shots = Math.ceil(100 / (built.damage * built.pellets));
+  const head = `<div class="smith-head">
+    <span><small>Damage</small><b>${Math.round(built.damage)}${built.pellets > 1 ? ` × ${built.pellets}` : ''}</b><i>${shots === 1 ? 'one-shot body kill' : `${shots} body shots`}</i></span>
+    <span><small>Fire rate</small><b>${Math.round(60 / built.cooldown)}</b><i>rpm${built.auto ? ' · auto' : ''}</i></span>
+    <span><small>Sight</small><b class="${built.sight === base.sight ? '' : 'lit'}">${SIGHT_NAMES[built.sight] || built.sight}</b><i>${[built.sight === base.sight ? 'stock' : `was ${SIGHT_NAMES[base.sight] || base.sight}`, built.suppressed ? 'suppressed' : ''].filter(Boolean).join(' · ')}</i></span></div>`;
+  const stats = SMITH_STATS.map(([group, rows]) => {
+    const body = rows.map((row) => smithRow(base, built, row)).join('');
+    return body ? `<div class="smith-group"><p class="eyebrow sub">${group}</p>${body}</div>` : '';
+  }).join('');
+  const save = `<div class="button-row smith-actions">
+    <button type="button" data-smith-save="1" ${unlocked && dirty.length ? '' : 'disabled'}>${dirty.length > 1 ? `Save ${dirty.length} builds` : 'Save build'}</button>
+    ${fitted && unlocked ? '<button type="button" class="ghost-button" data-smith-clear="1">Strip it</button>' : ''}
+    <em class="smith-state ${dirty.length ? 'off' : 'on'}">${dirty.length ? 'Unsaved' : fitted ? 'Saved' : 'Stock'}</em></div>`;
+  return `<div class="shop-gunsmith">
+    <div class="smith-side">
+      <div class="panel skin-preview smith-preview"><div id="skin-stage" class="skin-stage"></div>
+        <div><small>${base.tag}</small><h3>${base.name}</h3><span>${fitted ? `${plural(fitted, 'part')} on it` : 'Stock. Nothing bolted on.'}</span>
+          <p class="smith-cost">${coins(base.cost + partsCost)}</p>
+          <small class="smith-price-note">What it costs in the armoury${partsCost ? ` · gun ${base.cost} + parts ${partsCost}` : ''}</small>
+          ${save}</div></div>
+      <section class="mode-block gun-block">
+        <header class="block-head"><small>01 // WORKBENCH</small><b>Pick a gun</b><span>Every gun keeps its own build.</span></header>
+        <nav class="gun-grid" aria-label="Weapons">${guns}</nav>
+      </section>
+    </div>
+    <div class="smith-main">
+      ${unlocked ? '' : `<div class="panel smith-locked"><b>Locked</b><span>Attachments unlock at level ${ATTACHMENT_LEVEL}. You’re level ${level}.</span></div>`}
+      <section class="mode-block smith-stats">
+        <header class="block-head"><small>02 // THE GUN</small><b>${fitted ? 'As you built it' : 'Stock'}</b><span>Green is better, red is worse. Every part gives something up.</span></header>
+        ${head}<div class="smith-groups">${stats}</div>
+      </section>
+      ${GUN_SLOTS.map((slot, index) => smithSlot(base, build, slot, index, unlocked)).join('')}
+    </div></div>`;
+}
+
 // ------------------------------------------------------------------ games
-const GAME_TIME = { coinflip: 1.6, dice: 1.3, slots: SLOT_TIMES[2], plinko: PLINKO.rows * 0.16 + 0.35, hilo: 0.9 };
+const GAME_TIME ={ coinflip: 1.6, dice: 1.3, slots: SLOT_TIMES[2], plinko: PLINKO.rows * 0.16 + 0.35, hilo: 0.9 };
 function stakeHtml() {
   return `<label class="stake">Stake<span class="stake-row"><input id="game-stake" type="number" min="${STAKE.min}" max="${STAKE.max}" step="1" value="${stake}" />${[10, 50, 100].map((n) => `<button type="button" class="mini" data-stake="${n}">${n}</button>`).join('')}<button type="button" class="mini" data-stake="max">Max</button></span></label>`;
 }
@@ -865,7 +989,8 @@ function itemSetsHtml() {
     const featured = bundleOn(set.id);
     const whole = featured && set.items.every(([kind, id]) => !ownsItem(kind, id, game.profile));
     const seen = lastSeen(set.id);
-    const back = seen && seen !== dateKey() ? ` · last out ${seenText(Math.round((Date.parse(dateKey()) - Date.parse(seen)) / 86400000))}` : '';
+    const days = seen ? Math.round((Date.parse(dateKey()) - Date.parse(seen)) / 86400000) : NaN;
+    const back = Number.isFinite(days) && days > 0 ? ` · last out ${seenText(days)}` : '';
     return `<section class="mode-block item-set${featured ? ' featured' : ''}">
       <header class="block-head"><small>${escapeHtml(set.name.toUpperCase())}${back}${featured ? ' · TODAY\'S BUNDLE' : ''}</small><b>${escapeHtml(set.blurb)}</b>
         ${whole ? `<button type="button" class="item-bundle${armed === `item:${set.id}:bundle:` ? ' armed' : ''}" data-item-set="${set.id}" data-item-kind="bundle" data-item-id="">${armed === `item:${set.id}:bundle:` ? 'Confirm' : `Whole set ${coins(bundlePrice(set))}`}</button>` : `<span class="muted item-part">${featured ? 'Part of this set is already yours.' : 'Pieces only today.'}</span>`}</header>
@@ -892,7 +1017,7 @@ export function shopPageHtml(page = 'shop', lead = '') {
   lastTab[page] = tab;
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
   if ((tab === 'crates' || tab === 'market') && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
-  const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
+  const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
   const tabsHtml = tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : '';
   return `<section class="page-wide shop-page shop-${page}${tab === 'market' ? ' shop-market' : ''}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
       ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
@@ -935,6 +1060,25 @@ export function onShopClick(button) {
     if (d.charmBuy) charmTry = id; else tryOn = id;
     if (armed !== key) { armed = key; play('ui'); return true; }
     request({ type: 'shop', action: 'gear', kind, id });
+    return true;
+  }
+  // Gunsmith. Fitting a part is local; the server only hears about it on Save.
+  if (d.smithPart) {
+    const [slot, id] = d.smithPart.split(':');
+    const build = { ...workingBuild(weaponId) };
+    build[slot] = build[slot] === id ? null : id;
+    smithDrafts[weaponId] = build;
+    play(build[slot] ? 'ready' : 'uiBack');
+    return true;
+  }
+  if (d.smithClear) { smithDrafts[weaponId] = emptyBuild(); play('uiBack'); return true; }
+  if (d.smithSave) {
+    const dirty = smithDirty();
+    if (!dirty.length) return true;
+    if (!attachmentsUnlocked(game.profile.level || 1)) { ctx.toast(`Attachments unlock at level ${ATTACHMENT_LEVEL}.`, 'warn'); play('deny'); return true; }
+    net.send({ type: 'builds', builds: Object.fromEntries(dirty.map((id) => [id, smithDrafts[id]])) });
+    ctx.toast(dirty.length > 1 ? `${dirty.length} builds saved.` : 'Build saved.', 'good');
+    play('ready');
     return true;
   }
   if (d.charmTry) { charmTry = d.charmTry === game.look.charm ? null : d.charmTry; play('ui'); return true; }

@@ -7,7 +7,7 @@ import { randomInt } from 'node:crypto';
 import { ARMOR, FLAG, GADGETS, GADGET_SLOTS, WEAPONS } from '../shared/constants.js';
 import { ROYALE_MAP } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
-import { AIRDROP_LOOT, AIRDROP_STAGES, DROP, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, weaponTier } from '../shared/royale.js';
+import { AIRDROP_LOOT, AIRDROP_STAGES, DROP, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { setRoomMap } from './mapflow.js';
 import { Room, freshMatchStats, now } from './room.js';
 
@@ -184,7 +184,7 @@ export class RoyaleRoom extends Room {
     const total = LOOT_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
     let roll = random() * total;
     const entry = LOOT_TABLE.find((candidate) => (roll -= candidate.weight) < 0) || LOOT_TABLE[0];
-    if (entry.kind === 'weapon' || entry.kind === 'armor' || entry.kind === 'gadget') return { kind: entry.kind, id: pick(entry.pool) };
+    if (entry.pool) { const id = pick(entry.pool); return entry.kind === 'weapon' ? { kind: 'weapon', id, rarity: weaponRarity(id) } : { kind: entry.kind, id }; }
     if (entry.kind === 'heal') return { kind: 'heal', amount: entry.amount };
     return { kind: entry.kind };
   }
@@ -225,7 +225,8 @@ export class RoyaleRoom extends Room {
   // Returns what was picked up, or null if the pilot has no use for it right now.
   take(player, item, swap) {
     if (item.kind === 'weapon') {
-      const weapon = WEAPONS[item.id];
+      // The gun as its rarity carries it: a better kept gun holds more and reloads faster.
+      const weapon = royaleWeapon(WEAPONS[item.id], item.rarity);
       if (!weapon) return null;
       const slot = weapon.slot;
       const held = player.weapons[slot];
@@ -237,8 +238,10 @@ export class RoyaleRoom extends Room {
       }
       if (held && !swap) return null;
       // The gun you put down ignores you for a moment, or crouching would swap them back and forth.
-      if (held) Object.assign(this.addLoot(player.x, player.y, player.z, { kind: 'weapon', id: held }), { dropper: player.id, dropUntil: now() + 2.5 });
+      if (held) Object.assign(this.addLoot(player.x, player.y, player.z, { kind: 'weapon', id: held, rarity: player.rarity?.[slot] }), { dropper: player.id, dropUntil: now() + 2.5 });
       player.weapons[slot] = item.id;
+      (player.rarity = player.rarity || {})[slot] = item.rarity || weaponRarity(item.id);
+      player.kit = null; player.kitFor = null;
       player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
       if (player.active !== slot && (slot === 'primary' || player.active === 'melee')) this.switchWeapon(player, slot);
       else if (player.active === slot) { player.reloadEnd = 0; player.equipUntil = now() + weapon.equip - 0.08; }

@@ -32,7 +32,7 @@ export function setCatalogue(sets) {
 
 // Item Shop prices. A set bought whole is a fifth off, worked out rather than written down, so a set
 // can never be listed cheaper piece by piece than as a bundle.
-export const ITEM_PRICES = { rare: 900, epic: 1600, legendary: 2600, gear: 1100 };
+export const ITEM_PRICES = { rare: 450, epic: 800, legendary: 1300, gear: 550 };
 export function itemPrice(kind, id) {
   if (kind === 'finish') return ITEM_PRICES[finishInfo(id)?.rarity] || ITEM_PRICES.epic;
   return ITEM_PRICES.gear;
@@ -118,7 +118,7 @@ export function seenLine(kind, id, key = dateKey()) {
 }
 // "today", "yesterday", "12 days ago": the same words everywhere it is printed.
 export function seenText(days) {
-  if (days === null || days === undefined) return 'never';
+  if (!Number.isFinite(days)) return 'not seen yet';
   if (days <= 0) return 'in the shop today';
   if (days === 1) return 'yesterday';
   return `${days} days ago`;

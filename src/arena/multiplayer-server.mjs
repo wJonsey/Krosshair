@@ -776,6 +776,13 @@ wss.on('connection', (socket) => {
       if (message.type === 'dev-online') return sendOnline(socket);
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
+      // Saved gun builds. Kept on the profile, and handed to the player so the armoury sells the build.
+      if (message.type === 'builds' && socket.identified) {
+        profiles.saveBuilds(socket.token, message.builds);
+        const saved = profiles.get(socket.token).builds || {};
+        if (socket.player) socket.player.builds = saved;
+        return send(socket, { type: 'profile', profile: profiles.view(socket.token) });
+      }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {
         profiles.savePrefs(socket.token, { look: message.look });
         Object.assign(socket.player, profiles.sanitizeCosmetics(socket.token, message.look || {}));

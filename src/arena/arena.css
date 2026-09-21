@@ -1702,6 +1702,67 @@ button.cash-out .coins { color: var(--void); }
 .finish-card.away:hover { opacity: .75; }
 .state.item-only { color: var(--haze); font-size: 9px; letter-spacing: .08em; }
 
+/* ---- Gunsmith: the gun on the left, what the parts did to it on the right.
+   Green is better, red is worse. That pair is the only colour in here that means anything, so nothing
+   else in the tab is allowed to use it. */
+.shop-gunsmith { --better: #57d98a; --worse: var(--rival); display: grid; gap: 18px; align-items: start; }
+.smith-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.smith-main { display: grid; gap: 12px; min-width: 0; }
+.smith-preview { margin: 0; grid-template-columns: minmax(0, 1fr) 240px; }
+.smith-cost { margin: 12px 0 2px; }
+.smith-cost .coins { font: 400 26px var(--display); }
+.smith-price-note { display: block; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .06em; }
+.smith-actions { margin-top: 14px; }
+.smith-state { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; letter-spacing: .12em; text-transform: uppercase; }
+.smith-state.off { color: var(--signal); }
+.smith-locked { display: grid; gap: 4px; margin: 0; border-left: 2px solid var(--signal); }
+.smith-locked b { color: var(--signal); font: 400 15px var(--display); text-transform: uppercase; }
+.smith-locked span { color: var(--haze); font-size: 13px; }
+/* The headline three: what the gun hits for, how fast it shoots, what you look through. */
+.smith-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.smith-head > span { display: grid; gap: 2px; padding: 10px 12px; background: rgba(230, 237, 241, .04); border-top: 2px solid var(--hairline-strong); }
+.smith-head small { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.smith-head b { font: 400 19px var(--display); }
+.smith-head b.lit { color: var(--signal); }
+.smith-head i { color: var(--graphite); font: 400 11px var(--body); font-style: normal; }
+.smith-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 2px 18px; }
+.smith-group .eyebrow.sub { margin: 8px 0 4px; }
+.smith-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
+.smith-row > span { color: var(--haze); font-size: 12px; }
+.smith-row i { color: var(--graphite); font: 500 11px var(--mono); font-style: normal; text-decoration: line-through; }
+.smith-row b { color: var(--frost); font: 500 12px var(--mono); }
+.smith-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
+/* A stat nothing touched has no old value, so its number sits in the same column as the new ones. */
+.smith-row > b:nth-child(2) { grid-column: 3; }
+.smith-row.up b, .smith-row.up em { color: var(--better); }
+.smith-row.down b, .smith-row.down em { color: var(--worse); }
+/* A part is one button: click to fit it, click the fitted one to take it off. */
+.smith-grid { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+.smith-part { display: grid !important; gap: 6px; align-content: start; padding: 11px 12px !important; text-align: left; background: rgba(230, 237, 241, .04) !important; color: var(--frost) !important; border: 0 !important; border-top: 2px solid var(--hairline-strong) !important; font: 400 13px var(--body) !important; letter-spacing: 0 !important; text-transform: none !important; transition: background .2s, border-color .2s; }
+.smith-part:hover:not(:disabled) { background: rgba(20, 27, 34, .85) !important; border-top-color: var(--signal) !important; }
+.smith-part.on { border-top-color: var(--ally) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ally) 40%, transparent); }
+.smith-part.locked { opacity: .45; }
+.smith-part-head { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; }
+.smith-part-head b { margin-right: auto; font: 400 13px var(--body); }
+.smith-part-cost { font-style: normal; }
+.smith-part-cost .coins { font-size: 10px; }
+.smith-fitted { color: var(--ally); font: 500 9px var(--mono); font-style: normal; letter-spacing: .1em; text-transform: uppercase; }
+.smith-part small { color: var(--graphite); font-size: 11px; line-height: 1.45; }
+.smith-chips { display: flex !important; flex-wrap: wrap; gap: 4px; margin: 0 !important; }
+.smith-chips em { padding: 2px 5px; background: rgba(230, 237, 241, .05); color: var(--haze); font: 500 9px var(--mono); font-style: normal; letter-spacing: .04em; }
+.smith-chips em.up { color: var(--better); }
+.smith-chips em.down { color: var(--worse); }
+/* Which guns already carry a build, and which are waiting to be saved. */
+.shop-weapon.built { box-shadow: inset 0 -2px 0 var(--ally); }
+.shop-weapon.unsaved { box-shadow: inset 0 -2px 0 var(--signal); }
+@media (min-width: 1021px) {
+  .shop-gunsmith { grid-template-columns: minmax(330px, .85fr) minmax(0, 1.9fr); }
+  .smith-preview { grid-template-columns: 1fr; gap: 14px; }
+  .smith-preview .skin-stage { height: clamp(200px, 26vh, 300px); }
+  .smith-side { position: sticky; top: 84px; max-height: calc(100vh - 110px); overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
+}
+@media (max-width: 560px) { .smith-grid { grid-template-columns: 1fr; } .smith-row { grid-template-columns: 1fr auto auto; } .smith-row i { display: none; } }
+
 /* ---------- social: the friends drawer off the menu bar ---------- */
 .social-chip { display: inline-flex; align-items: center; gap: 6px; position: relative; padding: 8px 10px !important; border: 1px solid var(--hairline-strong) !important; background: rgba(230, 237, 241, .04) !important; color: var(--haze) !important; }
 .social-chip:hover, .social-chip.active { color: var(--frost) !important; border-color: var(--ally) !important; }

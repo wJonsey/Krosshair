@@ -1,5 +1,6 @@
 // Everything outside the match: home screen, career, lobby, settings,
 // end-of-match report, share card, tutorial checklist, toasts.
+import { initPadMenu } from './padmenu.js';
 import * as THREE from 'three';
 import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, RANK_TIERS, TEAM_MODES, TEAM_MODE_IDS, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DEFAULT_SETTINGS } from './state.js';
@@ -359,7 +360,7 @@ function rankedCardHtml() {
     : info.placed ? `${info.name} · ${info.rating} SR` : `Placement ${info.placement.played} / ${info.placement.total}`;
   // One rating, four sizes. Each size queues on its own, so you pick the fight you want.
   return `<section class="mode-block ranked-block${game.username ? '' : ' locked'}"${info ? ` style="--rank:${info.color}"` : ''}>
-    <header class="block-head"><small>03 // RANKED</small><b>Climb the ladder</b><span>${line}</span>${info ? `<button type="button" class="rank-link" data-page="ranked" title="The ladder">${rankBadge(info, 34)}</button>` : ''}</header>
+    <header class="block-head"><small>03 // COMPETITIVE</small><b>Ranked</b><span>${line}</span>${info ? `<button type="button" class="rank-link" data-page="ranked" title="The ladder">${rankBadge(info, 34)}</button>` : ''}</header>
     <div class="size-row">${RANKED_SIZES.map(sizeChip('ranked-')).join('')}</div>
   </section>`;
 }
@@ -389,7 +390,7 @@ function rankedPageHtml() {
   askBoards();
   const profile = game.profile;
   if (!game.username || !profile) {
-    return `<section class="page-wide ranked-page">${groupTabsHtml('ranked')}<p class="eyebrow">Competitive</p><h1 class="page-title">The <em>ladder.</em></h1>
+    return `<section class="page-wide ranked-page">${groupTabsHtml('ranked')}<p class="eyebrow">Competitive</p><h1 class="page-title"><em>Ranked.</em></h1>
       <div class="panel ranked-gate"><p>Ranked is humans only, so it needs a Discord login. Your rating, your peak and every match are kept to your account.</p>${authHtml()}</div></section>`;
   }
   const info = rankInfo(profile.rating, profile.rankedMatches);
@@ -423,7 +424,7 @@ function rankedPageHtml() {
   return `<section class="page-wide ranked-page" style="--rank:${info.color}">
     ${groupTabsHtml('ranked')}
     <p class="eyebrow">Competitive · ${RANKED_SIZES.length} queues</p>
-    <h1 class="page-title">The <em>ladder.</em></h1>
+    <h1 class="page-title"><em>Ranked.</em></h1>
     <div class="ranked-hero">
       <div class="panel rank-now">
         <div class="rank-emblem">${rankBadge(info, 108)}</div>
@@ -484,20 +485,20 @@ function playPageHtml() {
       <p class="eyebrow">Tactical sniper duels · one life</p>
       <h1 class="page-title">Pick your <em>fight.</em></h1>
       <div class="hero-row">
-        <button type="button" class="play-card primary" data-play="casual"><small>01 // QUICK PLAY</small><strong>Find a match</strong><span>Bots fill empty seats. No waiting.</span><i class="go">Deploy →</i></button>
-        <button type="button" class="play-card royale-card-play" data-play="royale"><small>02 // BATTLE ROYALE</small><strong>Last pilot standing</strong><span>${ROYALE.fill} pilots. One island. The storm closes in.</span><i class="soon-tag">New</i></button>
+        <button type="button" class="play-card primary" data-play="casual"><small>01 // CASUAL</small><strong>Quick play</strong><span>Straight into a match. Bots fill empty seats.</span><i class="go">Deploy →</i></button>
+        <button type="button" class="play-card royale-card-play" data-play="royale"><small>02 // ISLAND</small><strong>Battle royale</strong><span>${ROYALE.fill} pilots. One island. Last one standing.</span><i class="soon-tag">New</i></button>
       </div>
       <div class="mode-blocks">
         ${rankedCardHtml()}
         <section class="mode-block">
-          <header class="block-head"><small>04 // TEAM MODES</small><b>Fixed sides</b><span>No rating on the line. Bots hold empty seats.</span></header>
+          <header class="block-head"><small>04 // UNRANKED</small><b>Team modes</b><span>Fixed sides, no rating on the line.</span></header>
           <div class="size-row">${TEAM_MODE_IDS.map(sizeChip('')).join('')}</div>
         </section>
       </div>
       <div class="mode-grid">
-        <button type="button" class="play-card" data-play="arcade"><small>05 // ARCADE · TODAY</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
-        <div class="play-card split"><small>06 // BOT MATCH</small><strong>3v3 vs bots</strong><span>Pick how hard they play.</span><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
-        <button type="button" class="play-card" data-play="range"><small>07 // PRACTICE RANGE</small><strong>${game.tutorialDone ? 'Warm up' : 'Learn the ropes'}</strong><span>Free gear. Moving targets.</span></button>
+        <button type="button" class="play-card" data-play="arcade"><small>05 // ARCADE</small><strong>${modifier.name}</strong><span>${modifier.desc}</span></button>
+        <div class="play-card split"><small>06 // OFFLINE</small><strong>Bot match</strong><span>3v3. Pick how hard they play.</span><div class="difficulty">${Object.entries(BOT_DIFFICULTY).map(([id, d]) => `<button type="button" data-bots="${id}">${d.name}</button>`).join('')}</div></div>
+        <button type="button" class="play-card" data-play="range"><small>07 // TRAINING</small><strong>Practice range</strong><span>${game.tutorialDone ? 'Free gear. Moving targets.' : 'Learn the ropes. Free gear, moving targets.'}</span></button>
       </div>
     </section>
     <section class="panel play-stage">
@@ -792,6 +793,7 @@ function showDiscordPrompt() {
   document.querySelector('#arena-shell').append(card);
 }
 bus.on('config', () => { if (game.screen === 'home') renderHome(); });
+initPadMenu();
 bus.on('signed-in', () => {
   // Set by the Discord callback page on its way back to the menu.
   let viaDiscord = null;
