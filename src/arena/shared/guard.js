@@ -1,6 +1,6 @@
 // Anti-cheat constants shared by the page and the server.
 //
-// Scope, on purpose: this looks for script injection — userscript managers
+// Scope, on purpose: this looks for script injection: userscript managers
 // (Tampermonkey, Violentmonkey, Greasemonkey), scripts pasted into the page
 // and swapped-out browser built-ins. It does not look at developer tools and
 // never tries to block them; opening the console is not cheating.

@@ -1,6 +1,6 @@
 // Anti-cheat, page side.
 //
-// It watches for script injection — userscript managers, scripts appended to
+// It watches for script injection: userscript managers, scripts appended to
 // the document after boot, browser built-ins that have been swapped out, and
 // the game's own entry points being replaced. When it finds one it escalates:
 // warn, then make the screen genuinely unpleasant to play on, then ask the
@@ -191,7 +191,7 @@ function pathValue(name) {
 }
 
 // 4. The game's own entry points. window.__arena is handy for debugging and for
-//    the screenshot harness, so it stays readable — it just stops being a place
+//    the screenshot harness, so it stays readable. It just stops being a place
 //    to bolt an aimbot onto.
 let watchedApi = [];
 function sealApi(api) {
@@ -223,7 +223,7 @@ function scanApi() {
 }
 
 // 5. Honeypots. Bait names a cheat script reaches for. They trip on assignment
-//    only — never on a read — so that typing `window.` in the console, which
+//    only, never on a read, so that typing `window.` in the console, which
 //    evaluates getters for autocomplete, cannot set one of these off.
 const honeypots = ['aimbot', 'wallhack', 'godMode', 'noRecoil', 'infiniteAmmo', 'triggerBot', 'espEnabled', '__arenaCheat', '__arenaGod', '__arenaHack'];
 function layHoneypots() {
@@ -253,13 +253,13 @@ function review() {
 
 function warn() {
   stage = 1;
-  banner(`Script injection detected — ${headline()}. Turn it off and this clears itself.`);
+  banner(`Script injection detected: ${headline()}. Turn it off and this clears itself.`);
   notify('Anti-cheat: script injection detected. Turn the script off to keep playing.', 'warn');
 }
 
 function haze() {
   stage = 2;
-  banner(`Still injected — ${headline()}. The game will stop cooperating until it is off.`);
+  banner(`Still injected: ${headline()}. The game will stop cooperating until it is off.`);
   notify('Anti-cheat: your aim and your screen are being scrambled. Turn the script off.', 'warn');
   startSabotage();
 }
@@ -367,7 +367,7 @@ function showKick(message) {
       <b id="guard-count"></b><p id="guard-state">Checking…</p>`;
     document.body.appendChild(overlay);
   }
-  overlay.querySelector('#guard-why').textContent = `We found ${reasonText(message.reason)}. Developer tools are fine — this is about injected scripts.`;
+  overlay.querySelector('#guard-why').textContent = `We found ${reasonText(message.reason)}. Developer tools are fine: this is about injected scripts.`;
   overlay.style.display = 'grid';
   tickKick();
 }
@@ -381,7 +381,7 @@ function tickKick() {
   const dirty = found.size > 0;
   overlay.querySelector('#guard-state').textContent = dirty
     ? `Still running: ${headline()}. The countdown restarts while it is on.`
-    : left > 0 ? 'Page looks clean — sit out the rest of the countdown.' : 'Page looks clean. Letting you back in…';
+    : left > 0 ? 'Page looks clean. Sit out the rest of the countdown.' : 'Page looks clean. Letting you back in…';
   // Kicked until it is off: while anything is still injected the clock resets.
   if (dirty) lockedUntil = Math.max(lockedUntil, seconds() + 5);
   if (!dirty && left <= 0) return rejoin();
@@ -393,7 +393,7 @@ function rejoin() {
   stage = 0;
   since = 0;
   net.resume?.();
-  notify('Anti-cheat cleared — you are back in.', 'good');
+  notify('Anti-cheat cleared. You are back in.', 'good');
 }
 
 // ---------------------------------------------------------------- heartbeat
