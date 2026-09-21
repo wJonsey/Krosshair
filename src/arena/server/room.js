@@ -1075,7 +1075,9 @@ export class Room {
           for (const other of this.players.values()) {
             if (!other.alive || other.id === rocket.owner) continue;
             const near = rayPlayer([rocket.x, rocket.y, rocket.z], dir, { x: other.x, y: other.y, z: other.z, crouch: Boolean(other.flags & FLAG.crouch) });
-            if (near && near.distance <= travel) { hit = [rocket.x + dir[0] * near.distance, rocket.y + dir[1] * near.distance, rocket.z + dir[2] * near.distance]; break; }
+            // rayPlayer answers with `t`, the distance along the ray. Reading `distance` here got
+            // undefined, so the comparison was always false and a rocket flew straight through people.
+            if (near && near.t <= travel) { hit = [rocket.x + dir[0] * near.t, rocket.y + dir[1] * near.t, rocket.z + dir[2] * near.t]; break; }
           }
         }
       }
