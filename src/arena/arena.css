@@ -1468,6 +1468,25 @@ button.cash-out .coins { color: var(--void); }
   .shop-crates .crate-card { padding: 8px 12px !important; column-gap: 10px; }
   /* A wrapped crate name was what pushed the ninth crate out of view. Keep it on one line. */
   .shop-crates .crate-card b { font-size: 13px; white-space: nowrap; }
+  /* The blurb was taking a second line on all nine, which is most of why the list ran off the
+     bottom. Only the crate you have actually picked says its piece; the rest are one line each,
+     and nothing is lost because the blurb follows the selection. */
+  .shop-crates .crate-card:not(.active) small { display: none; }
+  .shop-crates .crate-card:not(.active) { padding-top: 6px !important; padding-bottom: 6px !important; }
+  /* Beside the stage a section head is a label, not a billboard. Stacked it was an eyebrow, a name
+     and a note, three lines apiece and two of them, which came to most of three crate rows. The
+     name and the note share one line here and the numbering goes, which is what the page needs to
+     hold all nine without a scrollbar. */
+  .shop-crates .crate-block .block-head { margin-bottom: 7px; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 0 8px; }
+  .shop-crates .crate-block .block-head small { display: none; }
+  .shop-crates .crate-block .block-head b { grid-column: 1; font-size: 13px; line-height: 1.2; }
+  .shop-crates .crate-block .block-head span { grid-column: 2; justify-self: end; font-size: 10px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The thumbnail was what set the floor on a row's height. */
+  .shop-crates .crate-block .crate-thumb { width: 34px; height: 26px; }
+  /* The last of it, for a short laptop: the padding and the gaps rather than anything you read. */
+  .shop-crates .crate-pick { gap: 6px; }
+  .shop-crates .crate-block { padding: 8px 10px; }
+  .shop-crates .crate-row { gap: 3px; }
   .shop-crates .daily-crate { padding: 9px 14px !important; }
   .shop-crates .daily-crate .crate-thumb { width: 62px; height: 47px; margin: -6px 4px -6px -4px; }
   /* Sentence case fits the line; the mono caps took three. */
@@ -1480,7 +1499,8 @@ button.cash-out .coins { color: var(--void); }
   .shop-skins .skin-preview { grid-template-columns: 1fr; gap: 14px; margin: 0; }
   .shop-skins .skin-stage { height: clamp(180px, 22vh, 300px); }
   .shop-skins .finish-block { display: flex; flex-direction: column; min-height: 0; }
-  .shop-skins .finish-grid { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; align-content: start; }
+  /* A little to scroll into, so the last row of skins is never flush against the cut. */
+  .shop-skins .finish-grid { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 4px; padding-bottom: 12px; align-content: start; }
   .shop-skins .gun-block { padding: 12px 11px; }
   .shop-skins .gun-grid { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
   .shop-skins .shop-weapon { padding-inline: 3px !important; }

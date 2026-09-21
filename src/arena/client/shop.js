@@ -378,7 +378,36 @@ function stageSubject() {
   return { kind: 'gun', weapon: weaponId, finish: showingFinish() };
 }
 // Called by the menu after every redraw.
+// The crate picker and the skin wall size themselves against --shop-head, which nothing ever set, so
+// both were measured against a guess of 210px. The header wraps on a narrower window, and when it did
+// the column became taller than the room left for it and its bottom, with the last row of skins in it,
+// sat below the fold. Measure the header rather than guess at it.
+function sizeShopHead() {
+  const page = document.querySelector('.shop-page');
+  const head = page?.querySelector('.shop-head');
+  if (!page || !head) return;
+  // Everything the column does not get: what is above it, its own header, and the footer below it.
+  // Leaving the footer out was worth about fifty pixels, which put the bottom of the column, and the
+  // last row of whatever was in it, underneath the footer and off the screen.
+  const top = Math.max(0, page.getBoundingClientRect().top);
+  const foot = document.querySelector('.menu-foot');
+  const below = foot ? foot.getBoundingClientRect().height : 0;
+  const height = Math.round(top + head.getBoundingClientRect().height + below + 26);
+  if (page.style.getPropertyValue('--shop-head') !== `${height}px`) page.style.setProperty('--shop-head', `${height}px`);
+}
+
+let headWatch = null;
+
 export function mountShop() {
+  sizeShopHead();
+  if (!headWatch) { headWatch = new ResizeObserver(() => sizeShopHead()); addEventListener('resize', sizeShopHead); }
+  // Only the header is watched. Watching the page as well would mean reacting to a height this very
+  // function sets, which is a loop waiting to happen.
+  headWatch.disconnect();
+  const head = document.querySelector('.shop-page .shop-head');
+  if (head) headWatch.observe(head);
+  const foot = document.querySelector('.menu-foot');
+  if (foot) headWatch.observe(foot);
   const slot = document.querySelector('#skin-stage');
   if (!slot) return;
   const s = ensureStage();
