@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
@@ -264,4 +265,41 @@ test('a pistol is not offered a stock or a foregrip', () => {
   assert.ok(partsFor(WEAPONS.p9, 'optic').length > 0, 'a pistol cannot take any optic');
   // The launcher takes nothing at all.
   for (const slot of SLOTS) assert.equal(partsFor(WEAPONS.nin, slot).length, 0, `the launcher was offered a ${slot}`);
+});
+
+// People lost builds because fitting a part only changed a draft, and the draft died with the page
+// unless a Save button was found and pressed. Fitting is the save now.
+test('fitting a part is what keeps it, with no separate save', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const fit = shop.slice(shop.indexOf('if (d.smithPart)'), shop.indexOf('if (d.smithClear)'));
+  assert.match(fit, /keepBuilds\(\)/, 'fitting a part has to reach the server on its own');
+  assert.ok(!/data-smith-save/.test(shop), 'and the save button is gone, not just ignored');
+  assert.ok(!/smithSave/.test(shop), 'with no handler left behind for it');
+
+  // Batched, so holding a slot open and trying five optics is one message rather than five.
+  const saver = shop.slice(shop.indexOf('function keepBuilds'), shop.indexOf('const savedBuild'));
+  assert.match(saver, /clearTimeout\(buildTimer\)/, 'a run of changes is debounced into one send');
+  assert.match(saver, /type: 'builds'/, 'and it does send the builds');
+});
+
+test('stripping a gun is kept too, or the parts would come back', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const clear = shop.slice(shop.indexOf('if (d.smithClear)'), shop.indexOf('if (d.smithClear)') + 200);
+  assert.match(clear, /keepBuilds\(\)/, 'taking everything off is a change like any other');
+});
+
+// The parts cost match credits, not coins. Showing a coin next to them read as a price in the
+// currency people buy skins with, which is not what it is.
+test('attachments do not claim to cost coins', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const card = shop.slice(shop.indexOf('function partCard'), shop.indexOf('function partCard') + 700);
+  assert.ok(!/coins\(part\.cost\)/.test(card), 'a part must not be priced with the coin mark');
+  assert.match(card, /\+\$\$\{part\.cost\}|\+\$/, 'it is a credit price, shown the way a match shows one');
+});
+
+test('nothing in the gunsmith is waiting to be saved any more', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../arena.css', import.meta.url), 'utf8');
+  assert.ok(!/'\s?unsaved'/.test(shop), 'no unsaved marker is produced');
+  assert.ok(!/\.unsaved\b/.test(css), 'and no style is left for one');
 });

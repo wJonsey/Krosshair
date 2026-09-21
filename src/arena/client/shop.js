@@ -396,6 +396,10 @@ function sizeShopHead() {
   const below = foot ? foot.getBoundingClientRect().height : 0;
   const height = Math.round(top + head.getBoundingClientRect().height + below + 26);
   if (page.style.getPropertyValue('--shop-head') !== `${height}px`) page.style.setProperty('--shop-head', `${height}px`);
+  // Where the content starts, for anything that sticks to the top. The footer is not part of this one:
+  // it is an offset from the top of the window, not a share of the height.
+  const above = Math.round(top + head.getBoundingClientRect().height + 12);
+  if (page.style.getPropertyValue('--shop-top') !== `${above}px`) page.style.setProperty('--shop-top', `${above}px`);
 }
 
 let headWatch = null;
@@ -674,8 +678,8 @@ function charmsHtml() {
 }
 
 // ------------------------------------------------------------------ gunsmith
-// Build a gun from parts and save it. The armoury then sells that gun with the parts on it, at the price
-// shown here, so nothing is committed until Save: an unsaved build only ever lives in this tab.
+// Build a gun from parts. The armoury then sells that gun with the parts on it, at the price shown
+// here. Fitting a part keeps it: there is no separate save, because a build that needed one got lost.
 const moddable = (weapon) => Boolean(weapon) && !weapon.melee && !weapon.noMods;
 const smithGuns = skinnable.filter(moddable);
 const SIGHT_NAMES = { iron: 'Iron sights', dot: 'Red dot', holo: 'Holo', prism: 'Prism 2x', scope: 'Scope 4x', bead: 'Bead' };
@@ -690,11 +694,23 @@ const SMITH_STATS = [
 ];
 const STAT_INFO = Object.fromEntries(SMITH_STATS.flatMap(([, rows]) => rows.map(([key, label, up, unit]) => [key, { label, up, unit }])));
 const statAt = (weapon, key) => key.split('.').reduce((at, step) => (at == null ? at : at[step]), weapon);
+// Fitting a part is the save. It used to wait for a button, so people bolted parts on, watched the
+// gun and the numbers change, walked away and lost the lot. A short wait so a run of changes goes as
+// one message rather than one per click.
+let buildTimer = null;
+function keepBuilds() {
+  clearTimeout(buildTimer);
+  buildTimer = setTimeout(() => {
+      if (!dirty.length || !attachmentsUnlocked(game.profile?.level || 1)) return;
+    net.send({ type: 'builds', builds: Object.fromEntries(dirty.map((id) => [id, smithDrafts[id]])) });
+  }, 400);
+}
 const savedBuild = (id) => cleanBuild(id, game.profile?.builds?.[id]);
 const workingBuild = (id) => smithDrafts[id] || savedBuild(id);
 const sameBuild = (a, b) => GUN_SLOTS.every((slot) => (a?.[slot] || null) === (b?.[slot] || null));
 const smithDirty = () => Object.keys(smithDrafts).filter((id) => !sameBuild(smithDrafts[id], savedBuild(id)));
-const smithMark = (id) => (smithDrafts[id] && !sameBuild(smithDrafts[id], savedBuild(id)) ? ' unsaved' : isEmptyBuild(savedBuild(id)) ? '' : ' built');
+// Built or stock. Nothing is ever waiting to be saved now, so there is no third mark.
+const smithMark = (id) => (isEmptyBuild(workingBuild(id)) ? '' : ' built');
 function smithValue(value, unit) {
   if (unit === '%') return `${Math.round(value * 100)}%`;
   if (unit === 's') return `${value.toFixed(2)}s`;
@@ -730,7 +746,7 @@ function partChips(part, base) {
 function partCard(base, slot, part, fitted, unlocked) {
   const on = fitted === part.id;
   return `<button type="button" class="smith-part${on ? ' on' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
-    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Fitted</em>' : `<em class="smith-part-cost">${part.cost ? coins(part.cost) : 'Free'}</em>`}</span>
+    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Fitted</em>' : `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>`}</span>
     <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
 }
 function smithSlot(base, build, slot, index, unlocked) {
@@ -767,15 +783,14 @@ function gunsmithHtml() {
     return body ? `<div class="smith-group"><p class="eyebrow sub">${group}</p>${body}</div>` : '';
   }).join('');
   const save = `<div class="button-row smith-actions">
-    <button type="button" data-smith-save="1" ${unlocked && dirty.length ? '' : 'disabled'}>${dirty.length > 1 ? `Save ${dirty.length} builds` : 'Save build'}</button>
     ${fitted && unlocked ? '<button type="button" class="ghost-button" data-smith-clear="1">Strip it</button>' : ''}
-    <em class="smith-state ${dirty.length ? 'off' : 'on'}">${dirty.length ? 'Unsaved' : fitted ? 'Saved' : 'Stock'}</em></div>`;
+    <em class="smith-state on">${fitted ? `${plural(fitted, 'part')} fitted · kept` : 'Stock'}</em></div>`;
   return `<div class="shop-gunsmith">
     <div class="smith-side">
       <div class="panel skin-preview smith-preview"><div id="skin-stage" class="skin-stage"></div>
         <div><small>${base.tag}</small><h3>${base.name}</h3><span>${fitted ? `${plural(fitted, 'part')} on it` : 'Stock. Nothing bolted on.'}</span>
-          <p class="smith-cost">${coins(base.cost + partsCost)}</p>
-          <small class="smith-price-note">What it costs in the armoury${partsCost ? ` · gun ${base.cost} + parts ${partsCost}` : ''}</small>
+          <p class="smith-cost">$${base.cost + partsCost}</p>
+          <small class="smith-price-note">Buying it in a match${partsCost ? ` · gun $${base.cost} + parts $${partsCost}` : ''}. Parts cost no coins.</small>
           ${save}</div></div>
       <section class="mode-block gun-block">
         <header class="block-head"><small>01 // WORKBENCH</small><b>Pick a gun</b><span>Every gun keeps its own build.</span></header>
@@ -1100,18 +1115,11 @@ export function onShopClick(button) {
     build[slot] = build[slot] === id ? null : id;
     smithDrafts[weaponId] = build;
     play(build[slot] ? 'ready' : 'uiBack');
+    keepBuilds();
     return true;
   }
-  if (d.smithClear) { smithDrafts[weaponId] = emptyBuild(); play('uiBack'); return true; }
-  if (d.smithSave) {
-    const dirty = smithDirty();
-    if (!dirty.length) return true;
-    if (!attachmentsUnlocked(game.profile.level || 1)) { ctx.toast(`Attachments unlock at level ${ATTACHMENT_LEVEL}.`, 'warn'); play('deny'); return true; }
-    net.send({ type: 'builds', builds: Object.fromEntries(dirty.map((id) => [id, smithDrafts[id]])) });
-    ctx.toast(dirty.length > 1 ? `${dirty.length} builds saved.` : 'Build saved.', 'good');
-    play('ready');
-    return true;
-  }
+  if (d.smithClear) { smithDrafts[weaponId] = emptyBuild(); play('uiBack'); keepBuilds(); return true; }
+
   if (d.charmTry) { charmTry = d.charmTry === game.look.charm ? null : d.charmTry; play('ui'); return true; }
   if (d.charmGun) { charmWeapon = d.charmGun; play('ui'); return true; }
   // Games.
