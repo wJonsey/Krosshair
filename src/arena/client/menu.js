@@ -1021,7 +1021,7 @@ function settingsBodyHtml(tab) {
   }
   if (tab === 'binds') {
     const groups = [...new Set(ACTIONS.map((action) => action.group))];
-    const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS A KEY…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
+    const slot = (action, index) => { const waiting = listening?.action === action.id && listening.slot === index; return `<button type="button" class="bind${waiting ? ' waiting' : ''}" data-bind="${action.id}" data-slot="${index}">${waiting ? 'PRESS ANYTHING…' : codeLabel(bindsFor(action.id)[index])}</button>`; };
     return `<div class="bind-cols">${groups.map((group) => `<div class="panel"><p class="eyebrow">${group}</p>${ACTIONS.filter((action) => action.group === group).map((action) => `<div class="bind-row"><span>${action.label}</span>${slot(action, 0)}${slot(action, 1)}</div>`).join('')}</div>`).join('')}</div>
       <p class="hint bind-help">Click a slot, press a key. <b>Esc</b> cancels, <b>Backspace</b> clears. The mouse wheel always zooms and switches weapons.</p>
       <div class="panel pad-panel"><p class="eyebrow">Controller <small>${input.padName ? escapeHtml(input.padName.slice(0, 40)) : 'none connected'}</small></p>
@@ -1139,11 +1139,11 @@ function watchPad() {
   padWatch = requestAnimationFrame(tick);
 }
 
-// While a bind slot is waiting, the next key or mouse button goes to it and nowhere else.
+// While a bind slot is waiting, the next key, mouse button or wheel notch goes to it and nowhere else.
 function captureBind(event) {
   if (!listening) return;
   event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
-  const code = event.type === 'keydown' ? event.code : `Mouse${event.button}`;
+  const code = event.type === 'keydown' ? event.code : event.type === 'wheel' ? (event.deltaY < 0 ? 'WheelUp' : 'WheelDown') : `Mouse${event.button}`;
   const { action, slot } = listening;
   if (code === 'Escape') { listening = null; padListening = null; play('uiBack'); return refreshSettings(); }
   if (RESERVED.includes(code)) { toast(`${codeLabel(code)} is reserved.`, 'warn'); play('deny'); return; }
@@ -1157,6 +1157,8 @@ function captureBind(event) {
 }
 addEventListener('keydown', captureBind, true);
 addEventListener('mousedown', captureBind, true);
+// Not passive: a wheel offered to a waiting bind slot must not also scroll the settings page.
+addEventListener('wheel', captureBind, { capture: true, passive: false });
 home.addEventListener('input', applySetting);
 home.addEventListener('change', onSettingsChange);
 settingsCard.addEventListener('input', applySetting);

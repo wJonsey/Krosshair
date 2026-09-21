@@ -7,7 +7,7 @@ import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEnt
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
-import { actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode } from './input.js';
+import { WHEEL_HOLD, actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode, wheelCode } from './input.js';
 import { net } from './net.js';
 import { DROP, PAD_LAUNCH } from '../shared/royale.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
@@ -61,6 +61,15 @@ export class LocalPlayer {
   get canAct() { return this.alive && this.mode === 'play' && !this.uiBlocked(); }
   get combatOpen() { const phase = game.room?.phase; return phase === 'live' || phase === 'overtime' || phase === 'range'; }
 
+  // A wheel notch has no release of its own, so it gets a short one. Held down the whole window, then
+  // let go, which is the same shape as a very quick tap.
+  pulse(code) {
+    this.press(code);
+    clearTimeout(this.wheelTimers?.[code]);
+    this.wheelTimers = this.wheelTimers || {};
+    this.wheelTimers[code] = setTimeout(() => this.keys.delete(code), WHEEL_HOLD * 1000);
+  }
+
   // One entry point for keys and mouse buttons, so anything can be bound to anything.
   press(code) {
     this.keys.add(code);
@@ -113,6 +122,9 @@ export class LocalPlayer {
     });
     addEventListener('wheel', (event) => {
       if (!this.canAct || !this.locked) return;
+      // A wheel bound to something does that instead of changing weapon, so scroll jumping is possible.
+      const code = wheelCode(event);
+      if (actionsFor(code).length) { this.pulse(code); return; }
       const scopes = this.weapon.scope || [];
       if (this.scopeAmount > 0.5 && scopes.length > 1) { this.zoomIndex = (this.zoomIndex + 1) % scopes.length; play('scope'); return; }
       const owned = SLOTS.filter((slot) => game.you?.weapons?.[slot]);

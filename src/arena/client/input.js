@@ -1,4 +1,5 @@
-// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW'), a mouse button ('Mouse0') or a
+// Rebindable controls. An input code is a KeyboardEvent.code ('KeyW'), a mouse button ('Mouse0'), a
+// wheel notch ('WheelUp'/'WheelDown') or a
 // controller button ('Pad0'). Keyboard and controller keep their own bind tables, so a pad never takes
 // a key away from anyone. Every keyboard action has two slots so the classic doubles (CTRL / C to
 // crouch) still work after rebinding.
@@ -106,8 +107,13 @@ export const isBound = (action, code) => bindsFor(action).includes(code);
 export const held = (keys, action) => bindsFor(action).some((code) => code && keys.has(code));
 export const actionsFor = (code) => ACTIONS.filter((action) => isBound(action.id, code)).map((action) => action.id);
 export const mouseCode = (event) => `Mouse${event.button}`;
+// A wheel notch is a pulse, not a hold, so binding one means synthesising a brief press. The window is
+// long enough for a frame to see it at any sane rate and short enough to still feel like a tap. This is
+// what makes a wheel bound to jump useful: one flick is several clean attempts at the landing.
+export const wheelCode = (event) => (event.deltaY < 0 ? 'WheelUp' : 'WheelDown');
+export const WHEEL_HOLD = 0.08;
 
-const NAMES = { Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5', Space: 'SPACE', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', AltLeft: 'L-ALT', AltRight: 'R-ALT', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/' };
+const NAMES = { WheelUp: 'WHEEL UP', WheelDown: 'WHEEL DOWN', Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'MOUSE 4', Mouse4: 'MOUSE 5', Space: 'SPACE', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', AltLeft: 'L-ALT', AltRight: 'R-ALT', Enter: 'ENTER', Tab: 'TAB', Backspace: 'BKSP', CapsLock: 'CAPS', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\', Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/' };
 export function codeLabel(code) {
   if (!code) return '-';
   if (NAMES[code]) return NAMES[code];
