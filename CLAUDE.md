@@ -2,6 +2,8 @@
 
 Krosshair is a browser sniper game: one Node process (`src/arena/multiplayer-server.mjs`) serves the page and runs the matches. The README explains the game and how it is hosted; this file is about changing it safely. Read both before editing.
 
+**Also read `HANDOFF.md`.** It covers the newer systems (the Item Shop and its server-only catalogue, ranked queues, the guest lock, the dev class, controller menus) and the traps that have already cost time. Keep it up to date when you add a system.
+
 ## Ground rules
 
 1. **`main` is production.** A push to `main` is deployed to krosshair.online within minutes by a timer on the game machine, and the restart drops anyone mid-match (they get a warning). So: `npm test` must pass before every commit, and never push half-finished work. Work in branches if a change takes several sessions.
