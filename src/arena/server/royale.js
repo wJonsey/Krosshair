@@ -429,7 +429,7 @@ export class RoyaleRoom extends Room {
     for (const bot of this.players.values()) {
       if (!bot.dropping || !bot.alive) continue;
       const dt = 1 / 30;
-      bot.y -= (bot.y > DROP.chuteAt ? DROP.fall : DROP.chuteFall) * dt;
+      bot.y -= (bot.y > DROP.botChuteAt ? DROP.fall : DROP.botChuteFall) * dt;
       bot.x += (bot.landAt.x - bot.x) * Math.min(1, dt * 0.8); bot.z += (bot.landAt.z - bot.z) * Math.min(1, dt * 0.8);
       if (bot.y <= bot.landAt.y) { Object.assign(bot, { x: bot.landAt.x, y: bot.landAt.y, z: bot.landAt.z, dropping: false }); bot.flags |= FLAG.ground; }
     }
