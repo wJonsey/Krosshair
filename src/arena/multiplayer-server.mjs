@@ -19,6 +19,7 @@ import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as
 import { PartyBook } from './server/party.js';
 import { WAGER } from './shared/economy.js';
 import { Guard } from './server/guard.js';
+import { isDetection } from './shared/guard.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 // Secrets (Discord keys) live in a git-ignored .env next to package.json (or in the working directory).
@@ -627,9 +628,12 @@ const WAGER_LOGIN = 'Wagers need a Discord login.';
 function kickCheater(socket, reason) {
   if (socket.guardKicked) return;
   socket.guardKicked = true;
-  const count = guard.strike(socket, reason);
-  const seconds = guard.lockout(count);
-  console.log(`anti-cheat: kicked ${socket.name || 'unidentified'}: ${reason} (${guard.describe(socket)}), strike ${count}, ${seconds}s`);
+  // Going quiet is not proof of anything, so it drops the socket without banking a strike. Deleting
+  // the guard still means never getting to play, because it happens again on every reconnect.
+  const detected = isDetection(reason);
+  const count = detected ? guard.strike(socket, reason) : 0;
+  const seconds = detected ? guard.lockout(count) : 0;
+  console.log(`anti-cheat: ${detected ? 'kicked' : 'dropped'} ${socket.name || 'unidentified'}: ${reason} (${guard.describe(socket)})${detected ? `, strike ${count}, ${seconds}s` : ', no strike'}`);
   leaveRoom(socket, true);
   send(socket, { type: 'kicked', reason, seconds, strikes: count });
   setTimeout(() => { try { socket.close(4003, 'anti-cheat'); } catch { /* already gone */ } }, 150);

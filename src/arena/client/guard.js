@@ -414,8 +414,14 @@ export function startGuard(options) {
   scanApi();
   scanTimer = setInterval(() => { scanUserscripts(); scanNatives(); scanApi(); expire(); review(); }, 1000);
   heartbeatTimer = setInterval(heartbeat, GUARD.heartbeat * 1000);
+  // A hidden tab has its timers throttled, and a sleeping machine stops them altogether, so the first
+  // thing to do on coming back is say so. Without this the gap is only noticed by the server, which
+  // reads it as the page having gone quiet.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) heartbeat(); });
+  addEventListener('focus', heartbeat);
+  addEventListener('online', heartbeat);
 
   net.on('guard-challenge', (message) => { salt = message.salt; heartbeat(); });
   net.on('kicked', (message) => showKick(message));
-  return { found, stop() { clearInterval(scanTimer); clearInterval(heartbeatTimer); stopSabotage(); } };
+  return { found, beat: heartbeat, stop() { clearInterval(scanTimer); clearInterval(heartbeatTimer); stopSabotage(); } };
 }
