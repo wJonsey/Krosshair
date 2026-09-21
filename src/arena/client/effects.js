@@ -35,6 +35,10 @@ export class Effects {
     this.tracerGeometry.rotateX(Math.PI / 2);
     this.decalGeometry = new THREE.CircleGeometry(1, 8);
     this.decalMaterial = new THREE.MeshBasicMaterial({ color: '#0b0d10', transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    // A firefight throws away dozens of tracers a second, and each one used to take a material with it.
+    // Colour and opacity are just values on the same shader, so the same materials come back round
+    // instead. It matters most while scoped, when every one of them is drawn a second time.
+    this.beamPool = [];
     this.color = new THREE.Color();
     // Fixed pool: adding or removing lights at runtime would force shader recompiles mid-fight.
     this.lightPool = Array.from({ length: 3 }, () => { const light = new THREE.PointLight('#ffb45e', 0, 16, 1.8); scene.add(light); return { light, life: 0 }; });
@@ -67,7 +71,7 @@ export class Effects {
     const prism = color === 'devprism';
     if (prism) color = new THREE.Color().setHSL((performance.now() / 900) % 1, 1, 0.6);
     const beam = (tint, size, life, opacity = 0.95) => {
-      const mesh = new THREE.Mesh(this.tracerGeometry, new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
+      const mesh = new THREE.Mesh(this.tracerGeometry, this.takeBeam(tint, opacity));
       mesh.position.copy(start).lerp(end, 0.5);
       mesh.scale.set(size, size, length);
       mesh.lookAt(end);
@@ -76,6 +80,19 @@ export class Effects {
     };
     beam(color, width, 0.11);
     if (prism) { beam('#ffffff', width * 0.45, 0.11); beam(color, width * 3.2, 0.3, 0.35); }
+  }
+
+  // Every beam shares one shader; only the colour and the opacity differ, and neither of those makes
+  // a new one. Anything past the cap is let go properly rather than held forever.
+  takeBeam(tint, opacity) {
+    const material = this.beamPool.pop();
+    if (!material) return new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+    material.color.set(tint);
+    material.opacity = opacity;
+    return material;
+  }
+  dropBeam(material) {
+    if (this.beamPool.length < 48) this.beamPool.push(material); else material.dispose();
   }
 
   // The long rifle leaves a lingering vapour trail that points back at the shooter.
@@ -177,13 +194,13 @@ export class Effects {
       const attributes = this.cloud.geometry.attributes;
       attributes.position.needsUpdate = true; attributes.color.needsUpdate = true; attributes.size.needsUpdate = true;
     }
-    const fade = (list, shape) => list.filter((item) => {
+    const fade = (list, shape, recycle) => list.filter((item) => {
       item.life -= dt;
-      if (item.life <= 0) { this.scene.remove(item.mesh); item.mesh.material.dispose(); return false; }
+      if (item.life <= 0) { this.scene.remove(item.mesh); if (recycle) recycle(item.mesh.material); else item.mesh.material.dispose(); return false; }
       shape(item);
       return true;
     });
-    this.tracers = fade(this.tracers, (item) => { item.mesh.material.opacity = (item.base ?? 1) * (item.life / item.max); });
+    this.tracers = fade(this.tracers, (item) => { item.mesh.material.opacity = (item.base ?? 1) * (item.life / item.max); }, (material) => this.dropBeam(material));
     this.trails = fade(this.trails, (item) => { item.mesh.material.opacity = 0.22 * (item.life / item.max); const grow = 0.02 + (1 - item.life / item.max) * 0.05; item.mesh.scale.x = grow; item.mesh.scale.y = grow; });
     this.rings = this.rings.filter((item) => {
       item.life += dt;
