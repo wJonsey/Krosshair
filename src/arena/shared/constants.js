@@ -256,8 +256,21 @@ export const WEAPONS = {
     auto: false, pellets: 1, scope: [52], scopeTime: 0.34,
     spread: { hip: 2.2, ads: 0.5, move: 1.6, air: 4, bloom: 0, bloomMax: 0 },
     falloff: null, recoil: { kick: 5.2, side: 1.2, recover: 4 }, speed: 0.78, loud: 120, tracer: 0,
-    // The rocket itself: how fast it flies, and what the blast does where it lands.
-    rocket: { speed: 46, gravity: 2.6, radius: 6.4, damage: 118, minDamage: 26, selfScale: 0.55, armorPen: 0.55 },
+    // The rocket itself. It flies slowly enough to see coming and to dodge, drops over distance, and
+    // goes off on the first thing it touches. A hit on a person is lethal on its own; everyone else in
+    // the blast takes what is left of it, including whoever pulled the trigger.
+    rocket: {
+      speed: 40,          // metres a second: slow enough to read, fast enough to land
+      gravity: 3.4,       // a visible arc, so range costs you elevation
+      muzzle: 0.9,        // spawns this far down the barrel, clear of your own shoulders
+      life: 6,            // seconds before it gives up and goes off where it is
+      direct: 140,        // a rocket in the chest. Nobody survives that
+      damage: 85,         // the blast, at the centre of it
+      minDamage: 16,      // the blast, at the very edge
+      radius: 7,
+      selfScale: 0.65,    // your own rocket hurts, a little less than it hurts them
+      armorPen: 0.6,
+    },
     noMods: true,
   },
   knife: {

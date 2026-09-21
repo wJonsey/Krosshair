@@ -131,7 +131,10 @@ test('the Nin Launcher is the most expensive thing in the armoury, and it explod
   assert.ok(others.every((weapon) => weapon.cost < nin.cost), 'something costs more than the Nin');
   assert.equal(nin.mag, 1, 'more than one rocket in the tube');
   assert.ok(nin.reload >= 5, `a ${nin.reload}s reload is not a bazooka`);
-  assert.ok(nin.rocket.radius > 4 && nin.rocket.damage > 100, 'the blast is not worth 7,200 credits');
+  assert.ok(nin.rocket.radius > 4, 'the blast is too small to be worth 7,200 credits');
+  assert.ok(nin.rocket.direct >= 100, 'a rocket in the chest should not be survivable');
+  assert.ok(nin.rocket.damage > nin.rocket.minDamage, 'the blast does not fade');
+  assert.ok(nin.rocket.direct > nin.rocket.damage, 'wearing the warhead should beat standing near it');
   assert.ok(nin.rocket.selfScale > 0 && nin.rocket.selfScale < 1, 'it should hurt to shoot your own feet, but less');
   assert.ok(nin.speed < 0.85, 'carrying a launcher should slow you down');
 });
@@ -143,11 +146,11 @@ test('the blast fades with distance, and cover stops it', async () => {
   victim.team = shooter.team === 'A' ? 'B' : 'A';
   room.phase = 'live';
   const spec = WEAPONS.nin.rocket;
-  const blast = (at) => {
+  const blast = (at, struck = null) => {
     // A kill ends the round, so the round goes back on its feet before each blast.
     room.phase = 'live';
     victim.hp = 100; victim.armor = 0; victim.alive = true; shooter.alive = true;
-    room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, at, 0);
+    room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, at, struck);
     return 100 - victim.hp;
   };
   // High above the map, so nothing is in the way and only the distance matters.
@@ -158,7 +161,9 @@ test('the blast fades with distance, and cover stops it', async () => {
   const mid2 = [mid[0] + spec.radius * 0.75, mid[1], mid[2]];
   const far = blast(mid2);
   const outside = blast([mid[0] + spec.radius + 2, mid[1], mid[2]]);
-  assert.ok(close > 90, `a direct hit only did ${close}`);
+  // Wearing it is lethal. Standing beside it is not, and that gap is the whole point of the weapon.
+  assert.ok(blast(mid, victim) > 90, 'a rocket in the chest was survivable');
+  assert.ok(close > 40 && close < 90, `a blast at your feet did ${close}, which is either nothing or a direct hit`);
   assert.ok(far > 0 && far < close, `falloff is wrong: ${close} close, ${far} far`);
   assert.equal(outside, 0, 'the blast reached past its own radius');
   // A team mate is safe unless friendly fire is on, but the pilot who fired it never is.
@@ -167,7 +172,7 @@ test('the blast fades with distance, and cover stops it', async () => {
   Object.assign(mate, { x: 0, y: 40, z: 0, alive: true, hp: 100, armor: 0 });
   room.phase = 'live';
   shooter.hp = 100; shooter.armor = 0; shooter.alive = true; victim.alive = false;
-  room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, mid, 0);
+  room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, mid, null);
   assert.equal(mate.hp, 100, 'a team mate took the blast with friendly fire off');
   assert.ok(shooter.hp < 100, 'you can stand in your own rocket for free');
   assert.ok(100 - shooter.hp < close, 'your own rocket should hurt less than someone else\'s');
@@ -264,4 +269,55 @@ test('a pistol is not offered a stock or a foregrip', () => {
   assert.ok(partsFor(WEAPONS.p9, 'optic').length > 0, 'a pistol cannot take any optic');
   // The launcher takes nothing at all.
   for (const slot of SLOTS) assert.equal(partsFor(WEAPONS.nin, slot).length, 0, `the launcher was offered a ${slot}`);
+});
+
+test('a rocket that lands on a surface still splashes off it', async () => {
+  const { room } = await makeRoom();
+  const shooter = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  const victim = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's2', name: 'B' }, look);
+  victim.team = shooter.team === 'A' ? 'B' : 'A';
+  room.phase = 'live';
+  for (const player of [shooter, victim]) { player.alive = true; player.hp = 100; player.armor = 0; }
+  // Standing on the ground, with the rocket going off at their feet. The blast sits on the floor it
+  // hit, and a line of sight check that starts inside that floor cancels every splash: it did once.
+  const spawn = room.map.spawns.A[0];
+  Object.assign(shooter, { x: spawn.x + 40, y: spawn.y, z: spawn.z });
+  Object.assign(victim, { x: spawn.x, y: spawn.y, z: spawn.z });
+  room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, [spawn.x, spawn.y + 0.05, spawn.z], null);
+  assert.ok(victim.hp < 100, 'a rocket at their feet did nothing, so the blast is being eaten by the floor');
+  room.close();
+});
+
+test('your own rocket hurts you, and less than it hurts them', async () => {
+  const { room } = await makeRoom();
+  const shooter = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  const victim = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's2', name: 'B' }, look);
+  victim.team = shooter.team === 'A' ? 'B' : 'A';
+  room.phase = 'live';
+  const at = [0, 60.9, 0];
+  for (const player of [shooter, victim]) { player.alive = true; player.hp = 100; player.armor = 0; Object.assign(player, { x: 0, y: 60, z: 0 }); }
+  room.detonate({ owner: shooter.id, team: shooter.team, weapon: WEAPONS.nin }, at, null);
+  const mine = 100 - shooter.hp, theirs = 100 - victim.hp;
+  assert.ok(mine > 20, `standing in your own rocket only cost ${mine}`);
+  assert.ok(mine < theirs, `your own rocket hurt you ${mine} against their ${theirs}`);
+  room.close();
+});
+
+test('the rocket leaves the tube in front of you, not inside your own head', async () => {
+  const { room } = await makeRoom();
+  const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  room.phase = 'live';
+  player.alive = true;
+  player.weapons.primary = 'nin';
+  player.active = 'primary';
+  player.ammo.primary = { mag: 1, reserve: 3 };
+  room.broadcast = () => {};
+  const eye = [0, 60, 0];
+  room.fire(player, eye, [0, 0, -1], 0, 1);
+  assert.equal(room.rockets.length, 1, 'no rocket left the tube');
+  const rocket = room.rockets[0];
+  const out = Math.hypot(rocket.x - eye[0], rocket.y - eye[1], rocket.z - eye[2]);
+  assert.ok(out > 0.5, `the rocket started ${out.toFixed(2)} m from the eye, which is inside the pilot`);
+  assert.ok(Math.hypot(rocket.vx, rocket.vy, rocket.vz) > 20, 'the rocket is not moving');
+  room.close();
 });

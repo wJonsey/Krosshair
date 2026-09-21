@@ -973,10 +973,14 @@ export class Room {
     const angle = player.bot ? (weapon.pellets > 1 ? weapon.spread.ads : 0) : spreadAngle(weapon, { scoped, speed: player.speed, airborne: !(player.flags & FLAG.ground), crouched: Boolean(player.flags & FLAG.crouch), bloom });
     const rng = mulberry32(hashString(player.id) + seq * 7919);
     if (weapon.rocket) {
+      const spec = weapon.rocket;
       const shotDir = applySpread(dir, angle, rng);
+      // It leaves the end of the tube, not the middle of your head, so standing at a corner does not
+      // set it off against your own shoulder.
+      const muzzle = [origin[0] + shotDir[0] * spec.muzzle, origin[1] + shotDir[1] * spec.muzzle, origin[2] + shotDir[2] * spec.muzzle];
       this.rockets.push({ id: `r${this.rocketSeq = (this.rocketSeq || 0) + 1}`, owner: player.id, team: player.team, weapon,
-        x: origin[0], y: origin[1], z: origin[2], vx: shotDir[0] * weapon.rocket.speed, vy: shotDir[1] * weapon.rocket.speed, vz: shotDir[2] * weapon.rocket.speed, born: t });
-      this.broadcast({ type: 'rocket', id: player.id, o: origin.map(round2), d: shotDir.map(round3), s: weapon.rocket.speed, g: weapon.rocket.gravity, seq });
+        x: muzzle[0], y: muzzle[1], z: muzzle[2], vx: shotDir[0] * spec.speed, vy: shotDir[1] * spec.speed, vz: shotDir[2] * spec.speed, born: t });
+      this.broadcast({ type: 'rocket', id: player.id, o: muzzle.map(round2), d: shotDir.map(round3), s: spec.speed, g: spec.gravity, seq });
       this.logShot(player, { t, weapon: weapon.id, origin: origin.map(round2), ends: [], lag: t - rewindTo, hit: false, mag: ammo.mag });
       if (weapon.loud > 0) for (const other of this.players.values()) if (other.bot && other.alive && other.team !== player.team) botOnSound(this, other, player, weapon.loud);
       this.pushYou(player);
@@ -1058,56 +1062,70 @@ export class Room {
 
   // Rockets fly on the server. They travel a segment per tick, stop at whatever they touch first, and
   // the blast reaches anyone the explosion can actually see: cover works.
+  // Rockets fly on the server, a segment per tick, and go off on the first thing they touch: a wall,
+  // the ground, or a person. Whoever is hit directly takes the warhead; everyone else near it takes
+  // what the blast is worth at their distance, the pilot who fired it included.
   stepRockets(dt, t) {
     if (!this.rockets.length) return;
     for (const rocket of [...this.rockets]) {
-      const { rocket: spec } = rocket.weapon;
+      const spec = rocket.weapon.rocket;
       rocket.vy -= spec.gravity * dt;
       const step = [rocket.vx * dt, rocket.vy * dt, rocket.vz * dt];
       const travel = Math.hypot(...step);
-      let hit = null;
+      let hit = null, struck = null;
       if (travel > 0.0001) {
-        const dir = step.map((value) => value / travel);
-        const [wall] = this.world.raycast([rocket.x, rocket.y, rocket.z], dir, travel);
-        if (wall) hit = [rocket.x + dir[0] * wall.t0, rocket.y + dir[1] * wall.t0, rocket.z + dir[2] * wall.t0];
-        // A direct hit on a pilot sets it off early.
-        if (!hit) {
-          for (const other of this.players.values()) {
-            if (!other.alive || other.id === rocket.owner) continue;
-            const near = rayPlayer([rocket.x, rocket.y, rocket.z], dir, { x: other.x, y: other.y, z: other.z, crouch: Boolean(other.flags & FLAG.crouch) });
-            // rayPlayer answers with `t`, the distance along the ray. Reading `distance` here got
-            // undefined, so the comparison was always false and a rocket flew straight through people.
-            if (near && near.t <= travel) { hit = [rocket.x + dir[0] * near.t, rocket.y + dir[1] * near.t, rocket.z + dir[2] * near.t]; break; }
-          }
+        const dir = [step[0] / travel, step[1] / travel, step[2] / travel];
+        const from = [rocket.x, rocket.y, rocket.z];
+        // Whatever is nearest along this tick's segment wins, so a pilot standing against a wall is
+        // a direct hit rather than a blast through the wall behind them.
+        let best = travel;
+        const [wall] = this.world.raycast(from, dir, travel);
+        if (wall && wall.t0 <= best) { best = wall.t0; struck = null; hit = true; }
+        for (const other of this.players.values()) {
+          if (!other.alive || other.id === rocket.owner) continue;
+          if (!this.rules.friendlyFire && other.team === rocket.team) continue;
+          const near = rayPlayer(from, dir, { x: other.x, y: other.y, z: other.z, crouch: Boolean(other.flags & FLAG.crouch) });
+          // rayPlayer answers with `t`, the distance along the ray.
+          if (near && near.t <= best) { best = near.t; struck = other; hit = true; }
         }
+        // Backed off the surface it struck. A blast sitting exactly on a wall has that wall between
+        // itself and everyone, so every splash was cancelled by the thing the rocket just hit.
+        if (hit) { const stop = Math.max(0, best - 0.25); hit = [from[0] + dir[0] * stop, from[1] + dir[1] * stop, from[2] + dir[2] * stop]; }
       }
       rocket.x += step[0]; rocket.y += step[1]; rocket.z += step[2];
       const { bounds } = this.map;
       const stray = rocket.x < bounds.minX - 4 || rocket.x > bounds.maxX + 4 || rocket.z < bounds.minZ - 4 || rocket.z > bounds.maxZ + 4 || rocket.y < bounds.minY - 6;
-      if (hit || stray || t - rocket.born > 6) {
-        this.rockets.splice(this.rockets.indexOf(rocket), 1);
-        if (hit) this.detonate(rocket, hit, t); else if (!stray) this.detonate(rocket, [rocket.x, rocket.y, rocket.z], t);
-      }
+      const spent = t - rocket.born > spec.life;
+      if (!hit && !stray && !spent) continue;
+      this.rockets.splice(this.rockets.indexOf(rocket), 1);
+      // A rocket that leaves the map is simply gone: there is nobody out there to hurt.
+      if (stray && !hit) continue;
+      this.detonate(rocket, hit || [rocket.x, rocket.y, rocket.z], struck);
     }
   }
-  detonate(rocket, at, t) {
+
+  detonate(rocket, at, struck = null) {
     const spec = rocket.weapon.rocket;
     const owner = this.players.get(rocket.owner) || null;
     this.broadcast({ type: 'boom', at: at.map(round2), r: spec.radius });
+    // The warhead, for whoever wore it. They are then out of the blast: one rocket, one payment.
+    if (struck?.alive) {
+      this.applyDamage(struck, owner || struck, spec.direct, 'torso', rocket.weapon, { distance: 0, blast: true, direct: true, origin: at, end: [struck.x, struck.y + 1, struck.z], lag: 0 });
+    }
     for (const victim of this.players.values()) {
-      if (!victim.alive) continue;
+      if (!victim.alive || victim === struck) continue;
+      const self = victim.id === rocket.owner;
+      // Your own rocket always finds you. Team mates only when friendly fire is on.
+      if (!self && !this.rules.friendlyFire && victim.team === rocket.team) continue;
       const mid = [victim.x, victim.y + 0.9, victim.z];
       const gap = Math.hypot(mid[0] - at[0], mid[1] - at[1], mid[2] - at[2]);
       if (gap > spec.radius) continue;
-      if (!this.rules.friendlyFire && victim.team === rocket.team && victim.id !== rocket.owner) continue;
-      // Cover stops a blast: something solid between the two and it never lands.
-      // Standing in it: there is nothing to hide behind at arm's length, and the direction would be
-      // a zero length vector anyway.
-      // lineOfSight lets glass through, which is right: a window is not cover from a rocket.
+      // Cover stops a blast, glass does not: a window is no protection from a rocket. At arm's length
+      // there is nothing to hide behind, and the direction would be a zero length vector anyway.
       if (gap > 0.5 && !this.world.lineOfSight(at[0], at[1], at[2], mid[0], mid[1], mid[2])) continue;
-      const fade = 1 - Math.min(1, gap / spec.radius);
+      const fade = 1 - gap / spec.radius;
       let amount = spec.minDamage + (spec.damage - spec.minDamage) * fade * fade;
-      if (victim.id === rocket.owner) amount *= spec.selfScale;
+      if (self) amount *= spec.selfScale;
       this.applyDamage(victim, owner || victim, amount, 'torso', rocket.weapon, { distance: gap, blast: true, origin: at, end: mid, lag: 0 });
     }
   }
