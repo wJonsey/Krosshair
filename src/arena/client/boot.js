@@ -153,7 +153,7 @@
     clearInterval(spawnTimer);
     el.classList.add('blocked');
     $('.boot-steps').remove(); $('.boot-meter').remove(); $('.boot-score').remove(); enter.remove(); range.remove();
-    status.outerHTML = '<div class="boot-block"><h2>Desktop only.</h2><p>Krosshair needs a mouse and keyboard.</p><p>Play at <b>krosshair.online</b> on a computer.</p><a href="https://discord.gg/uFVygVtKzt" target="_blank" rel="noopener noreferrer">Join the Discord →</a></div>';
+    status.outerHTML = '<div class="boot-block"><h2>Desktop only.</h2><p>Krosshair needs a mouse and keyboard.</p><p>Play at <b>krosshair.online</b> on a computer.</p><a href="https://discord.com/invite/2K2XJQK9yd" target="_blank" rel="noopener noreferrer">Join the Discord →</a></div>';
     return;
   }
   import(new URL('client/main.js', document.baseURI).href).catch((error) => { console.error(error); fail('Download failed. Check your connection and reload.'); });

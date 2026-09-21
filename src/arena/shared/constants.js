@@ -227,8 +227,8 @@ export const ACCOUNTS_ENABLED = false;
 // Portal → General Information). Safe to commit, unlike the client secret or bot token, which go in .env.
 export const DISCORD_CLIENT_ID = '1550238088758825050';
 // Community server. Logging in with Discord adds pilots to it; this link is for everyone else.
-export const DISCORD_INVITE = 'https://discord.gg/uFVygVtKzt';
-export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair78';
+export const DISCORD_INVITE = 'https://discord.com/invite/2K2XJQK9yd';
+export const TIKTOK_URL = 'https://www.tiktok.com/@krosshair.online';
 
 // Sight types (weapon.sight): scope = full scope overlay, prism = magnified lens, dot = red dot,
 // holo = holographic window, iron = iron sights on the model, bead = shotgun bead.
