@@ -6,8 +6,9 @@ import { performance } from 'node:perf_hooks';
 let clock = performance.now();
 performance.now = () => clock;
 const { RoyaleRoom } = await import('../server/royale.js');
-const { ROYALE, ROYALE_LOADOUT } = await import('../shared/royale.js');
+const { AIRDROP_LOOT, LOOT_TABLE, POWERS, ROYALE, ROYALE_LOADOUT } = await import('../shared/royale.js');
 const { MAP_IDS } = await import('../shared/map.js');
+const { WEAPONS } = await import('../shared/constants.js');
 
 const profiles = { get: () => ({ xp: 0, rating: 1000, rankedMatches: 0 }), view: () => ({ level: 1, rating: 1000, rankedMatches: 0 }), recordMatch: () => ({}), coins: () => 0, sanitizeCosmetics: (type, list) => list };
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
@@ -132,4 +133,17 @@ test('bots gear up and airdrops land', () => {
   assert.equal(room.airdrops.length, 0);
   assert.ok(room.loot.size > before - 40);
   room.close?.();
+});
+
+test('every pickup on the island is a real thing, and Adrenaline is gone', () => {
+  // A power with no entry showed as "?" on the floor and threw on pickup, so the pools are checked
+  // against what actually exists rather than trusted.
+  for (const entry of [...LOOT_TABLE, ...AIRDROP_LOOT]) {
+    for (const id of entry.pool || []) {
+      if (entry.kind === 'power') assert.ok(POWERS[id], `the loot table drops a power called ${id}, which does not exist`);
+      if (entry.kind === 'weapon') assert.ok(WEAPONS[id], `the loot table drops a weapon called ${id}, which does not exist`);
+    }
+  }
+  assert.ok(!POWERS.speed, 'the speed boost is back on the island');
+  assert.ok(Object.keys(POWERS).length > 0, 'there are no powers left at all');
 });

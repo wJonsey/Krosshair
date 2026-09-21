@@ -32,7 +32,7 @@ export const LOOT_TABLE = [
   { weight: 6, kind: 'helmet' },
   { weight: 10, kind: 'heal', amount: 50 },
   { weight: 9, kind: 'gadget', pool: ['pulse', 'shield', 'stim', 'ghost', 'decoy', 'drone'] },
-  { weight: 7, kind: 'power', pool: ['speed', 'jump'] },
+  { weight: 7, kind: 'power', pool: ['jump'] },
   { weight: 9, kind: 'ammo' },
 ];
 export const LOOT_CHANCE = 0.85;   // share of loot spots that hold something
@@ -71,7 +71,6 @@ export function royaleWeapon(weapon, rarity) {
 export const DROP = { height: 190, offset: 45, fall: 32, chuteFall: 8, chuteAt: 70, glide: 11, chuteGlide: 9, botChuteAt: 24, botChuteFall: 10 };
 // Pickups that change how you move for a while.
 export const POWERS = {
-  speed: { name: 'Adrenaline', desc: 'Run 35% faster.', seconds: 25, speed: 1.35 },
   jump: { name: 'Spring Boots', desc: 'Jump three times as high.', seconds: 40, jump: 1.75 },
 };
 // Jump pads throw you this fast straight up: enough for any roof.
