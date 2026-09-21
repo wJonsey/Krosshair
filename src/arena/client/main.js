@@ -16,6 +16,7 @@ import { announce, meter, musicState, play, playImpact, playShot, setAmbience, s
 import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
 import { initDevTools } from './devtools.js';
+import { startGuard } from './guard.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
 
 // Loading screen milestones (client/boot.js). Optional, so the game still boots if the overlay is ever removed.
@@ -568,4 +569,7 @@ showScreen('home');
 bus.on('net-status', ({ state }) => { if (state === 'open') boot?.step('link'); else if (state === 'closed') boot?.step('link', 'warn'); });
 net.connect();
 frame();
-window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState } };
+// debugCam stays writable for the screenshot harness; the anti-cheat seals the
+// handle so nothing can bolt extra entry points onto it.
+window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState }, debugCam: null };
+startGuard({ player, api: window.__arena, notify: feed });

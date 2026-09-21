@@ -18,6 +18,7 @@ import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, 
 import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as socialLists, normalize as normalizeFriends, reject as rejectFriend, relation, request as requestFriend, unblock as unblockPilot, unfriend } from './server/social.js';
 import { PartyBook } from './server/party.js';
 import { WAGER } from './shared/economy.js';
+import { Guard } from './server/guard.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 // Secrets (Discord keys) live in a git-ignored .env next to package.json (or in the working directory).
@@ -63,6 +64,7 @@ const feedbackFile = process.env.ARENA_FEEDBACK || path.join(root, 'data', 'feed
 const webhooks = new Webhooks({ root, stateFile: path.join(path.dirname(profiles.file), 'webhooks.json'), siteUrl: (process.env.PUBLIC_URL || 'https://krosshair.online').replace(/\/$/, '') });
 { const hooks = webhooks.status(); console.log(`discord webhooks: updates ${hooks.updates ? 'ON' : 'off'} · leaderboard ${hooks.leaderboard ? 'ON' : 'off'}`); }
 
+const guard = new Guard(now);
 const rooms = new Map();
 let roomCounter = 1;
 const sockets = new Set();
@@ -618,8 +620,25 @@ function leaveRoom(socket, deliberate = false) {
 
 const RANKED_LOGIN = 'Ranked needs a Discord login.';
 const WAGER_LOGIN = 'Wagers need a Discord login.';
+
+// Anti-cheat: pull the seat, tell the page why, then drop the socket. The page
+// keeps itself locked out until the injected script is gone, and the ledger
+// makes each repeat wait longer.
+function kickCheater(socket, reason) {
+  if (socket.guardKicked) return;
+  socket.guardKicked = true;
+  const count = guard.strike(socket, reason);
+  const seconds = guard.lockout(count);
+  console.log(`anti-cheat: kicked ${socket.name || 'unidentified'} — ${reason} (${guard.describe(socket)}), strike ${count}, ${seconds}s`);
+  leaveRoom(socket, true);
+  send(socket, { type: 'kicked', reason, seconds, strikes: count });
+  setTimeout(() => { try { socket.close(4003, 'anti-cheat'); } catch { /* already gone */ } }, 150);
+}
+
 function enter(socket, message) {
   if (!socket.identified) return send(socket, { type: 'error', message: 'Log in to play.' });
+  const wait = guard.locked(socket);
+  if (wait) return send(socket, { type: 'error', message: `Anti-cheat lockout: wait ${wait}s, and turn off any userscripts first.` });
   leaveRoom(socket, true);
   const action = String(message.action || 'quick');
   let room = null;
@@ -691,6 +710,7 @@ wss.on('connection', (socket) => {
   socket.player = null;
   socket.budget = 0;
   socket.budgetAt = now();
+  send(socket, guard.challenge(socket));
   socket.on('message', (raw) => {
     // Simple flood guard: ~150 messages a second is far beyond what a client sends.
     const t = now();
@@ -703,6 +723,16 @@ wss.on('connection', (socket) => {
       if (message.type === 'ping') {
         if (socket.player) socket.player.ping = Math.round(Math.min(999, Number(message.rtt) || 0));
         return send(socket, { type: 'pong', c: message.c, s: now() });
+      }
+      if (message.type === 'guard') {
+        const bad = guard.heartbeat(socket, message);
+        if (bad) return kickCheater(socket, bad);
+        if (message.flags) console.log(`anti-cheat: ${socket.name || 'unidentified'} reports ${guard.describe(socket)}`);
+        return;
+      }
+      if (message.type === 'guard-report') {
+        const reason = typeof message.reason === 'string' && message.reason.length < 32 ? message.reason : 'injected';
+        return kickCheater(socket, reason);
       }
       if (message.type === 'auth') {
         if (!ACCOUNTS_ENABLED && !discord.enabled && message.action !== 'logout') return send(socket, { type: 'auth-required' });
@@ -744,6 +774,7 @@ wss.on('connection', (socket) => {
         Object.assign(socket.player, profiles.sanitizeCosmetics(socket.token, message.look || {}));
         return socket.room.pushRoom();
       }
+      if (guard.overdue(socket)) return kickCheater(socket, 'silent');
       if (socket.room && socket.player) socket.room.handle(socket.player, message);
     } catch (error) {
       console.error('message failed', message.type, error);

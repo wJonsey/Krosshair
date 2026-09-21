@@ -189,7 +189,8 @@ src/arena/
 │   ├── map.js, mapkit.js        # Map registry + Kestrel Yard; box-map authoring tools (arenaShell, flight, SYM …)
 │   ├── maps/                    # One file per arena
 │   ├── physics.js, combat.js    # Box world, movement, raycasts; hit zones, penetration, spread
-│   └── version.js               # Map fingerprints so stale pages notice
+│   ├── version.js               # Map fingerprints so stale pages notice
+│   └── guard.js                 # Anti-cheat constants and the heartbeat signature
 ├── server/
 │   ├── room.js                  # Match state machine, authoritative combat, gadgets
 │   ├── mapflow.js               # Arena selection: fixed, random rotation, lobby vote
@@ -197,7 +198,8 @@ src/arena/
 │   ├── profiles.js, accounts.js # JSON stores: progression, settings and coins (with wager escrow); accounts and sessions
 │   ├── economy.js               # Shop, crates, minigames and coin transfers (server-side dice)
 │   ├── discord.js               # "Log in with Discord" (implicit or code flow) and auto-join
-│   └── webhooks.js              # Discord channel posts: deploy warnings, leaderboard changes
+│   ├── webhooks.js              # Discord channel posts: deploy warnings, leaderboard changes
+│   └── guard.js                 # Anti-cheat: heartbeats, strike ledger, kicks
 ├── client/                      # Three.js client
 │   ├── boot.js                  # Loading screen, mobile block, loads main.js
 │   ├── main.js, net.js, state.js
@@ -205,7 +207,8 @@ src/arena/
 │   ├── player.js, input.js, hud.js, crosshair.js
 │   ├── skins.js, ranks.js       # Procedural gun finishes and suit patterns; rank emblems
 │   ├── shop.js                  # Shop page: skins, crates, games, wallet
-│   └── menu.js, mapvote.js      # Every screen outside the match
+│   ├── menu.js, mapvote.js      # Every screen outside the match
+│   └── guard.js                 # Anti-cheat: injection detection, sabotage, kick screen
 └── tests/                       # `npm test`
 backend/                         # Unrelated legacy Python API (Call of Duty profile lookup); not part of the game
 ```
@@ -214,13 +217,23 @@ backend/                         # Unrelated legacy Python API (Call of Duty pro
 
 The client predicts its own movement and draws tracers immediately; the server validates movement speed and position, rewinds other players to the moment you fired (lag compensation, capped at 400 ms) and decides every hit. Remote players are interpolated 100 ms in the past. If your connection drops mid-match your seat is held for 45 seconds and the page rejoins on its own, even after a refresh. Anyone in the menus receives the public room list and online count live.
 
+### Anti-cheat
+
+`client/guard.js` watches the page for script injection: userscript managers (Tampermonkey, Violentmonkey, Greasemonkey), scripts appended to the document after boot, browser built-ins that stop being native — `WebSocket.prototype.send`, the WebGL draw and depth calls a wallhack needs — the game's own entry points being swapped out, and a set of honeypot globals (`window.aimbot` and friends) that trip when something writes to them.
+
+It escalates rather than banning: a warning banner, then twelve seconds later the screen hazes over, the aim gain wanders and inverts and the pointer keeps unlocking, then twenty seconds after that the server is asked to kick. The kick screen counts down and keeps re-checking; while anything is still injected the countdown restarts, and the page reconnects on its own once it is clean. Lockouts double per strike (30s, 60s, 120s…) and are forgotten after half an hour. Every stage is local to the cheating tab, so nobody else in the match is affected.
+
+The page heartbeats every five seconds, signed against a salt the server issues on connect, so deleting the client module is not a way out — the server kicks a seated player whose heartbeats stop for 24 seconds. `server/guard.js` keeps the strike ledger and does the kicking; `npm test` covers the signing, the missed-heartbeat kick and the ledger.
+
+Developer tools are left alone on purpose: no detection, no `debugger` traps, no console clearing, and the honeypots trip on assignment only so console autocomplete cannot fire them. The in-page dev panel is unaffected. Reading the code is not cheating.
+
 ### Adding an arena
 
 Write `src/arena/shared/maps/<id>.js` with the `mapkit` builder: `arenaShell` gives you the ground, perimeter and gated spawn lobbies, `flight` a staircase bots can climb, `SYM` mirrors a piece across `z = 0`. Author the south half; the north is the mirror. Register the id in `MAP_INFO` and `BUILDERS` in `shared/map.js`, add a thumbnail palette in `client/mapvote.js`, and run `MAP=<id> node --test src/arena/tests/maps.test.mjs`. The tests reject anything unfair or unreachable: unmirrored geometry, blocked spawns, a spawn gate that can see another, and any interest point bots cannot reach from both spawns.
 
 ## Notes
 
-- The server is authoritative about combat, but it does not hide enemy positions from a modified client. Fine for playing with friends, worth keeping in mind if the player base ever grows beyond that.
+- The server is authoritative about combat, but it does not hide enemy positions from a modified client. The anti-cheat above raises the cost of injecting one; it does not make it impossible, so this is still worth keeping in mind if the player base ever grows.
 - The announcer uses the browser's speech synthesis, so its voice varies by system. It can be turned off in Settings.
 
 ## License
