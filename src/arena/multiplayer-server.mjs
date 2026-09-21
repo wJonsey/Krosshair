@@ -629,7 +629,7 @@ function kickCheater(socket, reason) {
   socket.guardKicked = true;
   const count = guard.strike(socket, reason);
   const seconds = guard.lockout(count);
-  console.log(`anti-cheat: kicked ${socket.name || 'unidentified'} — ${reason} (${guard.describe(socket)}), strike ${count}, ${seconds}s`);
+  console.log(`anti-cheat: kicked ${socket.name || 'unidentified'}: ${reason} (${guard.describe(socket)}), strike ${count}, ${seconds}s`);
   leaveRoom(socket, true);
   send(socket, { type: 'kicked', reason, seconds, strikes: count });
   setTimeout(() => { try { socket.close(4003, 'anti-cheat'); } catch { /* already gone */ } }, 150);
@@ -821,7 +821,9 @@ process.on('SIGTERM', () => {
   const matches = [...rooms.values()].filter((room) => room.mode === 'match' && room.phase !== 'lobby').length;
   const seconds = pilots ? RESTART_GRACE : 0;
   console.log(`stopping for a deploy: ${pilots} online, ${matches} matches, ${seconds}s grace`);
-  for (const socket of sockets) send(socket, { type: 'notice', tone: 'warn', text: `Update incoming. Server restarts in ${seconds}s. Your match will end.` });
+  // kind and seconds let a pilot in a match get this as a banner instead of a line in the feed, where
+  // it scrolls past in a firefight. Anything that does not know the fields still shows the text.
+  for (const socket of sockets) send(socket, { type: 'notice', tone: 'warn', kind: 'restart', seconds, text: `Update incoming. Server restarts in ${seconds}s. Your match will end.` });
   const posted = webhooks.announceRestart({ seconds, pilots, matches });
   // Never let a slow webhook hold the deploy up: leave when the grace period is over, posted or not.
   Promise.race([Promise.all([posted, new Promise((resolve) => setTimeout(resolve, seconds * 1000))]), new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 3000))]).then(shutdown);

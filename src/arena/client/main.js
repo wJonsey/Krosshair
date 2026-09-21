@@ -377,7 +377,27 @@ net.on('streak', (message) => {
   play(message.at >= 7 ? 'matchWin' : 'xp');
   feed(`${message.name} · ${message.desc}`, 'good');
 });
-net.on('notice', (message) => { feed(message.text, message.tone); if (message.tone === 'warn') play('deny', { volume: 0.6 }); });
+net.on('notice', (message) => {
+  // A restart ends the match you are in the middle of, so mid-game it takes the banner rather than a
+  // line in the feed. In the menus the feed is the right place for it.
+  if (message.kind === 'restart' && game.screen === 'game') {
+    hud.banner('SERVER RESTARTING', `Your match ends in ${message.seconds}s.`, 'UPDATE INCOMING', 'danger', Math.min(8000, (message.seconds || 5) * 1000));
+    play('deny', { volume: 0.6 });
+    return;
+  }
+  feed(message.text, message.tone);
+  if (message.tone === 'warn') play('deny', { volume: 0.6 });
+});
+
+// Crouch is Ctrl, so Ctrl+W lands on the tab close instead of the game more often than you would think.
+// The browser only offers this while you are actually in a match, and only after you have clicked in,
+// so it never nags anyone reading the menus.
+addEventListener('beforeunload', (event) => {
+  if (game.screen !== 'game') return;
+  event.preventDefault();
+  event.returnValue = '';
+  return '';
+});
 
 // ---------------------------------------------------------------- pause / leave
 document.addEventListener('pointerlockchange', () => {
