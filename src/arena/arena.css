@@ -1701,3 +1701,47 @@ button.cash-out .coins { color: var(--void); }
 .finish-card.away { opacity: .45; }
 .finish-card.away:hover { opacity: .75; }
 .state.item-only { color: var(--haze); font-size: 9px; letter-spacing: .08em; }
+
+/* ---------- social: friends, requests, party ---------- */
+.social-page { display: flex; flex-direction: column; gap: 14px; }
+.social-find .field { display: block; }
+.social-find .field span { display: block; margin-bottom: 6px; color: var(--graphite); font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.social-find input { width: 100%; padding: 10px 12px; border: 1px solid var(--hairline-strong); background: rgba(10, 14, 18, .6); color: var(--frost); outline: none; }
+.social-find input:focus { border-color: var(--signal); }
+
+.social-group { border: 1px solid var(--hairline); background: var(--glass); }
+.social-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 14px; border: 0; background: transparent; text-align: left; }
+.social-head b { font: 500 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--haze); }
+.social-head small { color: var(--ally); font: 500 11px/1 var(--mono); }
+.social-head .chev { margin-left: auto; color: var(--graphite); transition: transform .15s var(--ease); }
+.social-head:hover b { color: var(--frost); }
+.social-group.shut .chev { transform: rotate(-90deg); }
+.social-group.shut .social-body { display: none; }
+.social-body { border-top: 1px solid var(--hairline); }
+
+.social-row { display: grid; grid-template-columns: 32px 1fr auto auto; gap: 10px; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--hairline); }
+.social-row:last-child { border-bottom: 0; }
+.social-row.invite { background: rgba(255, 181, 71, .07); box-shadow: inset 2px 0 0 var(--signal); }
+.social-who { min-width: 0; }
+.social-who b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-who small { display: block; color: var(--graphite); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.social-flag { color: var(--signal); font: 700 14px/1 var(--body); font-style: normal; }
+.social-actions { display: flex; gap: 5px; }
+
+.party-panel .eyebrow small { color: var(--ally); margin-left: 6px; }
+.party-slots { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.party-slot { display: grid; grid-template-columns: 40px 1fr; grid-template-rows: auto auto; gap: 0 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--hairline); background: rgba(10, 14, 18, .45); }
+.party-slot .avatar { grid-row: 1 / span 2; }
+.party-slot b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.party-slot small { color: var(--graphite); font-size: 11px; }
+.party-slot.leader { border-color: rgba(255, 181, 71, .45); }
+.party-slot.leader small { color: var(--signal); }
+.party-slot.empty { grid-template-columns: 40px 1fr; color: var(--graphite); border-style: dashed; }
+.party-slot.empty i { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--hairline); font: 400 18px/1 var(--body); font-style: normal; }
+.party-slot .slot-actions { grid-column: 2; display: flex; gap: 5px; margin-top: 5px; }
+.party-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 900px) {
+  .social-row { grid-template-columns: 32px 1fr auto; }
+  .social-row .social-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}

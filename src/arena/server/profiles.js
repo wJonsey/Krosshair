@@ -231,7 +231,7 @@ export class ProfileStore {
       // be worked out here, and it is only ever sent to them.
       ...(profile.dev ? { itemRunway: runway() } : {}),
       coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], finishes: profile.finishes || [], pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
-      gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
+      gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,

@@ -15,6 +15,8 @@ import { RoyaleRoom } from './server/royale.js';
 import { ROYALE } from './shared/royale.js';
 import { installCatalogue, publicCatalogue } from './server/itemsets.js';
 import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
+import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as socialLists, normalize as normalizeFriends, reject as rejectFriend, relation, request as requestFriend, unblock as unblockPilot, unfriend } from './server/social.js';
+import { PartyBook } from './server/party.js';
 import { WAGER } from './shared/economy.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
@@ -64,6 +66,7 @@ const webhooks = new Webhooks({ root, stateFile: path.join(path.dirname(profiles
 const rooms = new Map();
 let roomCounter = 1;
 const sockets = new Set();
+const parties = new PartyBook();
 
 function send(socket, message) {
   if (socket.readyState === 1) socket.send(JSON.stringify(message));
@@ -199,30 +202,175 @@ function crashSettled(token, game) {
   for (const socket of sockets) if (socket.token === token && socket.account) send(socket, { type: 'coins-result', game, profile: profiles.view(token) });
 }
 
-// Friends: a short list of usernames for quick sending, shown with their picture, level and whether they're on.
-function friendView(name) {
-  const account = accounts.accounts.get(name.toLowerCase());
+// Friends: name, picture, level and where they are right now.
+function profileOf(name) {
+  const account = accounts.accounts.get(String(name || '').toLowerCase());
   if (!account) return null;
   const profile = profiles.profiles.get(ProfileStore.key(account.profileToken));
-  return { name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0), title: profile?.look?.title || 'Recruit', online: [...sockets].some((s) => s.account === account.username.toLowerCase()) };
+  return profile ? socialLists(profile) : null;
 }
-function handleFriends(socket, message) {
-  const profile = profiles.wallet(socket.token);
-  const list = (profile.friends ||= []);
-  const name = String(message.name || '').slice(0, 32);
-  let error = null;
-  if (message.action === 'add') {
-    const account = accounts.accounts.get(name.toLowerCase());
-    if (!account) error = 'No pilot with that name.';
-    else if (account.username.toLowerCase() === socket.account) error = 'That’s you.';
-    else if (list.some((friend) => friend.toLowerCase() === account.username.toLowerCase())) error = 'Already a friend.';
-    else if (list.length >= 50) error = 'Friends list is full.';
-    else { list.push(account.username); profiles.scheduleSave(); }
-  } else if (message.action === 'remove') {
-    profile.friends = list.filter((friend) => friend.toLowerCase() !== name.toLowerCase());
-    profiles.scheduleSave();
+function accountOf(name) { return accounts.accounts.get(String(name || '').toLowerCase()) || null; }
+function socketOf(name) {
+  const key = String(name || '').toLowerCase();
+  return [...sockets].find((other) => other.account === key) || null;
+}
+// Where a pilot is, in as few words as the menu can show.
+function presenceOf(name) {
+  const other = socketOf(name);
+  if (!other) return { online: false, where: 'Offline' };
+  if (!other.room) return { online: true, where: parties.of(name)?.members.length > 1 ? 'In a party' : 'In the menu' };
+  const room = other.room;
+  const queue = room.royale ? 'Royale' : String(room.queue || 'match').toUpperCase();
+  return { online: true, where: room.phase === 'lobby' ? `${queue} lobby` : `Playing ${queue}`, room: room.name };
+}
+function pilotView(name, viewer = null) {
+  const account = accountOf(name);
+  if (!account) return null;
+  const profile = profiles.profiles.get(ProfileStore.key(account.profileToken));
+  return {
+    name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0),
+    title: profile?.look?.title || 'Recruit', ...presenceOf(account.username),
+    relation: viewer ? relation(viewer, account.username) : 'none',
+  };
+}
+function partyView(party) {
+  if (!party) return null;
+  return {
+    id: party.id, leader: party.leader, limit: parties.limit, queued: party.queued || null,
+    members: party.members.map((member) => ({
+      ...pilotView(member), ready: parties.isLeader(party, member) || party.ready.has(member.toLowerCase()),
+      leader: parties.isLeader(party, member),
+    })).filter(Boolean),
+  };
+}
+// Everything the Social page draws, in one message.
+function socialView(socket) {
+  const me = profiles.wallet(socket.token);
+  socialLists(me);
+  if (normalizeFriends(me, socket.name, profileOf)) profiles.scheduleSave();
+  const view = (name) => pilotView(name, me);
+  const seen = new Set([...me.friends, ...me.requestsIn, ...me.requestsOut, ...me.blocked].map((n) => n.toLowerCase()));
+  return {
+    friends: me.friends.map(view).filter(Boolean).sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
+    requestsIn: me.requestsIn.map(view).filter(Boolean),
+    requestsOut: me.requestsOut.map(view).filter(Boolean),
+    blocked: me.blocked.map(view).filter(Boolean),
+    // Pilots you have played against and not dealt with yet.
+    recent: (me.recent || []).filter((name) => !seen.has(name.toLowerCase())).map(view).filter(Boolean).slice(0, 8),
+    party: partyView(parties.ensure(socket.name)),
+  };
+}
+function pushSocial(socket) {
+  if (socket && socket.account && socket.readyState === 1) send(socket, { type: 'social', ...socialView(socket) });
+}
+function pushSocialTo(name) { const other = socketOf(name); if (other) pushSocial(other); }
+function tellFriends(name) {
+  const key = String(name).toLowerCase();
+  for (const other of sockets) {
+    if (!other.account || other.readyState !== 1 || other.account === key) continue;
+    const profile = profiles.profiles.get(ProfileStore.key(other.token));
+    if (profile?.friends?.some((friend) => friend.toLowerCase() === key)) pushSocial(other);
   }
-  send(socket, { type: 'friends-result', error, friends: (profile.friends || []).map(friendView).filter(Boolean), profile: profiles.view(socket.token) });
+}
+function pushParty(party) {
+  if (!party) return;
+  for (const member of party.members) pushSocialTo(member);
+}
+function tell(name, text, tone = 'info') {
+  const other = socketOf(name);
+  if (other) send(other, { type: 'notice', tone, text });
+}
+
+function handleFriends(socket, message) {
+  const me = profiles.wallet(socket.token);
+  socialLists(me);
+  if (message.action === 'list') return void pushSocial(socket);
+  const name = String(message.name || '').slice(0, 32);
+  const account = accountOf(name);
+  const other = account && profileOf(account.username);
+  if (!account || !other) return send(socket, { type: 'friends-result', error: 'No pilot with that name.', ...socialView(socket) });
+  const them = account.username;
+  const actions = {
+    add: () => requestFriend(me, socket.name, other, them),
+    accept: () => acceptFriend(me, socket.name, other, them),
+    reject: () => rejectFriend(me, socket.name, other, them),
+    remove: () => unfriend(me, socket.name, other, them),
+    block: () => blockPilot(me, socket.name, other, them),
+    unblock: () => unblockPilot(me, socket.name, other, them),
+  };
+  const run = actions[message.action];
+  if (!run) return;
+  const result = run();
+  if (result.ok) {
+    // Blocking has to break the party too, or a blocked pilot is still sitting in it.
+    if (result.kind === 'blocked') {
+      const party = parties.of(socket.name);
+      if (parties.has(party, them)) { parties.leave(party, them); tell(them, 'You were removed from the party.', 'bad'); pushParty(party); }
+    }
+    profiles.scheduleSave();
+    if (result.tell) tell(them, result.tell, 'good');
+    pushSocialTo(them);
+  }
+  send(socket, { type: 'friends-result', error: result.error || null, note: result.note || null, ...socialView(socket) });
+}
+
+function handleParty(socket, message) {
+  const party = parties.ensure(socket.name);
+  const name = String(message.name || '').slice(0, 32);
+  const account = name ? accountOf(name) : null;
+  const them = account?.username || null;
+  const fail = (error) => send(socket, { type: 'party-result', error, ...socialView(socket) });
+
+  if (message.action === 'invite') {
+    if (!them) return fail('No pilot with that name.');
+    const other = profileOf(them);
+    const me = profiles.wallet(socket.token);
+    if (!other || blockedEitherWay(me, other, socket.name, them)) return fail('You cannot invite that pilot.');
+    if (!socketOf(them)) return fail('They are offline.');
+    const result = parties.invite(party, them);
+    if (result.error) return fail(result.error);
+    send(socketOf(them), { type: 'party-invite', id: party.id, from: pilotView(socket.name), size: party.members.length });
+    return send(socket, { type: 'party-result', note: `Invite sent to ${them}.`, ...socialView(socket) });
+  }
+  if (message.action === 'join') {
+    const target = parties.get(String(message.id || ''));
+    if (!target) return fail('That party has gone.');
+    if (!parties.invited(target, socket.name)) return fail('You were not invited.');
+    const leaderProfile = profileOf(target.leader);
+    const me = profiles.wallet(socket.token);
+    if (leaderProfile && blockedEitherWay(me, leaderProfile, socket.name, target.leader)) return fail('You cannot join that party.');
+    const before = parties.of(socket.name);
+    const result = parties.join(target, socket.name);
+    if (result.error) return fail(result.error);
+    for (const member of target.members) if (member !== socket.name) tell(member, `${socket.name} joined the party`);
+    pushParty(target);
+    if (before && before !== target) pushParty(before);
+    return void pushSocial(socket);
+  }
+  if (message.action === 'leave') {
+    const left = parties.leave(party, socket.name);
+    if (left) { for (const member of left.members) tell(member, `${socket.name} left the party`); pushParty(left); }
+    parties.ensure(socket.name);
+    return void pushSocial(socket);
+  }
+  if (message.action === 'kick') {
+    const result = parties.kick(party, socket.name, them || name);
+    if (result.error) return fail(result.error);
+    tell(them || name, 'You were removed from the party.', 'bad');
+    pushSocialTo(them || name);
+    pushParty(party);
+    return void pushSocial(socket);
+  }
+  if (message.action === 'promote') {
+    const result = parties.promote(party, socket.name, them || name);
+    if (result.error) return fail(result.error);
+    pushParty(party);
+    return void pushSocial(socket);
+  }
+  if (message.action === 'ready') {
+    parties.setReady(party, socket.name, message.ready !== false);
+    return void pushParty(party);
+  }
 }
 
 function signIn(socket, account, message, session = null) {
@@ -239,6 +387,9 @@ function signIn(socket, account, message, session = null) {
   profiles.scheduleSave();
   if (socket.player) { socket.player.name = account.username; socket.room.pushRoom(); }
   send(socket, { type: 'identity', username: account.username, avatar: avatarOf(account), session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
+  parties.ensure(account.username);
+  pushSocial(socket);
+  tellFriends(account.username);
 }
 
 async function handleAuth(socket, message) {
@@ -458,6 +609,11 @@ function leaveRoom(socket, deliberate = false) {
   if (socket.room && socket.player) socket.room.leave(socket.player, deliberate);
   socket.room = null;
   socket.player = null;
+  if (!socket.account) return;
+  // Once nobody is left in the match, the party can queue again.
+  const party = parties.of(socket.name);
+  if (party?.queued && !party.members.some((member) => socketOf(member)?.room)) { parties.setQueued(party, null); pushParty(party); }
+  tellFriends(socket.name);
 }
 
 const RANKED_LOGIN = 'Ranked needs a Discord login.';
@@ -502,9 +658,28 @@ function enter(socket, message) {
     if (!room) room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic) });
   }
   if (message.difficulty && room.queue === 'bots') room.rules.botDifficulty = ['recruit', 'veteran', 'elite'].includes(message.difficulty) ? message.difficulty : 'veteran';
+  if (!place(socket, room, message)) return;
+  // A party follows its leader in. Anyone who cannot be seated is told, and stays in the menu.
+  const party = socket.account ? parties.of(socket.name) : null;
+  if (party && parties.isLeader(party, socket.name) && party.members.length > 1 && action !== 'rejoin') {
+    parties.setQueued(party, room.name);
+    for (const member of party.members) {
+      if (member === socket.name) continue;
+      const mate = socketOf(member);
+      if (!mate || !mate.identified) { tell(member, 'You were not taken into the match.', 'bad'); continue; }
+      leaveRoom(mate, true);
+      if (!place(mate, room, { look: mate.lastLook || {} })) tell(member, 'That room filled up before you got in.', 'bad');
+    }
+    pushParty(party);
+  }
+}
+// Seat one socket in a room. Returns false when the room is full.
+function place(socket, room, message) {
   const look = profiles.sanitizeCosmetics(socket.token, message.look || {});
+  socket.lastLook = message.look || socket.lastLook || {};
   const player = room.join(socket, { token: socket.token, session: socket.session, name: socket.name }, look);
-  if (!player) send(socket, { type: 'error', message: 'Room full.' });
+  if (!player) { send(socket, { type: 'error', message: 'Room full.' }); return false; }
+  return true;
 }
 
 wss.on('connection', (socket) => {
@@ -558,6 +733,8 @@ wss.on('connection', (socket) => {
       if (message.type === 'feedback') return void saveFeedback(socket, message);
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
       if (['shop', 'game', 'crash', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
+      if (message.type === 'party') { if (!socket.account) return send(socket, { type: 'party-result', error: 'Log in to use parties.' }); return handleParty(socket, message); }
+      if (message.type === 'social' && socket.account) return void pushSocial(socket);
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
       if (message.type === 'dev-online') return sendOnline(socket);
       if (message.type === 'enter') return enter(socket, message);
@@ -572,7 +749,17 @@ wss.on('connection', (socket) => {
       console.error('message failed', message.type, error);
     }
   });
-  socket.on('close', () => { sockets.delete(socket); leaveRoom(socket); dropGuest(socket); });
+  socket.on('close', () => {
+    const name = socket.account ? socket.name : null;
+    sockets.delete(socket);
+    leaveRoom(socket);
+    dropGuest(socket);
+    if (!name) return;
+    // Their party carries on without them, and their friends see them go.
+    const party = parties.of(name);
+    if (party) { parties.leave(party, name); pushParty(party); }
+    tellFriends(name);
+  });
   socket.on('error', () => {});
 });
 
