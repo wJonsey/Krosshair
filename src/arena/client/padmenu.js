@@ -75,7 +75,13 @@ function back() {
 
 export function initPadMenu() {
   let prev = new Set(), wait = 0, held = false, last = performance.now();
+  // Nothing runs until a pad actually exists. Most pilots are on a mouse, and a loop that polls every
+  // frame for hardware nobody has is work the frame did not need.
+  let pads = 0;
+  addEventListener('gamepadconnected', () => { pads += 1; if (pads === 1) requestAnimationFrame(frame); });
+  addEventListener('gamepaddisconnected', () => { pads = Math.max(0, pads - 1); });
   const frame = () => {
+    if (!pads) return;
     requestAnimationFrame(frame);
     const now = performance.now();
     const dt = Math.min(0.1, (now - last) / 1000);
@@ -102,5 +108,6 @@ export function initPadMenu() {
     if (tapped('Pad5')) tab(1);
     prev = down;
   };
-  requestAnimationFrame(frame);
+  // A pad plugged in before this page loaded fires no event, so check once for one already there.
+  if ([...(navigator.getGamepads?.() || [])].some(Boolean)) { pads = 1; requestAnimationFrame(frame); }
 }
