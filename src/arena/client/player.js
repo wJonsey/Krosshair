@@ -626,10 +626,9 @@ export class LocalPlayer {
     if (jump && !this.jumpHeld) this.jumpPressedAt = now;
     this.jumpHeld = jump;
     if (body.onGround) this.leftGroundAt = -1; else if (this.leftGroundAt < 0) this.leftGroundAt = now;
-    // Auto bhop holds the rhythm for you; without it the press has to be its own.
-    const asked = game.settings.autoBhop === false
-      ? this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer
-      : jump;
+    // Every hop is its own press: holding jump does not hop for you, because the timing is the skill.
+    // The buffer is what keeps that fair, asking a moment early still fires the instant you land.
+    const asked = this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer;
     const footing = body.onGround || (this.leftGroundAt >= 0 && now - this.leftGroundAt <= BODY.coyoteTime && body.vy <= 0);
     if (asked && footing && (!this.crouching || sliding)) {
       // Out of a slide it is a low fast arc that keeps the speed. Stand up first and you get the full
