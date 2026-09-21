@@ -14,6 +14,7 @@ import { Room, now } from './server/room.js';
 import { RoyaleRoom } from './server/royale.js';
 import { ROYALE } from './shared/royale.js';
 import { installCatalogue, publicCatalogue } from './server/itemsets.js';
+import { getMap } from './shared/map.js';
 import { OutageBook } from './server/outage.js';
 import { cleanReason, outageLine, OUTAGE_KINDS } from './shared/outage.js';
 import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
@@ -796,7 +797,7 @@ wss.on('connection', (socket) => {
         for (const other of sockets) send(other, { type: 'outages', outages: view });
         // Told plainly, and only after the list is saved and sent: a developer should never be left
         // wondering whether it actually went out.
-        const label = kind === 'weapon' ? (WEAPONS[id]?.name || id) : id;
+        const label = kind === 'weapon' ? (WEAPONS[id]?.name || id) : (getMap(id)?.title || id);
         const heard = sockets.size;
         send(socket, { type: 'outage-done', kind, id, on: result.on,
           text: result.on ? `${label} is pulled. ${heard} ${heard === 1 ? 'pilot has' : 'pilots have'} been told.` : `${label} is back in the game.` });
