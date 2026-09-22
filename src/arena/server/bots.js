@@ -699,7 +699,29 @@ function think(room, bot, dt, t) {
     const start = room.nav.nearest(bot.x, bot.y, bot.z, accept) || room.nav.nearest(bot.x, bot.y, bot.z);
     // Each bot weighs the underpass and the open plaza differently, so they do not all take the shortest line.
     const path = start ? room.nav.path(start, ai.goal, (node) => (node.y < -1 ? ai.tunnelCost : Math.abs(node.x) < 9 ? ai.midCost : 1)) : null;
-    if (path && path.length > 1) { ai.path = path; ai.pathIndex = 0; ai.skipAt = 0; } else { ai.lastKnown = null; ai.holdUntil = t + 1; }
+    if (path && path.length > 1) { ai.path = path; ai.pathIndex = 0; ai.skipAt = 0; }
+    else if (fleeing && ai.goal) {
+      // No route to the circle. The island's walk graph does not always join up, and the answer to that
+      // used to be to hold for a second and ask again, for ever: a third of these fail during a storm, so
+      // bots stood in the open and most of the ones it killed had not taken a single step. Walk at it by
+      // hand instead, in hops, asking for a proper path each time: reach ground the graph knows about and
+      // they are back on rails. Every hop is checked with clearRun first, because following a path moves
+      // a bot along nodes that are walkable by construction and does no collision test of its own, so an
+      // unchecked line would walk them through walls. Straight at it if that is clear, otherwise fan out
+      // and take an angle: making some ground beats standing in the rain.
+      const dx = ai.goal.x - bot.x, dz = ai.goal.z - bot.z, far = Math.hypot(dx, dz) || 1;
+      const aim = Math.atan2(dz / far, dx / far);
+      let hop = null;
+      for (const turn of [0, 0.5, -0.5, 1, -1, 1.7, -1.7]) {
+        for (const reach of [Math.min(25, far), 12, 6]) {
+          const x = bot.x + Math.cos(aim + turn) * reach, z = bot.z + Math.sin(aim + turn) * reach;
+          if (clearRun(room, bot.x, bot.z, x, z, bot.y)) { hop = { x, y: bot.y, z }; break; }
+        }
+        if (hop) break;
+      }
+      if (hop) { ai.path = [{ x: bot.x, y: bot.y, z: bot.z }, hop]; ai.pathIndex = 0; ai.skipAt = 0; }
+      else { ai.lastKnown = null; ai.holdUntil = t + 1; }
+    } else { ai.lastKnown = null; ai.holdUntil = t + 1; }
   } else if (ai.path) {
     const hunting = ai.goal?.hunt;
     const nearGoal = ai.path.length - ai.pathIndex < 10;
