@@ -121,7 +121,10 @@ function leaveToHome() {
 
 net.on('welcome', (message) => {
   game.id = message.id;
-  game.watching = null;
+  // Set here rather than from a message of its own: spectate is picked up off the first room state,
+  // which would arrive before a separate one and leave the watcher with nothing to look at.
+  game.watching = message.watching ? message.room : null;
+  if (game.watching) toast(`Watching ${message.room}. You are not in this match.`, 'info');
   game.serverWeapons = Array.isArray(message.weapons) ? message.weapons : ['m44', 'recon', 'wasp', 'breaker', 'p9', 'viper', 'knife'];
   net.holdRoom(message.room);
   operators.clear();
@@ -136,12 +139,6 @@ net.on('welcome', (message) => {
   arena.setBarriers(Boolean(message.barriers));
   checkMapPrint(message.map, message.mapPrint);
   if (message.reconnected) toast('Reconnected.', 'good');
-});
-// Watching someone else's match from the dev card. The seat plays nothing and the match is never told
-// it is there, so the only thing to do here is say so.
-net.on('watching', (message) => {
-  game.watching = message.room;
-  toast(`Watching ${message.room}. You are not in this match.`, 'info');
 });
 const isEnemyTeam = (team) => team !== (game.roster.get(game.id)?.team || 'A');
 

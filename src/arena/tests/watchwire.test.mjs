@@ -101,9 +101,9 @@ test('a developer can watch a match, and the match is never told', async () => {
     const name = card.rooms[0].name;
 
     Dev.send({ type: 'dev-watch', room: name });
-    const watching = await Dev.settle('watching');
-    assert.equal(watching.room, name, 'the dev was told which match they are in');
-    await Dev.settle('welcome', (m) => m.room === name, 8000);
+    // The flag rides on welcome, so it cannot land after the room state that starts the spectate.
+    const welcome = await Dev.settle('welcome', (m) => m.room === name, 8000);
+    assert.equal(welcome.watching, true, 'the dev was not told they are watching, so they get no targets');
     await Dev.settle('room');
 
     // What the pilot is shown must not have changed.
@@ -111,6 +111,23 @@ test('a developer can watch a match, and the match is never told', async () => {
     assert.ok(!after.players.some((p) => p.name === 'Dev'), 'the watcher appeared on the pilot’s scoreboard');
     assert.equal(after.players.filter((p) => !p.bot).length, 1, 'the watcher counted as a human in the match');
     assert.ok(!Pilot.inbox.some((m) => m.type === 'feed' && /Dev joined/.test(m.text || '')), 'the match was told the watcher arrived');
+
+    // And nothing the pilot has ever been sent names the watcher or carries their id.
+    const seen = JSON.stringify(Pilot.inbox);
+    assert.ok(!seen.includes('"Dev"'), 'the watcher was named in something the pilot received');
+    Dev.socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    assert.ok(!Pilot.inbox.some((m) => m.type === 'gone' && !after.players.some((p) => p.id === m.id)),
+      'the pilot was sent a gone for somebody who was never in the match');
+  } finally { stop(); }
+});
+
+test('an ordinary join is not marked as watching', async () => {
+  const { Pilot, stop } = await arena();
+  try {
+    Pilot.send({ type: 'enter', action: 'quick', queue: 'casual' });
+    const welcome = await Pilot.settle('welcome');
+    assert.equal(welcome.watching, false, 'a real player was told they are only watching');
   } finally { stop(); }
 });
 

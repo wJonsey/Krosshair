@@ -141,3 +141,56 @@ test('a watcher is not dealt into a round', async () => {
   assert.ok(player.alive, 'the real player should have spawned, or this proves nothing');
   room.close();
 });
+
+// The catch-all. Rather than reasoning channel by channel about what might leak, run the match twice,
+// once with a watcher and once without, and check that nothing the player is sent ever mentions them.
+// A distinctive name and the real id are searched for across every message, so a leak through a field
+// nobody thought about still fails this.
+const MARK = 'ZzWatcherZz';
+
+async function playedOut(withWatcher) {
+  const { room } = await makeRoom();
+  const socket = fakeSocket();
+  const player = room.join(socket, hello('A'), look);
+  const watcher = withWatcher ? room.watch(fakeSocket(), hello(MARK), look) : null;
+  socket.sent.length = 0;
+  // A scripted match: a round starts, positions go out, the scoreboard is pushed, someone dies.
+  room.startRound();
+  room.pushRoom();
+  room.snapshot(1);
+  if (watcher) room.leave(watcher, false);
+  room.pushRoom();
+  room.snapshot(2);
+  const sent = socket.sent;
+  room.close();
+  return { sent, watcher, player };
+}
+
+test('nothing the match is sent ever mentions a watcher', async () => {
+  const { sent, watcher } = await playedOut(true);
+  const raw = JSON.stringify(sent);
+  assert.ok(raw.length > 50, 'the player was sent something, or this proves nothing');
+  assert.ok(!raw.includes(MARK), 'the watcher was named in something the match received');
+  assert.ok(!raw.includes(`"${watcher.id}"`), `the watcher id ${watcher.id} reached the match`);
+});
+
+test('a match plays out the same whether or not it is being watched', async () => {
+  const shape = (sent) => sent.map((message) => message.type).join(',');
+  const alone = await playedOut(false);
+  const watched = await playedOut(true);
+  assert.equal(shape(watched.sent), shape(alone.sent), 'a watcher changed what the match was sent');
+  // And the counts a player can actually read on screen are untouched.
+  const roster = (run) => run.sent.filter((m) => m.type === 'room').map((m) => m.players.length).join(',');
+  assert.equal(roster(watched), roster(alone), 'a watcher changed the size of the roster');
+});
+
+// A watcher is deliberately absent from the roster, so asking for their team gives undefined and
+// matching players against it finds nobody. Without widening the list, watching a match shows an empty
+// sky: the seat works perfectly and there is nothing to look at.
+test('a watcher can follow both sides, a dead player still only their own', () => {
+  const source = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  const fn = source.slice(source.indexOf('  spectateTargets() {'), source.indexOf('  cycleSpectate('));
+  assert.match(fn, /const everyone = Boolean\(game\.watching\) \|\| game\.room\?\.royale/, 'watching widens the list');
+  assert.match(fn, /everyone \|\| p\.team === team/, 'and a dead player in their own match still follows their own side');
+  assert.match(fn, /p\.alive/, 'you can only follow someone who is alive');
+});

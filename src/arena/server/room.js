@@ -237,13 +237,12 @@ export class Room {
     this.players.set(player.id, player);
     socket.player = player; socket.room = this;
     this.welcome(player, false);
-    this.send(player, { type: 'watching', room: this.name, queue: this.queue });
     return player;
   }
 
   welcome(player, reconnected) {
     this.send(player, {
-      type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
+      type: 'welcome', id: player.id, room: this.name, reconnected, watching: Boolean(player.watching), serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
       weapons: Object.keys(WEAPONS), broken: [...this.world.disabled], shields: [...this.shields.values()].map((s) => s.view), barriers: this.barriersUp,
     });
     this.send(player, this.roomState());
@@ -273,7 +272,9 @@ export class Room {
     if (player.drone) this.endDrone(player, false);
     this.players.delete(player.id);
     this.rematch.delete(player.id);
-    this.broadcast({ type: 'gone', id: player.id });
+    // A watcher was never announced, so it cannot be un-announced: a `gone` for an id the match has
+    // never heard of is still the match being told somebody was there.
+    if (!player.watching) this.broadcast({ type: 'gone', id: player.id });
     if (this.live && this.mode === 'match') this.checkRoundEnd();
   }
 

@@ -302,7 +302,11 @@ export class LocalPlayer {
 
   spectateTargets() {
     const team = game.roster.get(game.id)?.team;
-    return [...game.roster.values()].filter((p) => p.id !== game.id && p.alive && (p.team === team || game.room?.royale) && this.operators.poseOf(p.id)).map((p) => p.id);
+    // Dead in your own match you follow your own side. Watching someone else's there is no side to be
+    // on, and a watcher is deliberately not in the roster, so asking for their team gives nothing to
+    // match and the list comes back empty.
+    const everyone = Boolean(game.watching) || game.room?.royale;
+    return [...game.roster.values()].filter((p) => p.id !== game.id && p.alive && (everyone || p.team === team) && this.operators.poseOf(p.id)).map((p) => p.id);
   }
   cycleSpectate(step) {
     const list = this.spectateTargets();
