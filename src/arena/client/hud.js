@@ -3,6 +3,7 @@
 import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIONS, VARIANT_NAMES, WEAPONS, masteryTier, WEAPON_CLASSES, weaponClass } from '../shared/constants.js';
 import { zoneAt } from '../shared/map.js';
 import { outageReason } from '../shared/outage.js';
+import { resolveWeapon } from '../shared/attachments.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
 import { bindLabel, bindsFor, codeLabel, isBound, input, padBindFor } from './input.js';
@@ -21,6 +22,11 @@ const setFlag = (node, name, on) => { const key = `__f_${name}`; if (node[key] !
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const PHASE_LABEL = { buy: 'BUY PHASE', live: 'LIVE', overtime: 'SUDDEN DEATH', roundEnd: 'ROUND OVER', matchEnd: 'MATCH OVER', range: 'PRACTICE RANGE', lobby: 'LOBBY' };
 const WEAPON_SHORT = new Proxy({}, { get: (_, id) => WEAPONS[id]?.short || WEAPONS[id]?.name?.toUpperCase() });
+
+// The gun as this pilot built it: what the armoury will actually charge and hand over. The server sends
+// no builds at all in royale or with the gunsmith pulled, so reading whatever it sent matches how it
+// prices a gun without the rule being written out twice and drifting.
+const built = (id) => (id ? resolveWeapon(id, game.you?.builds?.[id]) || WEAPONS[id] || null : null);
 
 export class Hud {
   constructor({ player, arena, operators }) {
@@ -328,7 +334,7 @@ export class Hud {
       if (this.buyFocus === row.dataset.item) return;
       this.buyFocus = row.dataset.item;
       const inspect = this.dom.buy.querySelector('.inspect');
-      if (inspect) inspect.outerHTML = this.inspectHtml(WEAPONS[this.buyFocus]);
+      if (inspect) inspect.outerHTML = this.inspectHtml(built(this.buyFocus));
       this.dom.buy.querySelectorAll('.arm-row').forEach((other) => other.classList.toggle('focus', other.dataset.item === this.buyFocus));
     } else {
       const caption = this.dom.buy.querySelector('.gear-caption');
@@ -364,7 +370,7 @@ export class Hud {
     const bought = new Set(you.bought || []);
     // A relay running older code silently ignores guns it has never heard of, so only offer what it knows.
     const served = game.serverWeapons;
-    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee && (!served || served.includes(weapon.id)));
+    const weapons = Object.values(WEAPONS).filter((weapon) => !weapon.melee && (!served || served.includes(weapon.id))).map((weapon) => built(weapon.id));
     const missing = Object.values(WEAPONS).filter((weapon) => !weapon.melee).length - weapons.length;
     if (!weapons.some((weapon) => weapon.id === this.buyFocus)) this.buyFocus = you.weapons.primary || you.weapons.sidearm;
     if (!WEAPON_CLASSES.some((c) => c.id === this.buyTab)) this.buyTab = weaponClass(WEAPONS[this.buyFocus]);
@@ -375,7 +381,7 @@ export class Hud {
       const refundable = owned && weapon.cost > 0 && (bought.has(`slot:${weapon.slot}`) || free);
       // A gun pulled by a developer stays on the shelf, greyed, so it is obvious it is gone and not lost.
       const pulled = game.outages?.weapon?.[weapon.id] || null;
-      const locked = Boolean(pulled) || (!owned && !free && you.credits + (bought.has(`slot:${weapon.slot}`) ? WEAPONS[you.weapons[weapon.slot]].cost : 0) < weapon.cost) || (weapon.slot === 'primary' && modifier === 'sidearms');
+      const locked = Boolean(pulled) || (!owned && !free && you.credits + (bought.has(`slot:${weapon.slot}`) ? built(you.weapons[weapon.slot])?.cost || 0 : 0) < weapon.cost) || (weapon.slot === 'primary' && modifier === 'sidearms');
       const state = pulled ? 'Temporarily removed' : owned ? (refundable ? 'Equipped · refund' : 'Equipped') : locked ? 'Locked' : 'Buy';
       return `<button type="button" class="arm-row${owned ? ' owned' : ''}${refundable ? ' refundable' : ''}${locked ? ' locked' : ''}${pulled ? ' pulled' : ''}${weapon.id === this.buyFocus ? ' focus' : ''}" data-item="${weapon.id}" ${pulled ? `title="${escapeHtml(outageReason(pulled))}"` : ''}>
         <img src="${weaponArt(weapon.id)}" alt="" /><span class="arm-name">${weapon.name}</span><span class="arm-cost">${cost(weapon.cost)}</span><span class="arm-state">${state}</span></button>`;
@@ -400,7 +406,7 @@ export class Hud {
           ${shown.map(weaponRow).join('')}
           ${missing ? `<p class="arsenal-note">${missing} more after the next update.</p>` : ''}
         </nav>
-        ${this.inspectHtml(WEAPONS[this.buyFocus])}
+        ${this.inspectHtml(built(this.buyFocus))}
       </div>
       <div class="gear">
         <div><h3>Armour</h3><div class="gear-row">${['light', 'heavy', 'helmet'].map((id) => gearChip(id, ARMOR[id].name, ARMOR[id].cost, ARMOR[id].desc, armorOwned(id), bought.has(id === 'helmet' ? 'helmet' : 'armor') && armorOwned(id))).join('')}</div></div>

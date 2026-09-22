@@ -113,6 +113,55 @@ test('the armoury charges for what is bolted on', async () => {
   room.close();
 });
 
+// The price the armoury shows and the price it charges are worked out in different files, and only the
+// charging end was ever tested. The menu read the base weapon straight out of WEAPONS, so a gun with
+// attachments on it advertised the bare price, let you click Buy, and the server then refused it for
+// not having enough credits. The gun said 1000 and cost 1700.
+test('the armoury shows the price it is going to charge', async () => {
+  const { room } = await makeRoom();
+  const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  const build = { ...emptyBuild(), optic: 'longscope', mag: 'drum' };
+  player.builds = { talon: build };
+  room.phase = 'buy';
+  player.alive = true;
+  player.credits = 9000;
+  // What the buy menu puts on the row, worked out the way hud.js works it out.
+  const shown = resolveWeapon('talon', player.builds.talon).cost;
+  const before = player.credits;
+  room.buy(player, 'talon');
+  assert.equal(player.weapons.primary, 'talon', 'the gun was not handed over');
+  assert.equal(before - player.credits, shown, `the menu said ${shown} and the armoury took ${before - player.credits}`);
+  assert.ok(shown > WEAPONS.talon.cost, 'this build must cost more than the bare gun, or the test proves nothing');
+  room.close();
+});
+
+// Afford the built price and you can buy it; afford only the bare price and the row must not invite you.
+test('a gun you cannot afford with its attachments is not offered at the bare price', async () => {
+  const { room } = await makeRoom();
+  const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  const build = { ...emptyBuild(), optic: 'longscope', mag: 'drum' };
+  player.builds = { talon: build };
+  room.phase = 'buy';
+  player.alive = true;
+  const shown = resolveWeapon('talon', build).cost;
+  player.credits = WEAPONS.talon.cost; // exactly the bare price, which is what the menu used to advertise
+  assert.ok(player.credits < shown, 'the bare price must be short of the built price for this to mean anything');
+  room.buy(player, 'talon');
+  assert.notEqual(player.weapons.primary, 'talon', 'the server let it through at the bare price');
+  assert.equal(player.credits, WEAPONS.talon.cost, 'and took nothing');
+  room.close();
+});
+
+// The wiring, since the arithmetic above passes whether or not the menu actually calls it.
+test('the buy menu prices and describes a gun as it was built', () => {
+  const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
+  const menu = hud.slice(hud.indexOf('  renderBuy()'), hud.indexOf('scoreboardHtml'));
+  assert.match(hud, /const built = \(id\) => \(id \? resolveWeapon\(id, game\.you\?\.builds\?\.\[id\]\)/, 'the resolver reads whatever builds the server sent');
+  assert.match(menu, /\.map\(\(weapon\) => built\(weapon\.id\)\)/, 'every row is priced from the built gun');
+  assert.ok(!/WEAPONS\[you\.weapons\[weapon\.slot\]\]\.cost/.test(menu), 'the refund must be what you paid, attachments included');
+  assert.match(menu, /inspectHtml\(built\(this\.buyFocus\)\)/, 'the stat panel shows the built gun, not the bare one');
+});
+
 test('battle royale ignores builds entirely', async () => {
   const { room } = await makeRoom();
   const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
