@@ -692,3 +692,50 @@ test('every setting the browser can set is allowed through', async () => {
     assert.ok(keys.includes(key), `${key} is whitelisted but is not a setting any more`);
   }
 });
+
+// The magazine attachments were handed over correctly and then quietly taken away again: refillAmmo
+// and finishReload both read WEAPONS straight off the table instead of the gun the pilot built, so a
+// drum held its rounds until the very first reload and every respawn put the stock magazine back.
+// refillAmmo runs on join, round start, every spawn, the dev refill and the ammo streak, so in
+// practice an extended magazine worked once and never again.
+test('an extended magazine survives a reload and a respawn', async () => {
+  const { room } = await makeRoom();
+  const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  const build = { ...emptyBuild(), mag: 'drum' };
+  player.builds = { talon: build };
+  room.phase = 'buy';
+  player.alive = true;
+  player.credits = 9000;
+  room.buy(player, 'talon');
+  const built = resolveWeapon('talon', build);
+  assert.ok(built.mag > WEAPONS.talon.mag, `a drum must hold more than ${WEAPONS.talon.mag}, or this proves nothing`);
+  assert.equal(player.ammo.primary.mag, built.mag, 'the gun was not handed over with its drum');
+
+  // Firing it down and reloading must fill the drum, not the magazine it came with.
+  player.active = 'primary';
+  player.ammo.primary.mag = 1;
+  player.reloadSlot = 'primary';
+  room.finishReload(player);
+  assert.equal(player.ammo.primary.mag, built.mag, 'the reload filled to the stock magazine');
+
+  // And a respawn hands the drum back, not the stock one.
+  room.refillAmmo(player);
+  assert.equal(player.ammo.primary.mag, built.mag, 'a respawn put the stock magazine back');
+  assert.equal(player.ammo.primary.reserve, built.reserve, 'and the wrong reserve with it');
+  room.close();
+});
+
+// Royale takes guns off the floor and the gunsmith can be pulled, so the refill has to go through the
+// same gate as everything else rather than resolving builds on its own.
+test('a refill respects the rules about when builds apply', async () => {
+  const { room } = await makeRoom();
+  const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+  player.weapons.primary = 'talon';
+  player.builds = { talon: { ...emptyBuild(), mag: 'drum' } };
+  room.refillAmmo(player);
+  assert.ok(player.ammo.primary.mag > WEAPONS.talon.mag, 'normally the build counts');
+  player.builds = null; // what royale and a pulled gunsmith leave behind
+  room.refillAmmo(player);
+  assert.equal(player.ammo.primary.mag, WEAPONS.talon.mag, 'with no builds it is the stock gun');
+  room.close();
+});

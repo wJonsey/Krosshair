@@ -423,3 +423,43 @@ test('every crate has a model style, every charm a maker, every gear option a mo
   const patterns = skins.slice(skins.indexOf('const PATTERN_ART = {'), skins.indexOf('\n};', skins.indexOf('const PATTERN_ART = {')));
   for (const item of COSMETICS.pattern) if (item.id !== 'solid') assert.match(patterns, new RegExp(`\\n  ${item.id}: `), `${item.id} pattern has no painter`);
 });
+
+// The trade-up picker kept a list of finish ids, but one branch read trade[0].finish off a string.
+// finishInfo(undefined) is null, so picking a second skin threw inside the click handler and nothing
+// was ever added: you could select exactly one skin, for ever, and the feature looked dead.
+test('picking a second skin for a trade-up does not throw', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.ok(!/finishInfo\(trade\[0\]\.finish\)/.test(shop), 'trade holds finish ids, not objects, so .finish on one is undefined');
+  assert.match(shop, /finishInfo\(trade\[0\]\)\.rarity/, 'the rarity of the first pick is read off the id');
+  // The list really is ids: this is what makes the above the right shape.
+  assert.match(shop, /trade\.push\(finish\)/, 'ids go in');
+  assert.match(shop, /trade\.indexOf\(finish\)/, 'and ids come out');
+});
+
+// finishInfo(null) is null, so any branch that reaches through it needs the guard.
+test('a finish that does not exist never crashes the picker', () => {
+  assert.equal(finishInfo('not-a-finish'), null);
+  assert.equal(finishInfo(undefined), null);
+});
+
+// The server refuses Item Shop skins in a trade-up. The picker let you choose five of them and only
+// then failed, which is the armoury price bug again: two ends deciding the same rule separately.
+test('the picker refuses what the server refuses', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const economy = readFileSync(new URL('../server/economy.js', import.meta.url), 'utf8');
+  assert.match(economy, /shop === 'item'.*traded up/s, 'the server refuses Item Shop skins');
+  assert.match(shop, /finishInfo\(item\.finish\)\?\.shop === 'item'/, 'so the card is blocked');
+  assert.match(shop, /finishInfo\(finish\)\?\.shop === 'item'/, 'and the click says why');
+});
+
+// A finish goes on every gun: equipping one writes it to every skinnable weapon and ownership is a
+// flat list. The reveal said "Fits every gun" while the cards beside it named one, which read as the
+// skin being for that gun.
+test('a crate reveal does not claim a skin belongs to one gun', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /for \(const weapon of skinnable\) skins\[weapon\.id\] = finish/, 'equipping covers every gun, so the copy is the true part');
+  const reveal = shop.slice(shop.indexOf('const shown = reveal.drops[reveal.index]'), shop.indexOf('data-close-reveal'));
+  assert.match(reveal, /Fits every gun/, 'the reveal says so');
+  assert.ok(!/WEAPONS\[drop\.weapon\]/.test(reveal), 'so no card beside it may name a gun');
+  assert.ok(!/WEAPONS\[item\.weapon\]/.test(shop.slice(shop.indexOf('reel-strip'), shop.indexOf('reel-mark'))), 'nor the reel it span in on');
+});

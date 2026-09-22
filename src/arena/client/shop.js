@@ -484,7 +484,9 @@ function ownedCount() {
 
 // ------------------------------------------------------------------ crates
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-const dropName = (drop) => `${finishInfo(drop.finish).name} · ${WEAPONS[drop.weapon].name}`;
+// A finish goes on every gun, so naming one here read as the skin being for that gun and nothing else.
+// The gun a drop carries is only which one it is shown on.
+const dropName = (drop) => finishInfo(drop.finish).name;
 function crateBox(c) { const image = thumb(`crate:${c.id}`); return image ? `<img class="crate-thumb" src="${image}" alt="" />` : `<i class="crate-box" style="--crate:${c.color}"><b></b></i>`; }
 // Nine crates split on the one thing that changes how an open feels: whether commons are still in the pool.
 const CRATE_GROUPS = [
@@ -529,7 +531,7 @@ function cratesHtml() {
         <div class="reveal-front"><div id="skin-stage" class="skin-stage"></div>${shown.duplicate ? '<em class="dupe-stamp">Duplicate</em>' : ''}</div></div>
       <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>Fits every gun${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
         ${status}</div>
-      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${WEAPONS[drop.weapon].short}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
+      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${RARITY[drop.rarity].name}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
       <div class="button-row">${again}<button type="button" class="ghost-button" data-close-reveal="1">Done</button></div></div>`;
   } else {
     const opening = Boolean(crate) && now() - crate.at < CRATE_OPEN_TIME;
@@ -537,7 +539,7 @@ function cratesHtml() {
     if (crate && !opening) {
       const elapsed = Math.min(CRATE_SPIN, now() - crate.at - CRATE_OPEN_TIME);
       const end = -(REEL_WIN * REEL_ITEM + REEL_ITEM / 2 + crate.offset);
-      reel = `<div class="reel-strip" style="--end:${end}px;animation-delay:-${elapsed}s;animation-duration:${CRATE_SPIN}s">${crate.strip.map((item) => { const info = finishInfo(item.finish); return `<div class="reel-item rarity-${info.rarity}" style="--rarity:${RARITY[info.rarity].color}"><img src="${finishSwatch(item.finish)}" alt="" /><small>${WEAPONS[item.weapon].short}</small></div>`; }).join('')}</div><i class="reel-mark"></i><small class="reel-skip">Click to skip</small>`;
+      reel = `<div class="reel-strip" style="--end:${end}px;animation-delay:-${elapsed}s;animation-duration:${CRATE_SPIN}s">${crate.strip.map((item) => { const info = finishInfo(item.finish); return `<div class="reel-item rarity-${info.rarity}" style="--rarity:${RARITY[info.rarity].color}"><img src="${finishSwatch(item.finish)}" alt="" /><small>${RARITY[info.rarity].name}</small></div>`; }).join('')}</div><i class="reel-mark"></i><small class="reel-skip">Click to skip</small>`;
     } else if (opening) reel = '<div class="reel-idle">Opening</div>';
     stageHtml = `<div id="skin-stage" class="skin-stage crate-stage${opening ? ' opening' : ''}"></div>
       ${spinning ? '<button type="button" class="reel spinning" data-skip="1" aria-label="Skip">' : '<div class="reel">'}${reel}${spinning ? '</button>' : '</div>'}
@@ -576,7 +578,7 @@ function inventoryHtml() {
   const shown = items.filter((item) => rarityFilter === 'all' || item.rarity === rarityFilter);
   const card = (item) => {
     const picked = trade.includes(item.finish);
-    const blocked = tradeMode && !picked && (item.rarity === 'mythic' || item.rarity === 'dev' || (tradeRarity && item.rarity !== tradeRarity) || trade.length >= TRADE_UP);
+    const blocked = tradeMode && !picked && (item.rarity === 'mythic' || item.rarity === 'dev' || finishInfo(item.finish)?.shop === 'item' || (tradeRarity && item.rarity !== tradeRarity) || trade.length >= TRADE_UP);
     const worn = Object.values(game.look.skins || {}).includes(item.finish);
     return `<button type="button" class="inv-card rarity-${item.rarity}${item.finish === pick.finish && !tradeMode ? ' active' : ''}${picked ? ' picked' : ''}${blocked ? ' blocked' : ''}${worn ? ' on' : ''}" style="--rarity:${RARITY[item.rarity].color}" data-inv="${item.finish}"><img src="${skinArt(weaponId, item.finish)}" alt="" /><b>${finishInfo(item.finish).name}</b><small>${devFinish(item.finish) ? 'Dev class' : RARITY[item.rarity].name}</small></button>`;
   };
@@ -1214,7 +1216,8 @@ export function onShopClick(button) {
     if (index >= 0) trade.splice(index, 1);
     else if (rarity === 'mythic') { ctx.toast('Mythic is as high as it goes.', 'warn'); play('deny'); return true; }
     else if (rarity === 'dev') { ctx.toast('Dev items can\'t be traded.', 'warn'); play('deny'); return true; }
-    else if (trade.length && finishInfo(trade[0].finish).rarity !== rarity) { ctx.toast('All five must be the same rarity.', 'warn'); play('deny'); return true; }
+    else if (finishInfo(finish)?.shop === 'item') { ctx.toast('Item Shop skins can\'t be traded up.', 'warn'); play('deny'); return true; }
+    else if (trade.length && finishInfo(trade[0]).rarity !== rarity) { ctx.toast('All five must be the same rarity.', 'warn'); play('deny'); return true; }
     else if (trade.length < TRADE_UP) trade.push(finish);
     play('ui');
     return true;

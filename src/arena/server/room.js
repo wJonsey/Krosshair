@@ -446,7 +446,8 @@ export class Room {
   refillAmmo(player) {
     player.ammo = {};
     for (const slot of ['primary', 'sidearm']) {
-      const weapon = WEAPONS[player.weapons[slot]];
+      // The gun as it was built, or a drum holds its rounds until the first respawn and then forgets.
+      const weapon = this.weaponFor(player, slot);
       if (weapon) player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
     }
   }
@@ -966,7 +967,7 @@ export class Room {
   finishReload(player) {
     const slot = player.reloadSlot;
     player.reloadEnd = 0;
-    const weapon = WEAPONS[player.weapons[slot]];
+    const weapon = this.weaponFor(player, slot);
     const ammo = player.ammo[slot];
     if (!weapon || !ammo || slot !== player.active) return;
     if (this.mode === 'range') ammo.reserve = weapon.reserve;
@@ -1389,7 +1390,7 @@ export class Room {
       const slot = WEAPONS[item].slot;
       if (!refund(`slot:${slot}`)) return this.notice(player, 'Only this round’s buys can be refunded.', 'warn');
       player.weapons[slot] = DEFAULT_LOADOUT[slot];
-      const weapon = WEAPONS[player.weapons[slot]];
+      const weapon = this.weaponFor(player, slot) || WEAPONS[player.weapons[slot]];
       player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
     } else if ((item === 'light' || item === 'heavy') && player.bought.armor?.item === item) {
       player.armor = player.bought.armor.before || 0; refund('armor');
