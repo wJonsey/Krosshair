@@ -56,6 +56,7 @@ export function graphics(settings = game.settings) { return { renderScale: setti
 
 export const game = {
   outages: { map: {}, weapon: {} },   // what a developer has pulled from the game, with why
+  watching: null,                     // a developer watching someone else's match: its name, or null
   name: tabStored('name', ''),
   token: tabStored('guest', null), // this tab's guest progress; a brand-new Discord account adopts it
   legacyToken: stored('token', null), // progress from before accounts, same deal

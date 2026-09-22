@@ -101,9 +101,9 @@ export class Room {
   sendTeam(team, message) { this.broadcast(message, (player) => player.team === team); }
   notice(player, text, tone = 'info') { this.send(player, { type: 'notice', text, tone }); }
 
-  humans() { return [...this.players.values()].filter((player) => !player.bot); }
+  humans() { return [...this.players.values()].filter((player) => !player.bot && !player.watching); }
   connectedHumans() { return this.humans().filter((player) => player.connected); }
-  team(team) { return [...this.players.values()].filter((player) => player.team === team && !player.dummy); }
+  team(team) { return [...this.players.values()].filter((player) => player.team === team && !player.dummy && !player.watching); }
   aliveOn(team) { return this.team(team).filter((player) => player.alive); }
   enemiesOf(player) { return [...this.players.values()].filter((other) => other.team !== player.team && other.alive && !other.devTools?.ghost); }
   get live() { return this.phase === 'live' || this.phase === 'overtime' || this.phase === 'range'; }
@@ -117,7 +117,7 @@ export class Room {
       type: 'room', name: this.name, queue: this.queue, mode: this.mode, isPublic: this.isPublic, phase: this.phase, phaseEnds: this.phaseEnds,
       round: this.round, scores: this.scores, rules: this.rules, variant: this.variant, swapped: this.swapped, map: this.map.id, ...mapState(this),
       autoStartAt: this.autoStartAt, rematch: [...this.rematch], wager: this.wager, pot: this.pot && !this.pot.settled ? this.pot.stake * this.pot.entries.length : 0,
-      players: [...this.players.values()].filter((player) => !player.dummy).map((player) => ({
+      players: [...this.players.values()].filter((player) => !player.dummy && !player.watching).map((player) => ({
         id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, botType: player.botType || null, connected: player.connected, ready: player.ready,
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
@@ -150,7 +150,7 @@ export class Room {
   // ---------------------------------------------------------------- roster
   newPlayer(base) {
     const player = {
-      id: `p${this.nextPlayer++}`, name: 'Pilot', team: 'A', bot: false, dummy: false, socket: null, connected: true, ready: false, host: false,
+      id: `p${this.nextPlayer++}`, name: 'Pilot', team: 'A', bot: false, dummy: false, watching: false, socket: null, connected: true, ready: false, host: false,
       color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {}, level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
       token: null, session: null, credits: this.rules.startCredits, match: freshMatchStats(),
       alive: false, hp: 100, armor: 0, helmet: false, weapons: { ...DEFAULT_LOADOUT }, ammo: {}, active: 'primary', gadgets: [], bought: {},
@@ -223,6 +223,24 @@ export class Room {
     return player;
   }
 
+  // A developer watching a match from the online card. They sit in the room only to be sent it: every
+  // count that decides how a match runs skips them, they hold no team, they are never alive so they have
+  // no body and cannot be shot, and the roster the match sees does not list them. Nothing they send is
+  // acted on. Watching a match must not be able to change it, or the tool is worse than not having it.
+  watch(socket, hello, look) {
+    if (this.seatOf(hello.token)) return null; // already playing here: watch your own match by playing it
+    const player = this.newPlayer({
+      name: hello.name, token: hello.token, session: hello.session, socket, ...look,
+      watching: true, team: 'watch', alive: false, dev: true,
+    });
+    player.builds = null;
+    this.players.set(player.id, player);
+    socket.player = player; socket.room = this;
+    this.welcome(player, false);
+    this.send(player, { type: 'watching', room: this.name, queue: this.queue });
+    return player;
+  }
+
   welcome(player, reconnected) {
     this.send(player, {
       type: 'welcome', id: player.id, room: this.name, reconnected, serverTime: now(), map: this.map.id, mapPrint: mapFingerprint(this.map),
@@ -236,6 +254,8 @@ export class Room {
   // deliberate = the pilot pressed Leave; a dropped socket keeps its seat for a while instead.
   leave(player, deliberate = false) {
     if (!this.players.has(player.id)) return;
+    // A watcher was never in the match, so leaving one is not news and holds no seat.
+    if (player.watching) { this.removePlayer(player); return; }
     player.socket = null;
     const holdSlot = !deliberate && this.mode === 'match' && this.phase !== 'lobby';
     if (deliberate && player.alive && this.live && this.mode === 'match') this.kill(player, null, null, 'torso', { reason: 'disconnect' });
@@ -365,6 +385,7 @@ export class Room {
     this.setBarriers(true);
     const counters = { A: 0, B: 0 };
     for (const player of this.players.values()) {
+      if (player.watching) continue;
       if (player.drone) this.endDrone(player, false);
       if (player.diedThisRound || this.round === 1) {
         player.weapons = { ...DEFAULT_LOADOUT };
@@ -530,7 +551,7 @@ export class Room {
     this.phase = 'matchEnd';
     this.phaseEnds = now() + this.rules.matchEndTime;
     const winner = this.scores.A === this.scores.B ? null : this.scores.A > this.scores.B ? 'A' : 'B';
-    const everyone = [...this.players.values()].filter((p) => !p.dummy);
+    const everyone = [...this.players.values()].filter((p) => !p.dummy && !p.watching);
     const ranked = isRanked(this.queue) && this.team('A').some((p) => !p.bot) && this.team('B').some((p) => !p.bot);
     const avg = (team) => { const list = this.team(team).filter((p) => !p.bot); return list.length ? list.reduce((s, p) => s + p.rating, 0) / list.length : 1000; };
     const expectedA = 1 / (1 + 10 ** ((avg('B') - avg('A')) / 400));
@@ -781,6 +802,9 @@ export class Room {
 
   // ---------------------------------------------------------------- input
   handle(player, message) {
+    // Watching must never be able to change what is being watched, so nothing a watcher sends is acted
+    // on. Listing what is safe would mean revisiting this every time a message is added.
+    if (player.watching) return;
     switch (message.type) {
       case 'state': return this.onState(player, message);
       case 'fire': return this.onFire(player, message);

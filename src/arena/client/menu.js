@@ -48,7 +48,11 @@ function onlineLabel(state = net.connected ? 'open' : 'closed') {
 const onlineCard = document.createElement('div');
 onlineCard.className = 'online-card hidden';
 document.body.append(onlineCard);
-onlineCard.addEventListener('click', (event) => { if (event.target.closest('[data-dev-online-close]') || event.target === onlineCard) { play('uiBack'); closeOnline(); } });
+onlineCard.addEventListener('click', (event) => {
+  const watching = event.target.closest('[data-dev-watch]');
+  if (watching) { net.send({ type: 'dev-watch', room: watching.dataset.devWatch }); play('ready'); closeOnline(); return; }
+  if (event.target.closest('[data-dev-online-close]') || event.target === onlineCard) { play('uiBack'); closeOnline(); }
+});
 addEventListener('keydown', (event) => { if (event.key === 'Escape' && !onlineCard.classList.contains('hidden')) closeOnline(); });
 let onlineTimer = null;
 function closeOnline() { clearInterval(onlineTimer); onlineTimer = null; onlineCard.classList.add('hidden'); }
@@ -62,12 +66,13 @@ function openOnline() {
 net.on('dev-online', (message) => {
   if (onlineCard.classList.contains('hidden')) return;
   const accounts = message.players.filter((player) => player.account), guests = message.players.filter((player) => !player.account);
-  const row = (player) => `<div class="online-row${player.you ? ' you' : ''}"><b>${escapeHtml(player.name)}</b><small>${player.account ? `LV ${player.level}` : 'guest'}</small><span>${player.room ? `${escapeHtml(player.room)} · ${(player.phase || '').toUpperCase()}` : 'in the menus'}</span>${player.ping ? `<em>${player.ping} ms</em>` : '<em></em>'}</div>`;
+  const watch = (name) => (name ? `<button type="button" class="mini" data-dev-watch="${escapeHtml(name)}">Watch</button>` : '');
+  const row = (player) => `<div class="online-row${player.you ? ' you' : ''}"><b>${escapeHtml(player.name)}</b><small>${player.account ? `LV ${player.level}` : 'guest'}</small><span>${player.room ? `${escapeHtml(player.room)} · ${(player.phase || '').toUpperCase()}` : 'in the menus'}</span>${player.ping ? `<em>${player.ping} ms</em>` : '<em></em>'}${player.you ? '' : watch(player.room)}</div>`;
   const list = (title, rows) => `<p class="eyebrow sub">${title} <small>${rows.length}</small></p>${rows.length ? rows.map(row).join('') : '<p class="muted">Nobody.</p>'}`;
   onlineCard.innerHTML = `<div class="panel online-panel"><p class="eyebrow">Who is playing <small>${message.players.length} online · ${message.bots} bots</small></p>
     ${list('Accounts', accounts)}${list('Guests', guests)}
     <p class="eyebrow sub">Rooms <small>${message.rooms.length}</small></p>
-    ${message.rooms.length ? message.rooms.map((room) => `<div class="online-row"><b>${escapeHtml(room.name)}</b><small>${room.queue}</small><span>${(room.phase || '').toUpperCase()}</span><em>${room.humans} + ${room.bots} bots</em></div>`).join('') : '<p class="muted">No rooms.</p>'}
+    ${message.rooms.length ? message.rooms.map((room) => `<div class="online-row"><b>${escapeHtml(room.name)}</b><small>${room.queue}</small><span>${(room.phase || '').toUpperCase()}</span><em>${room.humans} + ${room.bots} bots</em>${watch(room.name)}</div>`).join('') : '<p class="muted">No rooms.</p>'}
     <div class="button-row"><button type="button" class="ghost-button" data-dev-online-close="1">Close</button></div></div>`;
 });
 

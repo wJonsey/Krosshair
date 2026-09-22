@@ -218,6 +218,22 @@ function sendOnline(socket) {
 }
 const rooms_ = () => rooms.values();
 
+// Watch a live match from the online card. Developers only, like the card itself. It seats nobody: the
+// room takes them as a watcher, which every count that runs a match skips, so a developer looking at a
+// game cannot change the game they are looking at.
+function watchRoom(socket, message) {
+  if (!socket.identified || !profiles.get(socket.token).dev) return;
+  const room = rooms.get(String(message.room || ''));
+  if (!room) return send(socket, { type: 'error', message: 'That match has ended.' });
+  if (socket.room === room) return;
+  leaveRoom(socket, true);
+  const look = profiles.sanitizeCosmetics(socket.token, socket.lastLook || {});
+  if (!room.watch(socket, { token: socket.token, session: socket.session, name: socket.name }, look)) {
+    send(socket, { type: 'error', message: 'You are already in that match.' });
+  }
+}
+
+
 // A Crash round that ended on its own (crashed, or hit the auto cash-out): tell every tab on that account.
 function crashSettled(token, game) {
   for (const socket of sockets) if (socket.token === token && socket.account) send(socket, { type: 'coins-result', game, profile: profiles.view(token) });
@@ -794,6 +810,7 @@ wss.on('connection', (socket) => {
       if (message.type === 'social' && socket.account) return void pushSocial(socket);
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
       if (message.type === 'dev-online') return sendOnline(socket);
+      if (message.type === 'dev-watch') return watchRoom(socket, message);
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       // Saved gun builds. Kept on the profile, and handed to the player so the armoury sells the build.

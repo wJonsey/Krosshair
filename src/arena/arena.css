@@ -1542,7 +1542,9 @@ button.cash-out .coins { color: var(--void); }
 .online-card { position: fixed; inset: 0; z-index: 65; display: grid; place-items: center; background: rgba(6, 9, 12, .72); backdrop-filter: blur(4px); }
 .online-card.hidden { display: none; }
 .online-panel { width: min(560px, 92vw); max-height: 80vh; overflow-y: auto; }
-.online-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hairline); font: 400 13px var(--body); }
+.online-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.2fr) auto auto; gap: 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hairline); font: 400 13px var(--body); }
+/* Watch sits in the last column, which stays empty for anyone not in a match. */
+.online-row .mini { justify-self: end; align-self: center; }
 .online-row.you b { color: #00ffc6; }
 .online-row small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .online-row span { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .08em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
