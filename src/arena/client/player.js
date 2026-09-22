@@ -648,10 +648,15 @@ export class LocalPlayer {
     if (jump && !this.jumpHeld) this.jumpPressedAt = now;
     this.jumpHeld = jump;
     if (body.onGround) this.leftGroundAt = -1; else if (this.leftGroundAt < 0) this.leftGroundAt = now;
-    // Every hop is its own press: holding jump does not hop for you, because the timing is the skill.
-    // The buffer is what keeps that fair, asking a moment early still fires the instant you land.
-    const asked = this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer;
-    const footing = body.onGround || (this.leftGroundAt >= 0 && now - this.leftGroundAt <= BODY.coyoteTime && body.vy <= 0);
+    // Holding jump hops whenever there is ground under you, which is what every shooter does and what
+    // sprinting with a thumb on the bar expects. The skill in a bhop is the slide timing, getting out
+    // of one early rather than late, and that is untouched: this only decides whether you leave the
+    // floor at all. The buffer covers a press made a moment before landing.
+    const asked = jump || (this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer);
+    // Walking off an edge leaves a moment where a jump is still owed. Rising does not count as falling
+    // off anything, but stepping up a kerb briefly reads as airborne with a positive vy, and refusing
+    // the jump there is what made a sprint over rough ground feel like it swallowed the input.
+    const footing = body.onGround || (this.leftGroundAt >= 0 && now - this.leftGroundAt <= BODY.coyoteTime);
     if (asked && footing && (!this.crouching || sliding)) {
       // Out of a slide it is a low fast arc that keeps the speed. Stand up first and you get the full
       // height instead, which is the trade when you need to reach something rather than cover ground.

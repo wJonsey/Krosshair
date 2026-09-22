@@ -544,3 +544,39 @@ test('the held gun and its model agree on the build', () => {
   const state = readFileSync(new URL('../client/state.js', import.meta.url), 'utf8');
   assert.match(state, /game\.you\?\.builds \?\? game\.profile\?\.builds/, 'the server wins in a match, the profile outside one');
 });
+
+// Holding jump has to hop whenever there is ground under you. Taking auto bunny hop out took ordinary
+// hold to jump with it, so sprinting with a thumb on the bar gave one hop and then nothing, which
+// reads as the jump being swallowed.
+test('holding jump hops whenever you have footing', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  const gate = player.slice(player.indexOf('const asked ='), player.indexOf('if (asked &&'));
+  assert.match(gate, /const asked = jump \|\|/, 'a held jump counts on its own');
+  assert.match(gate, /jumpPressedAt.*jumpBuffer/s, 'and a press made just before landing still counts');
+});
+
+test('stepping up does not swallow the jump', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  const footing = player.slice(player.indexOf('const footing ='), player.indexOf('const footing =') + 220);
+  assert.ok(!/body\.vy <= 0/.test(footing), 'rising over a kerb reads as airborne, and refusing the jump there is what made rough ground feel dead');
+  assert.match(footing, /body\.onGround \|\|/, 'ground still counts first');
+});
+
+// A cheek riser raises the eye to a mounted optic. Over irons it sits on the sight line, so aiming put
+// the eye inside it.
+test('a heavy stock does not block iron sights', () => {
+  const guns = readFileSync(new URL('../client/guns.js', import.meta.url), 'utf8');
+  const heavy = guns.slice(guns.indexOf("o.stockMod === 'heavy'"), guns.indexOf("o.stockMod === 'heavy'") + 900);
+  assert.match(heavy, /const raised = o\.optic !== 'iron' && o\.optic !== 'bead'/, 'the riser asks whether there is anything to rise to');
+  assert.match(heavy, /if \(raised\) \{/, 'and only goes on when there is');
+  // The recoil pad is the rest of the stock and stays whatever the sight.
+  const pad = heavy.slice(heavy.indexOf('if (raised)'));
+  assert.match(pad, /k\.box\(m\.black, w \+ 0\.008/, 'the pad is still fitted either way');
+});
+
+test('a heavy stock still does what it says to the numbers', async () => {
+  const { ATTACHMENTS } = await import('../shared/attachments.js');
+  const heavy = ATTACHMENTS.heavystock;
+  assert.ok(heavy, 'the part exists');
+  assert.ok(heavy.mods && Object.keys(heavy.mods).length, 'and still changes the gun, so hiding the riser is a model change only');
+});

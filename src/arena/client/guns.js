@@ -355,9 +355,14 @@ function longGun(root, o, m) {
     k.ring(m.grey, 0.008, 0.002, [0, top - 0.018, s0 + 0.016], [0, Math.PI / 2, 0]);
   }
   if (o.stockMod === 'heavy' && stockKind !== 'none') {
-    // Heavy stock: a full cheek riser and a slab of a recoil pad bolted over the gun's own.
-    k.profile(m.dark, [[-0.05, top + 0.03], [-stockL + 0.02, top + 0.032], [-stockL + 0.02, top - 0.016], [-0.05, top - 0.012]], w - 0.004, [0, 0, s0], null, 0.005);
-    for (const dz of [0.12, stockL - 0.09]) k.tube(m.grey, 0.005, 0.03, [0, top + 0.012, s0 + dz], 8, null);
+    // Heavy stock: a slab of a recoil pad bolted over the gun's own, and a cheek riser to bring the eye
+    // up to a mounted optic. The riser only goes on when there is something to be raised to: over iron
+    // sights it sits exactly on the sight line, and aiming put your eye inside it.
+    const raised = o.optic !== 'iron' && o.optic !== 'bead';
+    if (raised) {
+      k.profile(m.dark, [[-0.05, top + 0.03], [-stockL + 0.02, top + 0.032], [-stockL + 0.02, top - 0.016], [-0.05, top - 0.012]], w - 0.004, [0, 0, s0], null, 0.005);
+      for (const dz of [0.12, stockL - 0.09]) k.tube(m.grey, 0.005, 0.03, [0, top + 0.012, s0 + dz], 8, null);
+    }
     k.box(m.black, w + 0.008, 0.15, 0.028, [0, -0.03, s0 + stockL + 0.018]);
   }
   if (o.grip !== false) { pistolGrip(k, m.dark, m, bottom + 0.008); }
