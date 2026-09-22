@@ -451,9 +451,13 @@ export function initRoyale({ arena, hud, player }) {
       }
       if (look !== state.look) {
         state.look = look;
-        swap.classList.toggle('on', Boolean(look));
         if (look) { const cardInfo = lootCard(look.entry.item); swap.innerHTML = cardInfo.html; swap.style.setProperty('--tier', cardInfo.colour); }
       }
+      // Whether the card shows follows what you are looking at this frame, not only the frames where it
+      // changed. Taking an item sets state.look to null behind the card's back, so if the server removed
+      // the loot on the very next frame the test above compared null with null, never ran, and the card
+      // sat there until you happened to look at something else. Only the rebuild is worth guarding.
+      swap.classList.toggle('on', Boolean(look));
       for (const loot of state.loot.values()) if (loot.mesh) loot.mesh.scale.setScalar(loot === look ? 1.25 : 1);
       const fDown = held(player.keys || new Set(), 'interact');
       if (fDown && !state.fWas && look && player.alive) { net.send({ type: 'royale-take', id: look.entry.id }); state.look = null; }
