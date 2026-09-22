@@ -583,3 +583,51 @@ test('a heavy stock still does what it says to the numbers', async () => {
   assert.ok(heavy, 'the part exists');
   assert.ok(heavy.mods && Object.keys(heavy.mods).length, 'and still changes the gun, so hiding the riser is a model change only');
 });
+
+// A sight below 40 counts as magnified everywhere in the game: it holds breath, it sways, it draws a
+// scope picture. Irons, a dot and a holo magnify nothing, but they only changed the sight and left the
+// gun's own zoom in place, so a sniper wearing a red dot still behaved like one looking down glass.
+test('a non magnifying optic takes the magnification with it', async () => {
+  const { resolveWeapon } = await import('../shared/attachments.js');
+  const { WEAPONS } = await import('../shared/constants.js');
+  assert.ok(WEAPONS.m44.scope[0] < 40, 'the m44 is magnified to start with');
+  for (const id of ['irons', 'dot', 'holo']) {
+    const built = resolveWeapon('m44', { optic: id });
+    assert.ok(built.scope[0] >= 40, `${id} must leave the gun unmagnified, got ${JSON.stringify(built.scope)}`);
+  }
+  for (const id of ['prism', 'longscope']) {
+    const built = resolveWeapon('m44', { optic: id });
+    assert.ok(built.scope[0] < 40, `${id} is glass and stays magnified`);
+  }
+});
+
+test('the killcam draws the gun that shot you, as it was built', () => {
+  const room = readFileSync(new URL('../server/room.js', import.meta.url), 'utf8');
+  const roster = room.slice(room.indexOf('title: player.title'), room.indexOf('title: player.title') + 900);
+  assert.match(roster, /builds: player\.builds \?/, 'the roster carries what is on their guns');
+  assert.match(roster, /Object\.values\(player\.weapons/, 'only the ones they are holding');
+
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  assert.match(player, /entry \? \(entry\.builds \|\| \{\}\) : heldBuilds\(\)/, 'watching someone uses their build, not yours');
+
+  const operator = readFileSync(new URL('../client/operator.js', import.meta.url), 'utf8');
+  assert.match(operator, /buildWeapon\(weapon\.id, data\.accent \|\| '#ffb547', finish, build\)/, 'and their model is built with it');
+});
+
+test('a gun model is cached per build, not just per skin', () => {
+  const operator = readFileSync(new URL('../client/operator.js', import.meta.url), 'utf8');
+  const key = operator.slice(operator.indexOf('const key = `${weapon.id}'), operator.indexOf('const key = `${weapon.id}') + 200);
+  assert.match(key, /build \?/, 'two builds of one gun are two models, or the first one drawn sticks');
+  const characters = readFileSync(new URL('../client/characters.js', import.meta.url), 'utf8');
+  // The look is compared field by field rather than stringified, so builds has to be one of the fields.
+  assert.match(characters, /was\.builds === entry\.builds/, 'and a changed build restyles the pilot');
+});
+
+test('every setting the browser can set is allowed through', async () => {
+  const profiles = readFileSync(new URL('../server/profiles.js', import.meta.url), 'utf8');
+  const rules = profiles.slice(profiles.indexOf('const SETTING_RULES'), profiles.indexOf('};', profiles.indexOf('const SETTING_RULES')));
+  // These two were dropped on the way in, so they were set again every session and never stuck.
+  for (const key of ['viewDistance', 'aimBlur', 'shadows', 'renderScale', 'fov', 'sensitivity']) {
+    assert.ok(rules.includes(key), `${key} is not in the whitelist, so it can never be saved`);
+  }
+});

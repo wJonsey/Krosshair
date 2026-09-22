@@ -757,7 +757,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   for (const part of [antenna, ...whips, bubbleGlass, monocleGlass, halo, devwings, pixelFace.eyeRow, pixelFace.mouthRow, rootCrown, scanPivot, scanHaze, orbitCore]) part.traverse((mesh) => { mesh.castShadow = false; });
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
-    guns: new Map(), held: null, skins: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
+    guns: new Map(), held: null, skins: {}, builds: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
     charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
     materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror, scanGlass, scanMat, orbitMat],
     beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
@@ -770,7 +770,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
 
 // Faces that cover the chin: the jaw block would poke through them, so it hides.
 const CHIN_COVERED = new Set(['bandit', 'hockey', 'oni', 'plague', 'devmask', 'frostmask', 'shroud', 'rebreather']);
-// look: any of { color, accent, team, headgear, face, pack, pattern, skins }; missing keys are left alone.
+// look: any of { color, accent, team, headgear, face, pack, pattern, skins, builds }; missing keys are left alone.
 export function styleOperator(root, look) {
   const data = root.userData;
   const { color, accent, team } = look;
@@ -784,6 +784,7 @@ export function styleOperator(root, look) {
   choose(data.packs, look.pack);
   if (look.pattern) applyPattern(data.suit, look.pattern);
   if (look.skins) data.skins = look.skins;
+  if (look.builds) data.builds = look.builds;
   if (look.charm !== undefined && look.charm !== data.charm) { data.charm = look.charm; if (data.held) data.held.model.visible = false; data.held = null; }
 }
 
@@ -791,12 +792,14 @@ export function styleOperator(root, look) {
 // finish, built the first time it is drawn and kept.
 function heldGun(data, weapon) {
   const finish = data.skins[weapon.id] || null;
-  const key = `${weapon.id}|${finish}|${data.charm || 'none'}`;
+  const build = data.builds?.[weapon.id] || null;
+  // The build is part of what makes this model, so it is part of what tells two of them apart.
+  const key = `${weapon.id}|${finish}|${data.charm || 'none'}|${build ? Object.values(build).join(',') : ''}`;
   if (data.held?.key === key) return data.held;
   if (data.held) data.held.model.visible = false;
   let entry = data.guns.get(key);
   if (!entry) {
-    const model = buildWeapon(weapon.id, data.accent || '#ffb547', finish);
+    const model = buildWeapon(weapon.id, data.accent || '#ffb547', finish, build);
     stripHands(model);
     model.scale.setScalar(GUN_SCALE);
     model.traverse((part) => { if (part.isMesh) part.castShadow = true; });

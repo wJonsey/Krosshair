@@ -21,12 +21,15 @@ export const SLOT_NAMES = { optic: 'Optic', muzzle: 'Muzzle', barrel: 'Barrel', 
 // Families: which guns a part fits. Missing means all of them.
 export const ATTACHMENTS = {
   // ---- optics. Heavier glass sees further and comes up slower.
+  // These three magnify nothing, so they have to say so. A sight below 40 is treated as magnified all
+  // over the game: it holds breath, it sways, it draws the scope picture. Leaving the gun's own zoom in
+  // place meant a sniper with a red dot on it still behaved like a sniper looking down glass.
   irons: { id: 'irons', slot: 'optic', name: 'Iron sights', cost: 0, blurb: 'Nothing on the rail. Fastest up.',
-    set: { sight: 'iron' }, mods: { scopeTime: 0.82 }, add: { 'spread.ads': 0.05 }, fits: null },
+    set: { sight: 'iron', scope: [52] }, mods: { scopeTime: 0.82 }, add: { 'spread.ads': 0.05 }, fits: null },
   dot: { id: 'dot', slot: 'optic', name: 'Red dot', cost: 200, blurb: 'A clean dot. Costs a little speed.',
-    set: { sight: 'dot' }, mods: { scopeTime: 1.06, 'spread.ads': 0.88, 'spread.move': 0.92 } },
+    set: { sight: 'dot', scope: [48] }, mods: { scopeTime: 1.06, 'spread.ads': 0.88, 'spread.move': 0.92 } },
   holo: { id: 'holo', slot: 'optic', name: 'Holographic', cost: 300, blurb: 'Wide window, slower to settle.',
-    set: { sight: 'holo' }, mods: { scopeTime: 1.14, 'spread.ads': 0.8, 'spread.move': 0.88, 'spread.air': 1.1 } },
+    set: { sight: 'holo', scope: [52] }, mods: { scopeTime: 1.14, 'spread.ads': 0.8, 'spread.move': 0.88, 'spread.air': 1.1 } },
   prism: { id: 'prism', slot: 'optic', name: 'Prism 2x', cost: 450, blurb: 'Magnified. Heavy on the rail.',
     set: { sight: 'prism', scope: [34] }, mods: { scopeTime: 1.3, 'spread.ads': 0.7, 'spread.move': 0.9, speed: 0.98 } },
   longscope: { id: 'longscope', slot: 'optic', name: 'Long scope 4x', cost: 700, blurb: 'Reach, at the cost of everything close.',

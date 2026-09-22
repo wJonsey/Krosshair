@@ -275,7 +275,7 @@ export class LocalPlayer {
   beginPov(owner, weapon, extra = {}) {
     const entry = game.roster.get(owner);
     this.pov = { owner, weapon: WEAPONS[weapon] ? weapon : 'm44', scope: 0, lastYaw: null, lastPitch: null, mag: null, ...extra };
-    this.viewmodel.setLook(entry?.color || game.look.color, entry?.accent || game.look.accent, entry ? entry.skins || {} : game.look.skins, entry ? entry.charm : game.look.charm, entry ? {} : heldBuilds());
+    this.viewmodel.setLook(entry?.color || game.look.color, entry?.accent || game.look.accent, entry ? entry.skins || {} : game.look.skins, entry ? entry.charm : game.look.charm, entry ? (entry.builds || {}) : heldBuilds());
     this.viewmodel.setWeapon(this.pov.weapon, true);
     this.viewmodel.hidden = false;
   }

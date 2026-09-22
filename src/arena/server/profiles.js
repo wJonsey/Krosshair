@@ -50,6 +50,9 @@ function cleanCrosshair(c) {
 const SETTING_RULES = {
   sensitivity: [0.1, 5], scopeSensitivity: [0.1, 3], padSensitivity: [0.1, 5], fov: [50, 120], volume: [0, 1], ambience: [0, 1], music: [0, 1], musicInMatch: 'bool', settingsVersion: [1, 99],
   quality: ['ultra', 'high', 'medium', 'low', 'custom'], renderScale: [0.4, 2], shadows: ['off', 'low', 'high', 'ultra'], streetLights: 'bool', brightness: [0.5, 2], fpsCap: [0, 360], autoQuality: 'bool', showFps: 'bool',
+  // Anything the browser can set has to be listed here or it is dropped on the way in, and the pilot
+  // sets it again every session wondering why it never sticks.
+  viewDistance: ['low', 'medium', 'high', 'ultra'], aimBlur: 'bool',
   announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', speedFov: 'bool', moveDebug: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
 };
 

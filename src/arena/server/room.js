@@ -122,6 +122,10 @@ export class Room {
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
         title: player.title, headgear: player.headgear, face: player.face, pack: player.pack, pattern: player.pattern, charm: player.charm, skins: player.skins,
+        // What is bolted to the guns in their hands, so everyone else, and a killcam most of all,
+        // draws the gun that actually shot them. Only the guns they hold: the rest is nobody's business
+        // and would be sent on every room push for nothing.
+        builds: player.builds ? Object.fromEntries(Object.values(player.weapons || {}).filter((id) => player.builds[id]).map((id) => [id, player.builds[id]])) : null,
         level: player.level, rating: player.rating, rankedMatches: player.rankedMatches, primary: player.weapons.primary, armor: player.armor > 0,
       })),
     };

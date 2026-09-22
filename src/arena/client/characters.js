@@ -10,7 +10,7 @@ export { animateOperator, buildOperator, styleOperator };
 
 const DUMMY_LOOK = { color: '#d9d4c8', accent: '#ff7148', name: '' };
 // The parts of a roster entry that dress an operator.
-export const lookOf = (entry = {}) => ({ color: entry.color, accent: entry.accent, headgear: entry.headgear || 'helmet', face: entry.face || 'visor', pack: entry.pack || 'radio', pattern: entry.pattern || 'solid', charm: entry.charm || 'none', skins: entry.skins || {} });
+export const lookOf = (entry = {}) => ({ color: entry.color, accent: entry.accent, headgear: entry.headgear || 'helmet', face: entry.face || 'visor', pack: entry.pack || 'radio', pattern: entry.pattern || 'solid', charm: entry.charm || 'none', skins: entry.skins || {}, builds: entry.builds || {} });
 const lerpAngle = (a, b, k) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * k;
 
 function nameTag(text, color) {
@@ -91,10 +91,10 @@ class Entity {
     const was = this.styleKey;
     if (was && was.color === entry.color && was.accent === entry.accent && was.headgear === entry.headgear
       && was.face === entry.face && was.pack === entry.pack && was.pattern === entry.pattern
-      && was.charm === entry.charm && was.skins === entry.skins && was.name === entry.name
+      && was.charm === entry.charm && was.skins === entry.skins && was.builds === entry.builds && was.name === entry.name
       && was.friendly === friendly && was.hologram === hologram) return;
     this.styleKey = { color: entry.color, accent: entry.accent, headgear: entry.headgear, face: entry.face,
-      pack: entry.pack, pattern: entry.pattern, charm: entry.charm, skins: entry.skins, name: entry.name, friendly, hologram };
+      pack: entry.pack, pattern: entry.pattern, charm: entry.charm, skins: entry.skins, builds: entry.builds, name: entry.name, friendly, hologram };
     styleOperator(this.model, { ...lookOf(entry), team: friendly ? 'friend' : 'foe' });
     if (this.tag) { this.root.remove(this.tag); this.tag.material.map.dispose(); this.tag = null; }
     if (friendly && entry.name) { this.tag = nameTag(entry.name, TEAM_COLORS.friend); this.tag.position.y = 2.1; this.root.add(this.tag); }
