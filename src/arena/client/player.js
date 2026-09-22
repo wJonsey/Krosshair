@@ -5,7 +5,7 @@ import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '..
 import { SpreadTracker, applySpread, ballisticsFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
 import { resolveWeapon } from '../shared/attachments.js';
-import { bus, game, isEnemy } from './state.js';
+import { bus, game, isEnemy, heldBuilds } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
 import { PAD_TAP_HOLD, WHEEL_HOLD, actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode, wheelCode } from './input.js';
@@ -275,7 +275,7 @@ export class LocalPlayer {
   beginPov(owner, weapon, extra = {}) {
     const entry = game.roster.get(owner);
     this.pov = { owner, weapon: WEAPONS[weapon] ? weapon : 'm44', scope: 0, lastYaw: null, lastPitch: null, mag: null, ...extra };
-    this.viewmodel.setLook(entry?.color || game.look.color, entry?.accent || game.look.accent, entry ? entry.skins || {} : game.look.skins, entry ? entry.charm : game.look.charm);
+    this.viewmodel.setLook(entry?.color || game.look.color, entry?.accent || game.look.accent, entry ? entry.skins || {} : game.look.skins, entry ? entry.charm : game.look.charm, entry ? {} : heldBuilds());
     this.viewmodel.setWeapon(this.pov.weapon, true);
     this.viewmodel.hidden = false;
   }
@@ -293,7 +293,7 @@ export class LocalPlayer {
     if (!this.pov) return;
     this.pov = null;
     this.viewmodel.hidden = !this.alive;
-    this.viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm);
+    this.viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds());
     if (this.alive) this.viewmodel.setWeapon(this.weapon.id, true);
     this.resetFov();
   }

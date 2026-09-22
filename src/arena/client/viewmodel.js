@@ -96,7 +96,7 @@ export class ViewModel {
     this.eyeLocal = new THREE.Vector3(); this.inverse = new THREE.Matrix4();
     this.current = null;
     this.currentId = null;
-    this.accent = '#6ce6d1'; this.suit = '#ec6a9e'; this.skins = {}; this.charm = 'none';
+    this.accent = '#6ce6d1'; this.suit = '#ec6a9e'; this.skins = {}; this.charm = 'none'; this.builds = {};
     this.charmGravity = new THREE.Vector3(0, -1, 0); this.charmJolt = new THREE.Vector3();
     this.kick = 0; this.kickRot = 0; this.swayX = 0; this.swayY = 0; this.bob = 0; this.equip = 1; this.flashTime = 0;
     this.reloadTime = 0; this.reloadDuration = 0; this.cycleTime = -1; this.cycleDuration = 0; this.slash = -1; this.landDip = 0;
@@ -106,9 +106,12 @@ export class ViewModel {
     this.hidden = false;
   }
 
-  setLook(suit, accent, skins = {}, charm = 'none') {
-    if (suit === this.suit && accent === this.accent && charm === this.charm && JSON.stringify(skins) === JSON.stringify(this.skins)) return;
-    this.suit = suit; this.accent = accent; this.skins = { ...skins }; this.charm = charm || 'none';
+  // builds: what the gunsmith bolted on. The models are cached per gun, so a change to a build has to
+  // drop them the same way a change of skin does, or you keep looking at the gun you used to have.
+  setLook(suit, accent, skins = {}, charm = 'none', builds = {}) {
+    if (suit === this.suit && accent === this.accent && charm === this.charm
+      && JSON.stringify(skins) === JSON.stringify(this.skins) && JSON.stringify(builds) === JSON.stringify(this.builds)) return;
+    this.suit = suit; this.accent = accent; this.skins = { ...skins }; this.charm = charm || 'none'; this.builds = { ...builds };
     this.models.forEach((model) => this.holder.remove(model));
     this.models.clear();
     if (this.currentId) { const id = this.currentId; this.currentId = null; this.setWeapon(id, true); }
@@ -116,7 +119,7 @@ export class ViewModel {
 
   setWeapon(id, instant = false) {
     if (id === this.currentId) return;
-    if (!this.models.has(id)) { const model = buildWeapon(id, this.accent, this.skins[id]); model.userData.sleeve.color.set(this.suit);
+    if (!this.models.has(id)) { const model = buildWeapon(id, this.accent, this.skins[id], this.builds?.[id] || null); model.userData.sleeve.color.set(this.suit);
       // Layer 1 is what stays sharp while the gun is blurred: the scope's picture and the projected reticles.
       if (model.userData.lens) { model.userData.lens.material = this.scopeMaterial; model.userData.lens.layers.set(1); }
       const charm = WEAPONS[id]?.melee ? null : buildCharm(this.charm);

@@ -505,3 +505,42 @@ test('no stray reference to a dirty list outside the saver', () => {
   const gunsmith = shop.slice(shop.indexOf('function gunsmithHtml'), shop.indexOf('// ------------------------------------------------------------------ games'));
   assert.ok(!/\bdirty\b/.test(gunsmith), 'and the render does not reach for one it never declared');
 });
+
+// The gun you hold is a model, and the model is built from the gun's own fittings unless the build
+// says otherwise. buildSpec always knew that; it was simply never handed a build, so the first person
+// gun kept whatever the weapon came with and a fitted optic never appeared on it.
+test('the model builder is told what was fitted', () => {
+  const view = readFileSync(new URL('../client/viewmodel.js', import.meta.url), 'utf8');
+  const call = view.slice(view.indexOf('buildWeapon('), view.indexOf('buildWeapon(') + 120);
+  assert.match(call, /buildWeapon\(id, this\.accent, this\.skins\[id\], this\.builds/, 'the build is the fourth thing buildWeapon takes, and it has to be given one');
+});
+
+test('a changed build drops the cached gun', () => {
+  const view = readFileSync(new URL('../client/viewmodel.js', import.meta.url), 'utf8');
+  const setLook = view.slice(view.indexOf('setLook('), view.indexOf('setWeapon('));
+  assert.match(setLook, /JSON\.stringify\(builds\) === JSON\.stringify\(this\.builds\)/, 'a build change has to count as a change, or the old model is kept');
+  assert.match(setLook, /this\.builds = \{ \.\.\.builds \}/, 'and the new one is remembered');
+});
+
+test('the build arriving mid match reaches the viewmodel', () => {
+  const main = readFileSync(new URL('../client/main.js', import.meta.url), 'utf8');
+  const handler = main.slice(main.indexOf("net.on('you'"), main.indexOf("net.on('you'") + 700);
+  assert.match(handler, /previous\?\.builds.*message\.builds/s, 'it notices when the build changed');
+  assert.match(handler, /viewmodel\.setLook\(/, 'and rebuilds the gun when it did');
+});
+
+test('fitting irons takes the gun own scope off', () => {
+  const guns = readFileSync(new URL('../client/guns.js', import.meta.url), 'utf8');
+  const spec = guns.slice(guns.indexOf('function buildSpec'), guns.indexOf('function buildSpec') + 600);
+  assert.match(spec, /build\.optic === 'irons'/, 'choosing irons is handled on its own');
+  assert.match(spec, /o\.optic = spec\.optic === 'bead' \? 'bead' : 'iron'/, 'and overrides whatever the gun came with');
+  // The m44 carries a scope of its own, which is the case that looked broken.
+  assert.match(guns, /m44: \{[^}]*optic: 'scope'/, 'the m44 does come with a scope');
+});
+
+test('the held gun and its model agree on the build', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  assert.match(player, /heldBuilds\(\)/, 'the model is dressed from the same place the stats come from');
+  const state = readFileSync(new URL('../client/state.js', import.meta.url), 'utf8');
+  assert.match(state, /game\.you\?\.builds \?\? game\.profile\?\.builds/, 'the server wins in a match, the profile outside one');
+});

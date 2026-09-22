@@ -86,3 +86,7 @@ export function myTeam() { return me()?.team || 'A'; }
 export function isEnemy(id) { const other = game.roster.get(id); return other ? other.team !== myTeam() : true; }
 export function nameOf(id) { return game.roster.get(id)?.name || (game.room?.mode === 'range' ? 'Target' : 'Unknown'); }
 export function saveSettings() { store('settings', game.settings); bus.emit('settings'); }
+
+// What the gunsmith bolted on, from whichever source is authoritative right now: in a match the server
+// says, because it is the one scoring; in the menus the profile does.
+export const heldBuilds = () => (game.you?.builds ?? game.profile?.builds ?? {});

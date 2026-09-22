@@ -2,7 +2,7 @@
 // and runs the frame loop.
 import * as THREE from 'three';
 import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
-import { bus, game, graphics, isEnemy, nameOf, saveSettings } from './state.js';
+import { bus, game, graphics, isEnemy, nameOf, saveSettings, heldBuilds } from './state.js';
 import { net } from './net.js';
 import { bindLabel } from './input.js';
 import { Arena } from './world.js';
@@ -42,7 +42,7 @@ arena.scene.add(camera);
 const operators = new Operators(arena.scene, () => arena.physics);
 const effects = new Effects(arena.scene);
 const viewmodel = new ViewModel();
-viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm);
+viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds());
 const player = new LocalPlayer({ camera, arena, viewmodel, effects, operators, canvas: renderer.domElement });
 const hud = new Hud({ player, arena, operators });
 const soundViz = new SoundViz(camera);
@@ -168,6 +168,11 @@ net.on('room', (message) => {
 net.on('you', (message) => {
   const previous = game.you;
   game.you = message;
+  // The build arrives with the you state, and the gun models are cached, so a change has to reach the
+  // viewmodel or you keep holding the gun you had before the part went on.
+  if (JSON.stringify(previous?.builds) !== JSON.stringify(message.builds)) {
+    viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds());
+  }
   player.onYou(previous);
   if (hud.buyOpen) hud.renderBuy();
 });
