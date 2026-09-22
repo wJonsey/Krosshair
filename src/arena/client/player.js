@@ -730,8 +730,13 @@ export class LocalPlayer {
     const wanderX = Math.sin(st * 0.37 + 4) * 0.5, wanderY = Math.sin(st * 0.29 + 1.7) * 0.4;
     const effort = (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.12 : 1) * (this.winded ? 2.1 : 1) * (weapon.sway || 1);
     const patternX = (breatheX + tremorX + wanderX) * effort, patternY = (breatheY + tremorY + wanderY) * effort;
-    // Magnified glass shows it most; irons and dots barely move the aim at all.
-    const aimShare = (scopedOptic ? 0.0011 : 0.00035) * this.scopeAmount;
+    // The gun drifts in your hands; your head does not. Feeding the sway into the camera as well made
+    // scoping in read as the screen shaking, because magnified glass multiplies every bit of it. The
+    // pattern still moves the weapon, which is what you watch through the glass, and the sights still
+    // wander over the target: it is the view that holds still now. AIM_SWAY puts it back if that turns
+    // out to be too steady, and holding breath still calms the drift you can see.
+    const AIM_SWAY = 0;
+    const aimShare = AIM_SWAY * (scopedOptic ? 0.0011 : 0.00035) * this.scopeAmount;
     this.swayX = patternX * aimShare; this.swayY = patternY * aimShare;
     this.gunSway = [patternX * this.scopeAmount, patternY * this.scopeAmount];
     const eye = THREE.MathUtils.lerp(BODY.eye, BODY.crouchEye, this.crouchAmount);

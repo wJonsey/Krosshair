@@ -431,7 +431,12 @@ function updateMoveDebug(now) {
   if (moveDebug.classList.contains('hidden') === !on) moveDebug.classList.toggle('hidden', !on);
   if (!on) return;
   const v = player.vel, body = player.body;
-  const text = `SPEED ${player.horizontalSpeed.toFixed(2)} m/s\nSTATE ${player.moveState}\nVEL   x ${v.x.toFixed(2)}  y ${body.vy.toFixed(2)}  z ${v.z.toFixed(2)}\nFLOW  ${player.flow.toFixed(2)}\nGROUND ${body.onGround ? 'yes' : 'no'}   FPS ${debugFps}`;
+  // The raw keys the page has actually been handed. If a key you are holding is missing from this line
+  // the game never received it, and no amount of game code can act on a press that did not arrive:
+  // that is the keyboard or the operating system, not this. Holding several at once is where cheaper
+  // boards give up, and Shift with the space bar is a common one to lose.
+  const down = [...player.keys].join(' ') || 'none';
+  const text = `SPEED ${player.horizontalSpeed.toFixed(2)} m/s\nSTATE ${player.moveState}\nVEL   x ${v.x.toFixed(2)}  y ${body.vy.toFixed(2)}  z ${v.z.toFixed(2)}\nFLOW  ${player.flow.toFixed(2)}\nGROUND ${body.onGround ? 'yes' : 'no'}   FPS ${debugFps}\nKEYS  ${down}`;
   if (moveDebug.textContent !== text) moveDebug.textContent = text;
 }
 addEventListener('keydown', (event) => {
