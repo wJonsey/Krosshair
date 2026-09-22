@@ -381,3 +381,41 @@ test('a launcher never predicts a bullet on the firing client', () => {
   const source = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
   assert.match(source, /weapon\.rocket \? 0 : weapon\.pellets/, 'the local shot prediction no longer skips rockets');
 });
+
+// The bench: one slot at a time instead of six stacked, and a part you are only considering shows
+// what it would do without fitting it.
+test('only the open slot draws its parts', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /function smithSlotBody/, 'there is a single body for the open slot');
+  assert.match(shop, /partsFor\(base, smithSlot_\)/, 'and it asks only for that slot');
+  // The old shape rendered every slot on every draw, which is what made it scroll.
+  assert.ok(!/GUN_SLOTS\.map\(\(slot, index\) => smithSlot\(/.test(shop), 'nothing maps every slot into the page any more');
+});
+
+test('the rail shows every slot and what is in it', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const rail = shop.slice(shop.indexOf('function smithRail'), shop.indexOf('function smithSlotBody'));
+  assert.match(rail, /GUN_SLOTS\.filter/, 'it lists the slots the gun actually takes');
+  assert.match(rail, /data-smith-slot=/, 'each one opens its slot');
+  assert.match(rail, /filled/, 'and says which are filled');
+});
+
+test('considering a part changes nothing about the gun', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const hover = shop.slice(shop.indexOf('export function onShopHover'), shop.indexOf('export function onShopInput'));
+  assert.ok(!/smithDrafts/.test(hover), 'hovering must never touch the build');
+  assert.ok(!/keepBuilds/.test(hover), 'and must never save anything');
+  assert.match(hover, /if \(same\(next, smithHover\)\) return false/, 'and only redraws when the part under the cursor changes');
+});
+
+test('the preview compares against the gun as it is, not the stock one', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /smithRow\(peeking \? built : base, shown, row\)/, 'while considering a part the baseline is what is already fitted');
+});
+
+test('the hover listener is delegated, not one per card', () => {
+  const menu = readFileSync(new URL('../client/menu.js', import.meta.url), 'utf8');
+  assert.match(menu, /home\.addEventListener\('pointerover'/, 'one listener on the page');
+  const count = (menu.match(/addEventListener\('pointerover'/g) || []).length;
+  assert.equal(count, 1, 'and only one, however many parts there are');
+});

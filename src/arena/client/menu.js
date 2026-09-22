@@ -11,7 +11,7 @@ import { ACTIONS, PAD_ACTIONS, PAD_LAYOUTS, PAD_LAYOUT_IDS, RESERVED, bindLabel,
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
-import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
+import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopHover, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
 import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
 import { ROYALE } from '../shared/royale.js';
@@ -810,6 +810,11 @@ addEventListener('krosshair:entered', () => showNotice({
   body: '<p>This is a live build, not a finished game. Things break, maps change, and your stats can move around while we work.</p><p>If something looks wrong, tell us. Bug reports are the fastest way to get it fixed.</p>',
   accept: 'Understood',
 }));
+
+// Hovering a part previews it. Delegated, so no listener is added per card, and it only redraws when
+// the part under the cursor actually changes.
+home.addEventListener('pointerover', (event) => { if (SHOP_PAGES.includes(homePage) && onShopHover(event.target)) renderHome(); });
+home.addEventListener('pointerleave', () => { if (SHOP_PAGES.includes(homePage) && onShopHover(null)) renderHome(); });
 
 home.addEventListener('click', (event) => {
   const target = event.target.closest('button');

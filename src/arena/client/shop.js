@@ -65,6 +65,8 @@ let tryOn = null;            // a gear item being tried on, not yet equipped
 let charmTry = null;
 let charmWeapon = 'talon';
 let smithDrafts = {};        // builds being worked on, by weapon. Nothing here is on the profile yet.
+let smithSlot_ = 'optic';    // the slot the bench is showing. One at a time beats six stacked.
+let smithHover = null;       // { slot, id } being considered, for the what-would-this-do preview
 let friends = null;          // [{ name, avatar, level, title, online }] once fetched
 let friendName = '';
 let stake = 10, target = 50, pick = 'heads';
@@ -749,14 +751,22 @@ function partCard(base, slot, part, fitted, unlocked) {
     <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Fitted</em>' : `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>`}</span>
     <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
 }
-function smithSlot(base, build, slot, index, unlocked) {
-  const parts = partsFor(base, slot);
-  if (!parts.length) return '';
-  const part = ATTACHMENTS[build[slot]];
-  return `<section class="mode-block smith-slot">
-    <header class="block-head"><small>${String(index + 3).padStart(2, '0')} // ${SLOT_NAMES[slot].toUpperCase()}</small><b>${part ? part.name : 'Empty'}</b><span>${part ? part.blurb : 'Nothing on it.'}</span></header>
-    <div class="gear-grid smith-grid">${parts.map((entry) => partCard(base, slot, entry, build[slot], unlocked)).join('')}</div>
-  </section>`;
+// The rail across the top: every slot this gun takes, what is in it, and which one the bench is open
+// on. Six stacked sections meant scrolling past five of them to reach the one you wanted.
+function smithRail(base, build) {
+  const slots = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
+  if (!slots.includes(smithSlot_)) smithSlot_ = slots[0] || 'optic';
+  return `<div class="smith-rail" role="tablist">${slots.map((slot) => {
+    const part = ATTACHMENTS[build[slot]];
+    return `<button type="button" role="tab" aria-selected="${slot === smithSlot_}" class="smith-tab${slot === smithSlot_ ? ' active' : ''}${part ? ' filled' : ''}" data-smith-slot="${slot}">
+      <small>${SLOT_NAMES[slot]}</small><b>${part ? part.name : 'Empty'}</b></button>`;
+  }).join('')}</div>`;
+}
+// Only the open slot draws its parts.
+function smithSlotBody(base, build, unlocked) {
+  const parts = partsFor(base, smithSlot_);
+  if (!parts.length) return '<p class="muted">Nothing fits this slot on this gun.</p>';
+  return `<div class="gear-grid smith-grid">${parts.map((entry) => partCard(base, smithSlot_, entry, build[smithSlot_], unlocked)).join('')}</div>`;
 }
 function gunsmithHtml() {
   // The Skins tab shares this gun and lets you pick the knife, which takes no parts.
@@ -764,6 +774,12 @@ function gunsmithHtml() {
   const base = WEAPONS[weaponId];
   const build = workingBuild(weaponId);
   const built = resolveWeapon(weaponId, build) || base;
+  // Hovering a part shows what the gun would become, without fitting it. The stats compare against the
+  // gun as it is now, so the arrows answer the only question worth asking: is this better than what I
+  // already have on it?
+  const peekBuild = smithHover && smithHover.slot ? { ...build, [smithHover.slot]: build[smithHover.slot] === smithHover.id ? null : smithHover.id } : null;
+  const shown = peekBuild ? (resolveWeapon(weaponId, peekBuild) || built) : built;
+  const peeking = Boolean(peekBuild);
   const level = game.profile.level || 1;
   const unlocked = attachmentsUnlocked(level);
   const partsCost = buildCost(build);
@@ -773,37 +789,51 @@ function gunsmithHtml() {
     const list = smithGuns.filter((weapon) => weaponClass(weapon) === c.id);
     return list.length ? `<p class="shop-class">${c.name}</p>${list.map((weapon) => weaponButton(weapon, smithMark(weapon.id))).join('')}` : '';
   }).join('');
-  const shots = Math.ceil(100 / (built.damage * built.pellets));
+  const shots = Math.ceil(100 / (shown.damage * shown.pellets));
   const head = `<div class="smith-head">
-    <span><small>Damage</small><b>${Math.round(built.damage)}${built.pellets > 1 ? ` × ${built.pellets}` : ''}</b><i>${shots === 1 ? 'one-shot body kill' : `${shots} body shots`}</i></span>
-    <span><small>Fire rate</small><b>${Math.round(60 / built.cooldown)}</b><i>rpm${built.auto ? ' · auto' : ''}</i></span>
-    <span><small>Sight</small><b class="${built.sight === base.sight ? '' : 'lit'}">${SIGHT_NAMES[built.sight] || built.sight}</b><i>${[built.sight === base.sight ? 'stock' : `was ${SIGHT_NAMES[base.sight] || base.sight}`, built.suppressed ? 'suppressed' : ''].filter(Boolean).join(' · ')}</i></span></div>`;
+    <span><small>Damage</small><b>${Math.round(shown.damage)}${shown.pellets > 1 ? ` × ${shown.pellets}` : ''}</b><i>${shots === 1 ? 'one-shot body kill' : `${shots} body shots`}</i></span>
+    <span><small>Fire rate</small><b>${Math.round(60 / shown.cooldown)}</b><i>rpm${shown.auto ? ' · auto' : ''}</i></span>
+    <span><small>Sight</small><b class="${shown.sight === base.sight ? '' : 'lit'}">${SIGHT_NAMES[shown.sight] || shown.sight}</b><i>${[shown.sight === base.sight ? 'stock' : `was ${SIGHT_NAMES[base.sight] || base.sight}`, shown.suppressed ? 'suppressed' : ''].filter(Boolean).join(' · ')}</i></span></div>`;
   const stats = SMITH_STATS.map(([group, rows]) => {
-    const body = rows.map((row) => smithRow(base, built, row)).join('');
+    const body = rows.map((row) => smithRow(peeking ? built : base, shown, row)).join('');
     return body ? `<div class="smith-group"><p class="eyebrow sub">${group}</p>${body}</div>` : '';
   }).join('');
   const save = `<div class="button-row smith-actions">
     ${fitted && unlocked ? '<button type="button" class="ghost-button" data-smith-clear="1">Strip it</button>' : ''}
     <em class="smith-state on">${fitted ? `${plural(fitted, 'part')} fitted · kept` : 'Stock'}</em></div>`;
+  const slotsWith = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
   return `<div class="shop-gunsmith">
-    <div class="smith-side">
-      <div class="panel skin-preview smith-preview"><div id="skin-stage" class="skin-stage"></div>
-        <div><small>${base.tag}</small><h3>${base.name}</h3><span>${fitted ? `${plural(fitted, 'part')} on it` : 'Stock. Nothing bolted on.'}</span>
-          <p class="smith-cost">$${base.cost + partsCost}</p>
-          <small class="smith-price-note">Buying it in a match${partsCost ? ` · gun $${base.cost} + parts $${partsCost}` : ''}. Parts cost no coins.</small>
-          ${save}</div></div>
+    <div class="smith-guns">
       <section class="mode-block gun-block">
         <header class="block-head"><small>01 // WORKBENCH</small><b>Pick a gun</b><span>Every gun keeps its own build.</span></header>
         <nav class="gun-grid" aria-label="Weapons">${guns}</nav>
       </section>
     </div>
+
+    <div class="smith-stage-col">
+      <div class="panel skin-preview smith-preview">
+        <div id="skin-stage" class="skin-stage"></div>
+        <div class="smith-id">
+          <small>${base.tag}</small><h3>${base.name}</h3>
+          <span>${fitted ? `${fitted} of ${slotsWith.length} slots filled` : 'Stock. Nothing bolted on.'}</span>
+          <p class="smith-cost">$${base.cost + partsCost}</p>
+          <small class="smith-price-note">Buying it in a match${partsCost ? ` · gun $${base.cost} + parts $${partsCost}` : ''}. Parts cost no coins.</small>
+          ${save}
+        </div>
+      </div>
+      <section class="mode-block smith-bench">
+        <header class="block-head"><small>02 // BENCH</small><b>${SLOT_NAMES[smithSlot_] || 'Parts'}</b><span>${fitted}/${slotsWith.length} fitted. Hover a part to see what it would do.</span></header>
+        ${smithRail(base, build)}
+        ${unlocked ? '' : `<div class="panel smith-locked"><b>Locked</b><span>Attachments unlock at level ${ATTACHMENT_LEVEL}. You\u2019re level ${level}.</span></div>`}
+        ${smithSlotBody(base, build, unlocked)}
+      </section>
+    </div>
+
     <div class="smith-main">
-      ${unlocked ? '' : `<div class="panel smith-locked"><b>Locked</b><span>Attachments unlock at level ${ATTACHMENT_LEVEL}. You’re level ${level}.</span></div>`}
-      <section class="mode-block smith-stats">
-        <header class="block-head"><small>02 // THE GUN</small><b>${fitted ? 'As you built it' : 'Stock'}</b><span>Green is better, red is worse. Every part gives something up.</span></header>
+      <section class="mode-block smith-stats${peeking ? ' peeking' : ''}">
+        <header class="block-head"><small>03 // THE GUN</small><b>${peeking ? 'If you fitted that' : fitted ? 'As you built it' : 'Stock'}</b><span>${peeking ? 'Against the gun as it is now.' : 'Green is better, red is worse. Every part gives something up.'}</span></header>
         ${head}<div class="smith-groups">${stats}</div>
       </section>
-      ${GUN_SLOTS.map((slot, index) => smithSlot(base, build, slot, index, unlocked)).join('')}
     </div></div>`;
 }
 
@@ -1108,12 +1138,15 @@ export function onShopClick(button) {
     request({ type: 'shop', action: 'gear', kind, id });
     return true;
   }
+  if (d.smithSlot) { smithSlot_ = d.smithSlot; smithHover = null; play('ui'); return true; }
+
   // Gunsmith. Fitting a part is local; the server only hears about it on Save.
   if (d.smithPart) {
     const [slot, id] = d.smithPart.split(':');
     const build = { ...workingBuild(weaponId) };
     build[slot] = build[slot] === id ? null : id;
     smithDrafts[weaponId] = build;
+    smithHover = null;
     play(build[slot] ? 'ready' : 'uiBack');
     keepBuilds();
     return true;
@@ -1214,6 +1247,18 @@ export function onShopClick(button) {
   return false;
 }
 let lookupTimer = null;
+// Considering a part: the stats show what the gun would become. Only the numbers are redrawn, so
+// moving the mouse along a row of parts does not rebuild the bench under the cursor.
+export function onShopHover(target) {
+  if (tab !== 'gunsmith') return false;
+  const card = target?.closest?.('[data-smith-part]');
+  const next = card ? { slot: card.dataset.smithPart.split(':')[0], id: card.dataset.smithPart.split(':')[1] } : null;
+  const same = (a, b) => (!a && !b) || (a && b && a.slot === b.slot && a.id === b.id);
+  if (same(next, smithHover)) return false;
+  smithHover = next;
+  return true;
+}
+
 export function onShopInput(input) {
   if (input.id === 'game-stake') { stake = Math.floor(Number(input.value) || 0); return false; }
   if (input.id === 'crash-auto') { crashAuto = input.value; return false; }
