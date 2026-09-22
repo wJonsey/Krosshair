@@ -131,6 +131,8 @@ net.on('welcome', (message) => {
   game.marks.clear();
   arena.loadMap(message.map);
   hud.layers = null;
+  // Chat belongs to the match you are in and goes when you leave it.
+  hud.clearChat();
   arena.resetRound();
   // The world is up: the wait is over.
   requestAnimationFrame(() => hideLoading());

@@ -9,6 +9,11 @@ const { RoyaleRoom } = await import('../server/royale.js');
 const { AIRDROP_LOOT, LOOT_TABLE, POWERS, ROYALE, ROYALE_LOADOUT } = await import('../shared/royale.js');
 const { MAP_IDS } = await import('../shared/map.js');
 const { WEAPONS } = await import('../shared/constants.js');
+const { ProfileStore } = await import('../server/profiles.js');
+const { mkdtemp } = await import('node:fs/promises');
+const { tmpdir } = await import('node:os');
+const nodePath = await import('node:path');
+const { readFileSync } = await import('node:fs');
 
 const profiles = { get: () => ({ xp: 0, rating: 1000, rankedMatches: 0 }), view: () => ({ level: 1, rating: 1000, rankedMatches: 0 }), recordMatch: () => ({}), coins: () => 0, sanitizeCosmetics: (type, list) => list };
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
@@ -146,4 +151,40 @@ test('every pickup on the island is a real thing, and Adrenaline is gone', () =>
   }
   assert.ok(!POWERS.speed, 'the speed boost is back on the island');
   assert.ok(Object.keys(POWERS).length > 0, 'there are no powers left at all');
+});
+
+
+// Most kills in one royale: a record like the longest kill, not a running total, so a good match stands
+// and a bad one does not take it away.
+test('the best royale a pilot has had is kept, and only royales count', async () => {
+  const store = new ProfileStore(nodePath.join(await mkdtemp(nodePath.join(tmpdir(), 'krosshair-royale-')), 'profiles.json'));
+  const token = ProfileStore.newToken();
+  const played = (mode, kills) => store.recordMatch(token, { mode, kills, playerKills: kills, botKills: 0, deaths: 1, won: false, weaponKills: {} });
+
+  played('royale', 6);
+  assert.equal(store.get(token).stats.royaleKills, 6, 'a royale was not recorded');
+  played('royale', 3);
+  assert.equal(store.get(token).stats.royaleKills, 6, 'a worse royale took the record away');
+  played('royale', 11);
+  assert.equal(store.get(token).stats.royaleKills, 11, 'a better royale did not take the record');
+  played('match', 30);
+  assert.equal(store.get(token).stats.royaleKills, 11, 'an ordinary match counted towards the royale record');
+});
+
+test('a profile from before the board still works', async () => {
+  const store = new ProfileStore(nodePath.join(await mkdtemp(nodePath.join(tmpdir(), 'krosshair-royale-old-')), 'profiles.json'));
+  const token = ProfileStore.newToken();
+  const profile = store.get(token);
+  delete profile.stats.royaleKills; // what everyone who has already played looks like
+  store.recordMatch(token, { mode: 'royale', kills: 4, playerKills: 4, botKills: 0, deaths: 0, won: false, weaponKills: {} });
+  assert.equal(store.get(token).stats.royaleKills, 4, 'a pilot who played before the board can never get on it');
+});
+
+test('the board is wired from the stat all the way to the page', () => {
+  const server = readFileSync(new URL('../multiplayer-server.mjs', import.meta.url), 'utf8');
+  const menu = readFileSync(new URL('../client/menu.js', import.meta.url), 'utf8');
+  const boards = server.slice(server.indexOf('const BOARDS = {'), server.indexOf('\n};', server.indexOf('const BOARDS = {')));
+  assert.match(boards, /royale: \{ label: 'Royale kills'/, 'the server does not offer the board');
+  assert.match(boards, /p\.stats\?\.royaleKills/, 'and it reads the stat that is actually kept');
+  assert.match(menu, /const BOARD_ORDER = \[[^\]]*'royale'/, 'the page never shows it, so nobody can see it');
 });

@@ -232,6 +232,9 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 /* Staff talking over a match: amber, so it reads as the people running the game and not a pilot. */
 .chat-log b.staff { color: var(--signal); letter-spacing: .06em; }
 .chat-log div.faded { opacity: 0; }
+/* Open the box and the match's chat is held up behind it, readable rather than fading away. */
+.chat-log.open { max-height: 40vh; overflow-y: auto; padding: 8px 10px; background: rgba(7, 9, 12, .78); backdrop-filter: blur(8px); }
+.chat-log.open div { opacity: 1; transition: none; }
 .chat input { pointer-events: auto; width: 100%; margin-top: 6px; padding: 9px 10px; border: 0; border-bottom: 1px solid var(--signal); background: var(--glass-solid); outline: none; font-size: 13px; }
 
 .vitals { position: absolute; left: 22px; bottom: 24px; width: 260px; padding: 14px 16px; background: var(--hud-glass); --tick: rgba(230, 237, 241, .4); }

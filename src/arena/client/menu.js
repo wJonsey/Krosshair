@@ -328,7 +328,7 @@ addEventListener('hashchange', () => { const page = pageFromHash(); if (page !==
 let boards = null;
 let boardTab = 'rating';
 let boardsAskedAt = -Infinity;
-const BOARD_ORDER = ['rating', 'level', 'kills', 'wins', 'headshots', 'longest'];
+const BOARD_ORDER = ['rating', 'level', 'kills', 'wins', 'headshots', 'longest', 'royale'];
 const boardValue = (id, row) => (id === 'rating' ? `${row.value} SR` : id === 'level' ? `${row.value.toLocaleString()} XP` : id === 'longest' ? `${row.value} M` : row.value.toLocaleString());
 // Standings refresh every 30 s while they are on screen. Until the first answer arrives the request is
 // repeated every few seconds, so a message lost around connect or login never leaves the page on "Loading…".

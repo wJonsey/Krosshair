@@ -12,6 +12,9 @@ import { play, announce } from './audio.js';
 import { skinArt, skinArtReady, weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
+// Chat: a few lines over the match that clear themselves, and the whole match's worth behind them for
+// when the box is open. The backlog lives only as long as the match does.
+const CHAT_SHOWN = 7, CHAT_OPEN = 14, CHAT_HISTORY = 60, CHAT_FADE = 9000;
 // The HUD redraws every frame, but health, ammo and credits change on a hit or a reload, not on a
 // frame. Writing to the DOM costs far more than remembering what was written, so these skip the write
 // when nothing moved. What ends up on screen is identical either way.
@@ -35,7 +38,7 @@ export class Hud {
     this.blips = new Map(); // enemy id → { x, z, until }
     this.pings = [];
     this.layers = null;
-    this.chatOpen = false; this.chatTeam = false;
+    this.chatOpen = false; this.chatTeam = false; this.chatHistory = [];
     this.buyOpen = false; this.scoreOpen = false; this.quickOpen = false;
     this.bannerTimer = null;
     this.lastClockSecond = -1;
@@ -141,6 +144,8 @@ export class Hud {
     const input = this.dom.chatInput;
     input.classList.remove('hidden');
     input.placeholder = game.watching ? 'Message the match as staff…' : this.chatTeam ? 'Message team…' : 'Message all…';
+    this.dom.chatLog.classList.add('open');
+    this.chatBacklog();
     input.value = '';
     document.exitPointerLock?.();
     setTimeout(() => input.focus(), 0);
@@ -150,6 +155,8 @@ export class Hud {
     this.chatOpen = false;
     this.dom.chatInput.classList.add('hidden');
     this.dom.chatInput.blur();
+    this.dom.chatLog.classList.remove('open');
+    this.fadeChat();
     this.player.lock();
   }
   toggleQuick(open) {
@@ -168,7 +175,7 @@ export class Hud {
     setTimeout(() => line.remove(), 4200);
   }
 
-  chat(message) {
+  chatLine(message) {
     const line = document.createElement('div');
     const enemy = message.team !== myTeam();
     // Staff hold no team, so the friend and enemy colours say nothing about them. Marked instead, so
@@ -176,10 +183,37 @@ export class Hud {
     if (message.staff) line.innerHTML = `<b class="staff">STAFF ${escapeHtml(message.name)}</b> ${escapeHtml(message.text)}`;
     // Bots say so, so nobody wonders who they are talking to.
     else line.innerHTML = `<b class="${enemy ? 'foe' : 'friend'}">${message.scope === 'team' ? '[TEAM] ' : ''}${message.dead ? '☠ ' : ''}${escapeHtml(message.name)}${message.bot ? ' <em class="bot-tag">BOT</em>' : ''}</b> ${escapeHtml(message.text)}`;
-    this.dom.chatLog.append(line);
-    while (this.dom.chatLog.children.length > 7) this.dom.chatLog.firstChild.remove();
-    setTimeout(() => line.classList.add('faded'), 9000);
+    return line;
+  }
+
+  // Everything said this match, so it can be read back. Kept in memory and dropped when the match is,
+  // never stored: match chat is not worth keeping and is nobody's business afterwards.
+  chatBacklog() {
+    this.dom.chatLog.replaceChildren(...this.chatHistory.slice(-CHAT_OPEN).map((message) => this.chatLine(message)));
+  }
+
+  // The overlay still clears itself after a few seconds. Open the box and the backlog is there instead.
+  fadeChat() {
+    const lines = [...this.dom.chatLog.children].slice(-CHAT_SHOWN);
+    this.dom.chatLog.replaceChildren(...lines);
+    lines.forEach((line) => setTimeout(() => { if (!this.chatOpen) line.classList.add('faded'); }, CHAT_FADE));
+  }
+
+  chat(message) {
+    this.chatHistory.push(message);
+    while (this.chatHistory.length > CHAT_HISTORY) this.chatHistory.shift();
     play('chat');
+    if (this.chatOpen) { this.chatBacklog(); return; }
+    const line = this.chatLine(message);
+    this.dom.chatLog.append(line);
+    while (this.dom.chatLog.children.length > CHAT_SHOWN) this.dom.chatLog.firstChild.remove();
+    setTimeout(() => { if (!this.chatOpen) line.classList.add('faded'); }, CHAT_FADE);
+  }
+
+  // A new match starts with nothing said in it.
+  clearChat() {
+    this.chatHistory = [];
+    this.dom.chatLog.replaceChildren();
   }
 
   killFeed(event) {

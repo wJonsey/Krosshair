@@ -491,6 +491,7 @@ const BOARDS = {
   wins: { label: 'Wins', value: (p) => p.stats?.wins || 0, eligible: (p) => (p.stats?.wins || 0) > 0 },
   headshots: { label: 'Headshots', value: (p) => p.stats?.headshots || 0, eligible: (p) => (p.stats?.headshots || 0) > 0 },
   longest: { label: 'Longest kill', value: (p) => p.stats?.longest || 0, eligible: (p) => (p.stats?.longest || 0) > 0 },
+  royale: { label: 'Royale kills', value: (p) => p.stats?.royaleKills || 0, eligible: (p) => (p.stats?.royaleKills || 0) > 0 },
 };
 // now() counts from process start, so "never built" must be -Infinity, not 0 (0 looked fresh for the first 30 s).
 let boardCache = { at: -Infinity, rows: {} };

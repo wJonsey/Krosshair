@@ -137,7 +137,7 @@ export class ProfileStore {
     if (!this.profiles.has(key)) {
       this.profiles.set(key, {
         name: 'Pilot', created: Date.now(), xp: 0, rating: 1000, rankedMatches: 0,
-        stats: { matches: 0, wins: 0, kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, mvps: 0, clutches: 0, wallbangs: 0 },
+        stats: { matches: 0, wins: 0, kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, royaleKills: 0, mvps: 0, clutches: 0, wallbangs: 0 },
         weapons: {}, history: [], contracts: { date: '', progress: {}, claimed: {} }, recent: [],
         look: null, settings: null, tutorialDone: false,
       });
@@ -325,6 +325,8 @@ export class ProfileStore {
     for (const field of ['kills', 'playerKills', 'botKills', 'deaths', 'assists', 'headshots', 'damage', 'shots', 'hits', 'roundsWon', 'roundsPlayed', 'clutches', 'wallbangs']) s[field] = (s[field] || 0) + (summary[field] || 0);
     if (summary.mvp) s.mvps += 1;
     s.longest = Math.max(s.longest, Math.round(summary.longest || 0));
+    // The best single royale, kept the way the longest kill is: a record, not a running total.
+    if (summary.mode === 'royale') s.royaleKills = Math.max(s.royaleKills || 0, summary.kills || 0);
     Object.entries(summary.weaponKills || {}).forEach(([id, entry]) => {
       const record = profile.weapons[id] || (profile.weapons[id] = { kills: 0, headshots: 0 });
       record.kills += entry.kills; record.headshots += entry.headshots;
