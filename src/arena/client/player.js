@@ -564,12 +564,28 @@ export class LocalPlayer {
     // --- stance
     // crouchToggle is driven by the keyboard in toggle mode and always by the gamepad's B button.
     const wantCrouch = this.crouchToggle || (!game.settings.toggleCrouch && held(keys, 'crouch'));
+    // Worked out here rather than further down because the slide needs to know whether you are
+    // walking on purpose: that, not a speed reading, is what decides if a crouch becomes a slide.
+    //
+    // A profile saved before sprint existed still has walk on Shift, and sprint's default is Shift as
+    // well, so one key asked for both and walking quietly won. That left a pilot at 3.1 while they
+    // thought they were sprinting, with the slide shut out at that speed. Sprint takes the key when
+    // they collide: walk has a key of its own now, and a thumb on Shift in a shooter means run.
+    const sprintHeld = held(keys, 'sprint') || this.pad.sprint;
+    const walkHeld = held(keys, 'walk') || this.pad.walk;
+    const sameKey = sprintHeld && walkHeld && bindsFor('walk').some((code) => code && bindsFor('sprint').includes(code));
+    const walkKey = walkHeld && !sameKey;
     if (wantCrouch && !this.crouching) {
       this.crouching = true; body.height = BODY.crouchHeight;
       // Crouch at a run and it is a slide, not a stoop. Land one inside bhopWindow of the last and the
       // speed carries; otherwise it opens at the standard burst.
       const rested = this.slide.endedAt < 0 || now - this.slide.endedAt >= BODY.slideCooldown;
-      if (body.onGround && rested && (this.speed >= BODY.slideMin || this.flow > 0)) {
+      // Whether a crouch becomes a slide is a question of intent, not a measurement. Speed dips every
+      // time you turn or brush a wall, and once the base run came down for sprint a heavy gun never
+      // reached the old threshold at all, so the slide fired only sometimes and never with an LMG.
+      // Running rather than walking, and actually moving, is the whole test.
+      const running = !walkKey && this.speed >= BODY.slideMin;
+      if (body.onGround && rested && (running || this.flow > 0)) {
         // Whatever is still being carried opens the slide. Flow holds through the air and only bleeds
         // once you are back on your feet, so the timing window is the decay, not a number picked here.
         this.slide = { since: now, start: slideEntry(this.flow), endedAt: -1 };
@@ -593,10 +609,9 @@ export class LocalPlayer {
     if (before === 0 && this.scopeAmount > 0) { play('scope'); bus.emit('tutorial', 'scope'); }
     if (!wantScope && before > 0 && this.scopeAmount === 0) this.zoomIndex = 0;
     // --- breath
-    const walkKey = held(keys, 'walk') || this.pad.walk;
     // Sprint is the pace a slide is meant to be entered from. Walking wins if both are held, and
     // scoping already slows you, so sprint quietly does nothing while you are looking down a scope.
-    const sprintKey = !walkKey && (held(keys, 'sprint') || this.pad.sprint);
+    const sprintKey = !walkKey && sprintHeld;
     this.holdingBreath = walkKey && this.scopeAmount > 0.9 && Boolean(weapon.scope?.[0] < 40) && !this.winded;
     if (this.holdingBreath) { this.breath = Math.max(0, this.breath - dt * 0.3); if (this.breath === 0) { this.winded = true; } } else { this.breath = Math.min(1, this.breath + dt * 0.22); if (this.winded && this.breath > 0.45) this.winded = false; }
     // --- movement

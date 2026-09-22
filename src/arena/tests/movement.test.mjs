@@ -2,6 +2,7 @@
 // one bleeds away, and the whole thing stays under the speed the server treats as cheating.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { BODY } from '../shared/constants.js';
 import { bhopSpeed, jumpArc, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
 
@@ -161,4 +162,37 @@ test('sprint is the way into a slide', () => {
 test('adding sprint did not quietly change gunplay', () => {
   assert.equal(BODY.spreadSpeed, 6.0, 'the spread reference is the speed it always was');
   assert.notEqual(BODY.spreadSpeed, BODY.runSpeed, 'and is deliberately not tied to the new base');
+});
+
+// Sliding is a question of intent, not a speed reading. Once the base run came down to make room for
+// sprint, the old threshold sat 0.4 m/s under a plain run and above a heavy gun's run altogether, so
+// the slide fired only sometimes and never at all with an LMG in hand.
+test('a run slides, a walk does not, whatever the gun', async () => {
+  const { WEAPONS } = await import('../shared/constants.js');
+  const slowest = Math.min(...Object.values(WEAPONS).map((w) => w.speed).filter((n) => typeof n === 'number'));
+  const canSlide = (speed, walking) => !walking && speed >= BODY.slideMin;
+
+  assert.equal(canSlide(0, false), false, 'stood still is not a slide');
+  assert.equal(canSlide(BODY.walkSpeed, true), false, 'walking on purpose is not a slide');
+  assert.ok(canSlide(BODY.runSpeed, false), 'a plain run slides');
+  assert.ok(canSlide(BODY.runSpeed * slowest, false), 'and so does a run carrying the heaviest gun');
+  assert.ok(canSlide(BODY.runSpeed * slowest * 0.7, false), 'and it survives the dip from a hard turn');
+});
+
+test('the slide floor sits under the slowest run there is', async () => {
+  const { WEAPONS } = await import('../shared/constants.js');
+  const slowest = Math.min(...Object.values(WEAPONS).map((w) => w.speed).filter((n) => typeof n === 'number'));
+  const worst = BODY.runSpeed * slowest;
+  assert.ok(BODY.slideMin < worst * 0.8, `slideMin ${BODY.slideMin} leaves no room under the slowest run ${worst.toFixed(2)}`);
+  assert.ok(BODY.slideMin > 0, 'but stood still still cannot slide');
+});
+
+// One key cannot do two jobs. Sprint's default is Shift, and a profile saved before sprint existed
+// still has walk there, so the same press asked for both and walking won it silently.
+test('sprint wins a key it shares with walk', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  const block = player.slice(player.indexOf('const sprintHeld'), player.indexOf('const sprintKey') + 120);
+  assert.match(block, /const sameKey = sprintHeld && walkHeld/, 'the clash is noticed');
+  assert.match(block, /bindsFor\('walk'\)\.some\(\(code\) => code && bindsFor\('sprint'\)\.includes\(code\)\)/, 'by comparing the keys, not by guessing');
+  assert.match(block, /const walkKey = walkHeld && !sameKey/, 'and walk gives the key up');
 });

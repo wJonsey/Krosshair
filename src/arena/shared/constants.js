@@ -30,7 +30,8 @@ export const BODY = {
   // good and bleeds off when it is not. flowMax is the ceiling on the whole chain and is deliberately
   // under the 13 m/s the server rejects, so nobody gets snapped back for moving well.
   slideSpeed: 8.2,      // what a plain slide out of a run is worth, before any chaining
-  slideMin: 4.4,        // you have to already be running to start one
+  slideMin: 2.5,        // moving, not stood still. Walking is ruled out by the walk key, not by this,
+                        // so a heavy gun at a run still slides where a speed threshold shut it out
   slideTime: 0.62,      // how long the burst lasts before it is just a crouch
   slideCooldown: 0.28,  // from the end of one slide to the start of the next
   bhopKeep: 0.93,       // share of the slide carried out of a well timed jump
