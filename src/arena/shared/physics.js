@@ -217,8 +217,11 @@ export function makeBody(x = 0, y = 0, z = 0) {
 // speed is only worth something while the slide is young, which is what makes the timing matter.
 export function slideSpeedAt(start, elapsed) {
   if (elapsed >= BODY.slideTime) return BODY.crouchSpeed;
-  const left = 1 - elapsed / BODY.slideTime;
-  return BODY.crouchSpeed + (start - BODY.crouchSpeed) * left * left;
+  // Holds the burst, then falls away. Squaring what was left instead spent most of the speed in the
+  // first tenth of a second, so a slide dropped under a sprint almost as soon as it opened and there
+  // was never a window worth hopping out of.
+  const gone = elapsed / BODY.slideTime;
+  return BODY.crouchSpeed + (start - BODY.crouchSpeed) * (1 - gone * gone);
 }
 
 // What a slide opens at. Landing one while still carrying speed adds to it, so a clean chain climbs
@@ -252,9 +255,12 @@ export function jumpArc(sliding, scoped) {
 
 // Air strafing pays only while a chain is live and only in the air, so it rewards the technique
 // without making every pilot walk diagonally everywhere on the ground.
-export function strafeAir(flow, airborne, strafing) {
+export function strafeAir(flow, airborne, strafing, dt = 1 / 60) {
   if (!airborne || !strafing || !(flow > 0)) return flow;
-  return Math.min(BODY.flowMax, flow * BODY.strafeBonus);
+  // Per second, not per frame. Compounded every frame it put anyone holding a diagonal on the ceiling
+  // within a tenth of a second, so air strafing was a key to hold rather than anything to time, and it
+  // paid more the better your frame rate.
+  return Math.min(BODY.flowMax, flow * (1 + (BODY.strafeBonus - 1) * dt));
 }
 
 // Air acceleration, the Quake-descended kind that makes air strafing worth learning. Speed is added

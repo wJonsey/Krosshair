@@ -40,7 +40,8 @@ export const BODY = {
   flowDecay: 8.5,       // m/s bled each second once the slide is over and you are back on your feet
   slideArc: 0.82,       // a slide hop is a low fast arc, not a leap
   scopeArc: 0.76,       // scoped is the short hop: less height, back on the ground sooner
-  strafeBonus: 1.06,    // strafing while airborne mid chain, the reason to air strafe at all
+  strafeBonus: 1.06,    // per second of airborne strafing mid chain, on top of what air control earns
+  slideSteer: 3.2,      // how fast a slide can be turned. You aim a slide, you do not drive it
   // What the server treats as impossible. It has to clear flowMax with room to spare: a network hitch
   // bunches movement into one update, and a pilot who has earned their speed must never be snapped
   // back for it. Well above anything legitimate, still far under what a speed hack helps itself to.

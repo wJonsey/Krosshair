@@ -70,6 +70,31 @@ test('a slide hop is a low arc, a moon jump is the tall one', () => {
   assert.ok(jumpArc(true, true) < slideHop, 'scoped out of a slide is lower still');
 });
 
+// What every other test here missed: the curve and the controller were each right on their own. The
+// burst was real, but on the ground the velocity only lerped toward it at groundAccel while the curve
+// bled away faster than the legs could chase, so a slide crossed a sprint at about 6.9 and was under it
+// again a tenth of a second later. Crouching at a run felt like slowing down. These two pin the window.
+test('a slide beats a sprint for long enough to be worth doing', () => {
+  const start = slideEntry(0);
+  let above = 0;
+  const dt = 1 / 240;
+  for (let t = 0; t < BODY.slideTime; t += dt) if (slideSpeedAt(start, t) > BODY.sprintSpeed) above += dt;
+  assert.ok(above > 0.25, `a slide beat a sprint for only ${above.toFixed(2)}s, which reads as slowing down`);
+});
+
+test('the burst is spent late, not in the first few frames', () => {
+  const start = slideEntry(0);
+  const half = slideSpeedAt(start, BODY.slideTime / 2) - BODY.crouchSpeed;
+  assert.ok(half > (start - BODY.crouchSpeed) * 0.5, 'half way through, most of the burst is still there');
+});
+
+test('air strafing pays by the second, not by the frame', () => {
+  const ride = (fps) => { let flow = 8; for (let i = 0; i < fps; i += 1) flow = strafeAir(flow, true, true, 1 / fps); return flow; };
+  const slow = ride(30), fast = ride(240);
+  assert.ok(Math.abs(slow - fast) < 0.02, `a second of strafing was worth ${slow.toFixed(2)} at 30fps and ${fast.toFixed(2)} at 240`);
+  assert.ok(fast > 8 && fast < 8 * BODY.strafeBonus * 1.01, 'and a second of it is worth about the bonus, once');
+});
+
 test('air strafing pays, but only in the air and only mid chain', () => {
   const flow = 9;
   assert.ok(strafeAir(flow, true, true) > flow, 'strafing in the air mid chain is worth something');

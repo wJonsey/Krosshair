@@ -41,7 +41,7 @@ export class LocalPlayer {
     // where a jump is still owed to you. Both are about the input never being silently dropped.
     this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false; this.jumped = false;
     this.scopeAmount = 0; this.zoomIndex = 0;
-    this.viewY = 0; this.recoilPitch = 0; this.recoilYaw = 0; this.swayX = 0; this.swayY = 0; this.swayTime = 0;
+    this.viewY = 0; this.recoilPitch = 0; this.recoilYaw = 0; this.swayTime = 0;
     this.breath = 1; this.holdingBreath = false; this.winded = false;
     this.suppression = 0; this.shake = 0; this.deathTime = 0;
     this.active = 'primary'; this.nextFire = 0; this.equipUntil = 0; this.reloadEnd = 0; this.reloadSlot = null; this.reloadStage = 0;
@@ -620,7 +620,7 @@ export class LocalPlayer {
     if (this.slide.since >= 0) { this.flow = slideSpeedAt(this.slide.start, now - this.slide.since); maxSpeed = Math.max(maxSpeed, this.flow); }
     else if (this.flow > 0) {
       // Holding a strafe in the air keeps the chain alive and pays a little for it.
-      this.flow = strafeAir(this.flow, !body.onGround, mx !== 0 && mz !== 0);
+      this.flow = strafeAir(this.flow, !body.onGround, mx !== 0 && mz !== 0, dt);
       maxSpeed = Math.max(maxSpeed, this.flow);
     }
     if (devState.speed) maxSpeed *= DEV_SPEED;
@@ -638,7 +638,20 @@ export class LocalPlayer {
     }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     const wishX = (mx * cos + mz * sin) * maxSpeed, wishZ = (-mx * sin + mz * cos) * maxSpeed;
-    if (body.onGround || this.drop) {
+    if (body.onGround && this.slide.since >= 0 && !this.drop) {
+      // A slide is a shove, not a speed to accelerate into. Left to the ground acceleration the burst
+      // was never reached: the curve had already bled below a sprint by the time the legs caught up, so
+      // crouching at a run read as slowing down. The slide sets the speed and the stick only steers it.
+      const carrying = Math.hypot(this.vel.x, this.vel.z);
+      let dirX = carrying > 0.05 ? this.vel.x / carrying : -sin, dirZ = carrying > 0.05 ? this.vel.z / carrying : -cos;
+      if (mx || mz) {
+        const len = Math.hypot(wishX, wishZ) || 1;
+        const turn = Math.min(1, BODY.slideSteer * dt);
+        dirX += (wishX / len - dirX) * turn; dirZ += (wishZ / len - dirZ) * turn;
+        const unit = Math.hypot(dirX, dirZ) || 1; dirX /= unit; dirZ /= unit;
+      }
+      this.vel.x = dirX * this.flow; this.vel.z = dirZ * this.flow;
+    } else if (body.onGround || this.drop) {
       // On your feet, and under a parachute, you go where you point.
       const k = Math.min(1, (this.drop ? 3.5 : BODY.groundAccel) * dt);
       this.vel.x += (wishX - this.vel.x) * k; this.vel.z += (wishZ - this.vel.z) * k;
@@ -719,34 +732,29 @@ export class LocalPlayer {
     // --- camera
     this.recoilPitch += (0 - this.recoilPitch) * Math.min(1, dt * weapon.recoil?.recover || dt * 6);
     this.recoilYaw += (0 - this.recoilYaw) * Math.min(1, dt * 7);
-    const scopedOptic = weapon.scope && weapon.scope[0] < 40;
     this.swayTime += dt;
-    // Sway is what a held rifle really does: a slow figure of eight from breathing, a faster small tremor from
-    // the muscles, a wander that never quite repeats. Most of it is the gun moving in your hands (the sights
-    // drift around the target); only a little reaches the point of aim, so it nudges accuracy rather than ruling it.
+    // Sway is what a held rifle really does: a slow figure of eight from breathing, a faster small tremor
+    // from the muscles, a wander that never quite repeats. It moves the gun in your hands and nothing
+    // else: the head holds still, so the shot goes where the sights are rather than where sway left them.
     const st = this.swayTime;
     const breatheX = Math.sin(st * 0.95), breatheY = Math.sin(st * 1.9 + 0.6) * 0.6;
     const tremorX = Math.sin(st * 7.3) * 0.12 + Math.sin(st * 11.1 + 2) * 0.07, tremorY = Math.sin(st * 8.7 + 1) * 0.12 + Math.sin(st * 12.9) * 0.07;
     const wanderX = Math.sin(st * 0.37 + 4) * 0.5, wanderY = Math.sin(st * 0.29 + 1.7) * 0.4;
     const effort = (this.crouching ? 0.55 : 1) * (1 + Math.min(1.5, this.speed / 3)) * (1 + this.suppression * 2.2) * (this.holdingBreath ? 0.12 : 1) * (this.winded ? 2.1 : 1) * (weapon.sway || 1);
     const patternX = (breatheX + tremorX + wanderX) * effort, patternY = (breatheY + tremorY + wanderY) * effort;
-    // The gun drifts in your hands; your head does not. Feeding the sway into the camera as well made
-    // scoping in read as the screen shaking, because magnified glass multiplies every bit of it. The
-    // pattern still moves the weapon, which is what you watch through the glass, and the sights still
-    // wander over the target: it is the view that holds still now. AIM_SWAY puts it back if that turns
-    // out to be too steady, and holding breath still calms the drift you can see.
-    const AIM_SWAY = 0;
-    const aimShare = AIM_SWAY * (scopedOptic ? 0.0011 : 0.00035) * this.scopeAmount;
-    this.swayX = patternX * aimShare; this.swayY = patternY * aimShare;
-    this.gunSway = [patternX * this.scopeAmount, patternY * this.scopeAmount];
+    // The gun drifts in your hands; your head does not, and aiming settles the drift. The wander is
+    // life at the hip; down the sights almost all of it goes, because glass magnifies the gun moving
+    // into the whole picture swimming. What is left is the part holding breath calms.
+    const settle = 1 - this.scopeAmount * 0.88;
+    this.gunSway = [patternX * settle, patternY * settle];
     const eye = THREE.MathUtils.lerp(BODY.eye, BODY.crouchEye, this.crouchAmount);
     const dy = body.y - this.viewY;
     if (Math.abs(dy) > 0.7 || !body.onGround) this.viewY = body.y; else this.viewY += dy * Math.min(1, dt * 16);
     const shakeX = (Math.random() - 0.5) * this.shake * 0.012, shakeY = (Math.random() - 0.5) * this.shake * 0.012;
     this.camera.position.set(body.x, this.viewY + eye, body.z);
     // The dev No sway tool takes the wobble and the kick out of the view.
-    if (devState.nospread) { this.swayX = 0; this.swayY = 0; this.recoilPitch = 0; this.recoilYaw = 0; }
-    this.camera.rotation.set(this.pitch + this.recoilPitch + this.swayY + shakeY, this.yaw + this.recoilYaw + this.swayX + shakeX, 0, 'YXZ');
+    if (devState.nospread) { this.recoilPitch = 0; this.recoilYaw = 0; }
+    this.camera.rotation.set(this.pitch + this.recoilPitch + shakeY, this.yaw + this.recoilYaw + shakeX, 0, 'YXZ');
     const baseFov = game.settings.fov;
     const zoomFov = weapon.scope ? weapon.scope[Math.min(this.zoomIndex, weapon.scope.length - 1)] : baseFov;
     const eased = this.scopeAmount * this.scopeAmount * (3 - 2 * this.scopeAmount);

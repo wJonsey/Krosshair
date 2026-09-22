@@ -212,16 +212,20 @@ export class ViewModel {
     // Dots and holos: the housing comes up to the eye and frames the HUD reticle, so it moves less once aimed.
     const open = data.sight === 'dot' || data.sight === 'holo';
     const steady = open ? 1 - ads * 0.7 : 1;
+    // Look sway is life in the hands, and it belongs at the hip. Aimed, the gun is against your eye and
+    // cannot swing about: with glass in front of it the swing becomes the whole picture moving, which is
+    // read as the screen shaking rather than as a gun being held. Recoil still gets `steady`.
+    const settled = 1 - ads * (open ? 0.7 : 0.9);
     // Aimed, the gun floats a few millimetres around the line of sight: a scope's shadow breathes with it.
     const floatX = (state.aimSway?.[0] || 0) * 0.0016, floatY = (state.aimSway?.[1] || 0) * 0.0016;
-    const x = lerp(data.hip[0], data.ads[0], ads) + floatX + bx + idleX + this.swayX * steady - this.strafe * 0.008 * hipOnly;
-    const y = lerp(data.hip[1], data.ads[1], ads) + floatY + by + this.swayY * steady + idleY - this.landDip * 0.05 + this.air * 0.012 * hipOnly - this.crouchLean * 0.012 * hipOnly - this.run * 0.012 * hipOnly;
+    const x = lerp(data.hip[0], data.ads[0], ads) + floatX + bx + idleX + this.swayX * settled - this.strafe * 0.008 * hipOnly;
+    const y = lerp(data.hip[1], data.ads[1], ads) + floatY + by + this.swayY * settled + idleY - this.landDip * 0.05 + this.air * 0.012 * hipOnly - this.crouchLean * 0.012 * hipOnly - this.run * 0.012 * hipOnly;
     const z = lerp(data.hip[2], data.ads[2], ads) + this.kick * 0.085 * steady + this.run * 0.015 * hipOnly;
     model.position.set(x, y, z);
     model.rotation.set(
-      (this.kickRot * 0.13 + this.swayY * 1.5) * steady - this.air * 0.05 * hipOnly - this.run * 0.05 * hipOnly,
-      0.06 * hipOnly + this.swayX * 2 * steady + this.kickYaw * steady + this.run * 0.1 * hipOnly,
-      -this.swayX * 1.4 * steady + this.kickRoll * steady - this.strafe * 0.05 * hipOnly + this.crouchLean * 0.06 * hipOnly + Math.sin(this.bob) * 0.012 * bobScale,
+      this.kickRot * 0.13 * steady + this.swayY * 1.5 * settled - this.air * 0.05 * hipOnly - this.run * 0.05 * hipOnly,
+      0.06 * hipOnly + this.swayX * 2 * settled + this.kickYaw * steady + this.run * 0.1 * hipOnly,
+      -this.swayX * 1.4 * settled + this.kickRoll * steady - this.strafe * 0.05 * hipOnly + this.crouchLean * 0.06 * hipOnly + Math.sin(this.bob) * 0.012 * bobScale,
     );
     // Drawing it: long guns swing up from low on the right and roll level; pistols snap up and settle.
     if (this.equip < 1 && !data.knife) {
