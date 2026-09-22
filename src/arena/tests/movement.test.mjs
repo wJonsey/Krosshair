@@ -226,9 +226,33 @@ test('there is no walk action left to collide with sprint', () => {
 
 test('holding breath survived the removal', () => {
   const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
-  assert.match(player, /this\.holdingBreath = sprintHeld && scoped && !this\.winded/, 'the sniper mechanic moved rather than went');
+  // Breath reads the key itself, never the toggle: a toggle would hold your breath for ever.
+  assert.match(player, /this\.holdingBreath = sprintKeyHeld && scoped && !this\.winded/, 'the sniper mechanic moved rather than went');
   // Aimed down a magnified optic, the same key steadies instead of sprinting, so they never fight.
   assert.match(player, /const sprintKey = sprintHeld && !scoped/, 'sprint stands down while you are aimed');
+});
+
+// Some keyboards cannot report Shift, W and Space at once, so a pilot holding sprint simply never
+// jumps: the keydown never reaches the browser and no amount of game code can conjure it. A toggle
+// takes the held key out of the combination entirely.
+test('sprint can be a toggle, so it need not be held with anything else', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  assert.match(player, /const sprintHeld = game\.settings\.toggleSprint \? this\.sprintToggle : sprintKeyHeld/, 'the toggle stands in for the key');
+  assert.match(player, /action === 'sprint' && game\.settings\.toggleSprint/, 'and a press flips it');
+  assert.ok(/this\.sprintToggle = false/.test(player), 'it clears on spawn like the others');
+  const settings = readFileSync(new URL('../client/state.js', import.meta.url), 'utf8');
+  assert.match(settings, /toggleSprint: false/, 'off by default, so holding Shift stays the norm');
+  const profiles = readFileSync(new URL('../server/profiles.js', import.meta.url), 'utf8');
+  assert.match(profiles, /toggleSprint: 'bool'/, 'and it survives a reload, or the setting is a lie');
+});
+
+// Screen shake was random jitter on the camera, added on every shot. Through a magnified scope it read
+// as the whole picture juddering, which is what got reported. Nothing else ever read it.
+test('nothing shakes the camera any more', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  assert.ok(!/this\.shake/.test(player), 'no shake state left to feed the camera');
+  const camera = player.match(/this\.camera\.rotation\.set\([^;]*\);/)[0];
+  assert.ok(!/shake/.test(camera), `the camera still takes a shake term: ${camera}`);
 });
 
 test('nothing still asks the player to press a key that is gone', () => {

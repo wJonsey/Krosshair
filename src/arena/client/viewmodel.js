@@ -60,6 +60,9 @@ function scopeGlass(texture) {
   });
 }
 
+// Capped at the 768 it always used, so this can only ever draw fewer pixels than before, never more.
+const SCOPE_STEPS = [256, 384, 512, 768];
+
 export class ViewModel {
   constructor() {
     this.scene = new THREE.Scene();
@@ -161,6 +164,14 @@ export class ViewModel {
     this.inspectTime = -1;
   }
   land(force) { this.landDip = Math.min(1, force); }
+  // How many pixels across the picture needs. It is only ever seen inside the lens, so a fixed square
+  // was drawing five to a hundred times the pixels the lens actually covers: at the hip a scope is a
+  // coin's worth of screen and was still costing a 768 square. Stepped, because a lens grows as it
+  // comes to the eye and reallocating the target every frame would cost more than it saves.
+  lensPixels(height) {
+    const across = this.lensFraction * height * 1.35; // a little over the lens, so the glass stays crisp
+    return SCOPE_STEPS.find((step) => step >= across) ?? SCOPE_STEPS[SCOPE_STEPS.length - 1];
+  }
   // Does the scope picture need drawing this frame? Every frame while aiming, every third at the hip.
   scopeWanted() {
     if (!this.current?.userData.lens || this.hidden) return false;

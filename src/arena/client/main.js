@@ -622,6 +622,9 @@ function frame(now = 0) {
     const fov = THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(covers) / viewmodel.scopeMag, 0.4, 60);
     if (Math.abs(scopeCamera.fov - fov) > 0.01) { scopeCamera.fov = fov; scopeCamera.updateProjectionMatrix(); }
     scopeCamera.updateMatrixWorld();
+    // Draw it at the size the lens is on screen, not at a fixed square.
+    const need = viewmodel.lensPixels(renderer.getDrawingBufferSize(bufferSize).y);
+    if (viewmodel.scopeTarget.width !== need) viewmodel.scopeTarget.setSize(need, need);
     const skyPass = arena.sky?.material.uniforms.scopePass;
     if (skyPass) skyPass.value = 1;
     renderer.setRenderTarget(viewmodel.scopeTarget);

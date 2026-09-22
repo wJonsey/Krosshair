@@ -53,7 +53,7 @@ const SETTING_RULES = {
   // Anything the browser can set has to be listed here or it is dropped on the way in, and the pilot
   // sets it again every session wondering why it never sticks.
   viewDistance: ['low', 'medium', 'high', 'ultra'], aimBlur: 'bool',
-  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', speedFov: 'bool', moveDebug: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
+  announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', toggleSprint: 'bool', speedFov: 'bool', moveDebug: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
 };
 
 export class ProfileStore {

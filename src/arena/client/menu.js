@@ -1131,7 +1131,7 @@ function settingsBodyHtml(tab) {
         <div class="button-row"><button type="button" id="reset-pad-binds" class="ghost-button">Reset controller</button></div></div>`;
   }
   return `<div class="settings-cols"><div class="panel"><p class="eyebrow">Sensitivity</p>${slider('sensitivity', 'Mouse sensitivity', 0.2, 3, 0.05, 'x2')}${slider('scopeSensitivity', 'Scoped sensitivity', 0.2, 1.5, 0.05, 'x2', s.scopeSensitivity, 'While aiming.')}${slider('padSensitivity', 'Controller sensitivity', 0.4, 2.5, 0.1, 'x1')}</div>
-    <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}${toggle('speedFov', 'Speed field of view', 'The view opens a little as you get quicker.')}${toggle('moveDebug', 'Movement readout', 'Speed, state and velocity while you play. F3 also toggles it.')}</div></div>`;
+    <div class="panel"><p class="eyebrow">Behaviour</p>${toggle('invertY', 'Invert Y axis')}${toggle('toggleScope', 'Toggle scope', 'Press to aim, press again to lower.')}${toggle('toggleCrouch', 'Toggle crouch')}${toggle('toggleSprint', 'Toggle sprint', 'Tap to sprint, tap again to stop. Holding breath stays on the key.')}${toggle('speedFov', 'Speed field of view', 'The view opens a little as you get quicker.')}${toggle('moveDebug', 'Movement readout', 'Speed, state and velocity while you play. F3 also toggles it.')}</div></div>`;
 }
 // The same rail sits on Settings, Controls and Feedback. In a match (the overlay) Feedback is left out.
 function settingsNavButtons(tab) {

@@ -32,7 +32,7 @@ export class LocalPlayer {
     this.keys = new Set();
     this.buttons = { fire: false, scope: false };
     this.pad = { fire: false, scope: false, prev: new Set(), active: false, aim: 0, uiWait: 0, uiHeld: false };
-    this.crouchToggle = false; this.scopeToggle = false;
+    this.crouchToggle = false; this.scopeToggle = false; this.sprintToggle = false;
     this.crouching = false; this.crouchAmount = 0;
     // Slide and bhop: `flow` is the speed being carried through a chain, in m/s. 0 means not flowing.
     this.slide = { since: -1, start: 0, endedAt: -1 };
@@ -43,7 +43,7 @@ export class LocalPlayer {
     this.scopeAmount = 0; this.zoomIndex = 0;
     this.viewY = 0; this.recoilPitch = 0; this.recoilYaw = 0; this.swayTime = 0;
     this.breath = 1; this.holdingBreath = false; this.winded = false;
-    this.suppression = 0; this.shake = 0; this.deathTime = 0;
+    this.suppression = 0; this.deathTime = 0;
     this.active = 'primary'; this.nextFire = 0; this.equipUntil = 0; this.reloadEnd = 0; this.reloadSlot = null; this.reloadStage = 0;
     this.seq = 0; this.spread = { primary: new SpreadTracker(), sidearm: new SpreadTracker() };
     this.stride = 0; this.stateTimer = 0; this.lookX = 0; this.lookY = 0; this.speed = 0;
@@ -97,6 +97,7 @@ export class LocalPlayer {
       if (action === 'gadget2') this.useGadget(1);
       if (action === 'ping') this.ping();
       if (action === 'crouch' && game.settings.toggleCrouch) this.crouchToggle = !this.crouchToggle;
+      if (action === 'sprint' && game.settings.toggleSprint) this.sprintToggle = !this.sprintToggle;
     }
   }
   releaseTriggers() { for (const code of [...bindsFor('fire'), ...bindsFor('scope')]) this.keys.delete(code); }
@@ -167,7 +168,7 @@ export class LocalPlayer {
     }
     this.viewY = this.body.y;
     this.alive = true; this.mode = 'play';
-    this.crouching = false; this.crouchToggle = false; this.scopeToggle = false; this.crouchAmount = 0; this.scopeAmount = 0;
+    this.crouching = false; this.crouchToggle = false; this.scopeToggle = false; this.sprintToggle = false; this.crouchAmount = 0; this.scopeAmount = 0;
     this.slide = { since: -1, start: 0, endedAt: -1 }; this.flow = 0;
     this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false; this.jumped = false;
     this.recoilPitch = 0; this.recoilYaw = 0; this.suppression = 0; this.breath = 1;
@@ -187,7 +188,6 @@ export class LocalPlayer {
     if (you.active && you.active !== this.active && this.alive && !this.reloadEnd && performance.now() / 1000 > this.equipUntil + 0.4) this.active = you.active;
     if (!you.weapons[this.active]) this.active = you.weapons.primary ? 'primary' : 'sidearm';
     if (this.alive) this.viewmodel.setWeapon(this.weapon.id);
-    if (previous && you.hp < previous.hp) this.shake = Math.min(1, this.shake + (previous.hp - you.hp) / 60);
   }
 
   onCorrect(message) { Object.assign(this.body, { x: message.x, y: message.y, z: message.z, vy: 0 }); this.vel.x = 0; this.vel.z = 0; }
@@ -405,7 +405,6 @@ export class LocalPlayer {
     const recoil = weapon.recoil;
     this.recoilPitch += (recoil.kick * Math.PI) / 180 * (scoped ? 0.8 : 1);
     this.recoilYaw += ((Math.random() - 0.5) * 2 * recoil.side * Math.PI) / 180;
-    this.shake = Math.min(1, this.shake + recoil.kick * 0.08);
     if (weapon.action === 'bolt') this.scopeToggle = false;
     bus.emit('fired', weapon);
     bus.emit('tutorial', 'fire');
@@ -529,7 +528,6 @@ export class LocalPlayer {
     const pad = this.pollPad(dt);
     this.lookX *= 0.6; this.lookY *= 0.6;
     this.suppression = Math.max(0, this.suppression - dt * 0.55);
-    this.shake = Math.max(0, this.shake - dt * 3.2);
     // Below 20 fps the simulation sub-steps so movement keeps its real speed instead of going slow-motion.
     if (this.mode === 'play' || this.mode === 'drone') {
       for (let remaining = Math.max(dt, wallDt); remaining > 1e-4; remaining -= 0.05) {
@@ -568,7 +566,11 @@ export class LocalPlayer {
     // a third tier nobody asked for, and the thing actually worth keeping from it was holding breath,
     // which now lives on the same key. You cannot meaningfully sprint down a scope, so Shift means
     // run when you are hipfiring and steady when you are aimed.
-    const sprintHeld = held(keys, 'sprint') || this.pad.sprint;
+    // Sprint can be a toggle, like crouch and aim: some keyboards cannot see Shift, W and Space at once,
+    // and a key you never hold cannot be part of that. Breath stays on the key itself either way, because
+    // a toggle would leave you holding your breath for ever.
+    const sprintKeyHeld = held(keys, 'sprint') || this.pad.sprint;
+    const sprintHeld = game.settings.toggleSprint ? this.sprintToggle : sprintKeyHeld;
     if (wantCrouch && !this.crouching) {
       this.crouching = true; body.height = BODY.crouchHeight;
       // Crouch at a run and it is a slide, not a stoop. Land one inside bhopWindow of the last and the
@@ -607,7 +609,7 @@ export class LocalPlayer {
     // scoping already slows you, so sprint quietly does nothing while you are looking down a scope.
     const scoped = this.scopeAmount > 0.9 && Boolean(weapon.scope?.[0] < 40);
     const sprintKey = sprintHeld && !scoped;
-    this.holdingBreath = sprintHeld && scoped && !this.winded;
+    this.holdingBreath = sprintKeyHeld && scoped && !this.winded;
     if (this.holdingBreath) { this.breath = Math.max(0, this.breath - dt * 0.3); if (this.breath === 0) { this.winded = true; } } else { this.breath = Math.min(1, this.breath + dt * 0.22); if (this.winded && this.breath > 0.45) this.winded = false; }
     // --- movement
     let mx = pad.mx, mz = pad.mz;
@@ -632,7 +634,7 @@ export class LocalPlayer {
     if (this.drop) {
       if (body.onGround) { this.drop = null; bus.emit('royale-landed'); }
       else {
-        if (!this.drop.chute && (body.y < DROP.chuteAt || (jumpKey && body.y < DROP.height - 25))) { this.drop.chute = true; play('equip', { volume: 0.9 }); this.shake = Math.min(1, this.shake + 0.5); }
+        if (!this.drop.chute && (body.y < DROP.chuteAt || (jumpKey && body.y < DROP.height - 25))) { this.drop.chute = true; play('equip', { volume: 0.9 }); }
         maxSpeed = this.drop.chute ? DROP.chuteGlide : DROP.glide;
       }
     }
@@ -707,7 +709,7 @@ export class LocalPlayer {
     if (body.onGround && this.arena.map.pads) for (const [px, pz] of this.arena.map.pads) if (Math.abs(body.x - px) < 1 && Math.abs(body.z - pz) < 1 && body.y < 0.6) { body.vy = PAD_LAUNCH; body.onGround = false; this.jumped = true; play('jump'); play('ready', { volume: 0.6 }); bus.emit('royale-pad'); break; }
     const moved = Math.hypot(movedX, movedZ);
     this.speed = dt > 0 ? moved / dt : 0;
-    if (body.onGround && !wasGrounded && fallSpeed < -4) { play('land', { volume: Math.min(1, -fallSpeed / 12) }); this.viewmodel.land(-fallSpeed / 10); this.shake = Math.min(1, this.shake + -fallSpeed / 30); }
+    if (body.onGround && !wasGrounded && fallSpeed < -4) { play('land', { volume: Math.min(1, -fallSpeed / 12) }); this.viewmodel.land(-fallSpeed / 10); }
     if (body.onGround && this.speed > 3.6 && !this.crouching) {
       this.stride += moved;
       if (this.stride > 2.1) { this.stride = 0; playFootstep(this.operators.surfaceAt(body.x, body.y, body.z), null, game.you && this.ghostUntil > now ? 0.12 : 0.5); }
@@ -750,11 +752,10 @@ export class LocalPlayer {
     const eye = THREE.MathUtils.lerp(BODY.eye, BODY.crouchEye, this.crouchAmount);
     const dy = body.y - this.viewY;
     if (Math.abs(dy) > 0.7 || !body.onGround) this.viewY = body.y; else this.viewY += dy * Math.min(1, dt * 16);
-    const shakeX = (Math.random() - 0.5) * this.shake * 0.012, shakeY = (Math.random() - 0.5) * this.shake * 0.012;
     this.camera.position.set(body.x, this.viewY + eye, body.z);
     // The dev No sway tool takes the wobble and the kick out of the view.
     if (devState.nospread) { this.recoilPitch = 0; this.recoilYaw = 0; }
-    this.camera.rotation.set(this.pitch + this.recoilPitch + shakeY, this.yaw + this.recoilYaw + shakeX, 0, 'YXZ');
+    this.camera.rotation.set(this.pitch + this.recoilPitch, this.yaw + this.recoilYaw, 0, 'YXZ');
     const baseFov = game.settings.fov;
     const zoomFov = weapon.scope ? weapon.scope[Math.min(this.zoomIndex, weapon.scope.length - 1)] : baseFov;
     const eased = this.scopeAmount * this.scopeAmount * (3 - 2 * this.scopeAmount);
