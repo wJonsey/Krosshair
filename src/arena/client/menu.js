@@ -1516,7 +1516,7 @@ export function renderTutorial(show) {
   const panel = $('#tutorial');
   panel.classList.toggle('hidden', !show);
   if (!show) return;
-  panel.innerHTML = `<p class="eyebrow">Range drills <small>${drillsDone.size}/${drills().length}</small></p>${drills().map(([id, text]) => `<div class="drill${drillsDone.has(id) ? ' done' : ''}"><i></i>${text}</div>`).join('')}<small class="muted">Scoped: ${bindLabel('walk')} holds breath, scroll zooms. Esc to leave.</small>`;
+  panel.innerHTML = `<p class="eyebrow">Range drills <small>${drillsDone.size}/${drills().length}</small></p>${drills().map(([id, text]) => `<div class="drill${drillsDone.has(id) ? ' done' : ''}"><i></i>${text}</div>`).join('')}<small class="muted">Scoped: ${bindLabel('sprint')} holds breath, scroll zooms. Esc to leave.</small>`;
 }
 bus.on('tutorial', (id) => {
   if (game.room?.mode !== 'range' || drillsDone.has(id)) return;

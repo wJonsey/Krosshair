@@ -187,12 +187,35 @@ test('the slide floor sits under the slowest run there is', async () => {
   assert.ok(BODY.slideMin > 0, 'but stood still still cannot slide');
 });
 
-// One key cannot do two jobs. Sprint's default is Shift, and a profile saved before sprint existed
-// still has walk there, so the same press asked for both and walking won it silently.
-test('sprint wins a key it shares with walk', () => {
+// Slow walking is gone. It shared a key with sprint, it was a third speed nobody asked for, and the
+// one thing worth keeping from it, holding breath, moved to the same key. Shift runs you when you are
+// hipfiring and steadies you when you are aimed, so one key never does two jobs at once.
+test('there is no walk action left to collide with sprint', () => {
+  const input = readFileSync(new URL('../client/input.js', import.meta.url), 'utf8');
+  const actions = input.slice(input.indexOf('export const ACTIONS'), input.indexOf('export const DEFAULT_BINDS'));
+  assert.ok(!/'walk'/.test(actions), 'walk is not an action a key can be bound to');
+  const binds = input.slice(input.indexOf('export const DEFAULT_BINDS'), input.indexOf('export const RESERVED'));
+  assert.ok(!/walk:/.test(binds), 'and has no default key');
+  assert.match(binds, /sprint: \['ShiftLeft', 'ShiftRight'\]/, 'Shift is sprint and nothing else');
+});
+
+test('holding breath survived the removal', () => {
   const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
-  const block = player.slice(player.indexOf('const sprintHeld'), player.indexOf('const sprintKey') + 120);
-  assert.match(block, /const sameKey = sprintHeld && walkHeld/, 'the clash is noticed');
-  assert.match(block, /bindsFor\('walk'\)\.some\(\(code\) => code && bindsFor\('sprint'\)\.includes\(code\)\)/, 'by comparing the keys, not by guessing');
-  assert.match(block, /const walkKey = walkHeld && !sameKey/, 'and walk gives the key up');
+  assert.match(player, /this\.holdingBreath = sprintHeld && scoped && !this\.winded/, 'the sniper mechanic moved rather than went');
+  // Aimed down a magnified optic, the same key steadies instead of sprinting, so they never fight.
+  assert.match(player, /const sprintKey = sprintHeld && !scoped/, 'sprint stands down while you are aimed');
+});
+
+test('nothing still asks the player to press a key that is gone', () => {
+  for (const file of ['../client/hud.js', '../client/menu.js', '../client/player.js']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.ok(!/bindLabel\('walk'\)|one\('walk'\)|held\(keys, 'walk'\)/.test(source), `${file} still names the walk key, which would print UNBOUND`);
+  }
+});
+
+test('bots still have their slow approach', async () => {
+  // walkSpeed stays as data: bots close on a goal at it. Only the player's key went.
+  assert.ok(BODY.walkSpeed > 0, 'the speed is still there');
+  const bots = readFileSync(new URL('../server/bots.js', import.meta.url), 'utf8');
+  assert.match(bots, /BODY\.walkSpeed/, 'and bots still use it');
 });

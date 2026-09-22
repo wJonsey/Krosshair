@@ -7,7 +7,7 @@ import { bus, game, saveSettings } from './state.js';
 
 export const ACTIONS = [
   ['forward', 'Move forward', 'Movement'], ['back', 'Move back', 'Movement'], ['left', 'Strafe left', 'Movement'], ['right', 'Strafe right', 'Movement'],
-  ['jump', 'Jump', 'Movement'], ['sprint', 'Sprint', 'Movement'], ['crouch', 'Crouch · slide', 'Movement'], ['walk', 'Walk · hold breath', 'Movement'],
+  ['jump', 'Jump', 'Movement'], ['sprint', 'Sprint · hold breath', 'Movement'], ['crouch', 'Crouch · slide', 'Movement'],
   ['fire', 'Fire', 'Weapons'], ['scope', 'Aim / scope', 'Weapons'], ['reload', 'Reload', 'Weapons'],
   ['primary', 'Primary weapon', 'Weapons'], ['sidearm', 'Sidearm', 'Weapons'], ['melee', 'Blade', 'Weapons'],
   ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'], ['inspect', 'Inspect weapon', 'Weapons'],
@@ -16,7 +16,7 @@ export const ACTIONS = [
 
 export const DEFAULT_BINDS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  jump: ['Space', null], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'], walk: ['AltLeft', 'KeyG'],
+  jump: ['Space', null], sprint: ['ShiftLeft', 'ShiftRight'], crouch: ['ControlLeft', 'KeyC'],
   fire: ['Mouse0', null], scope: ['Mouse2', null], reload: ['KeyR', null],
   primary: ['Digit1', null], sidearm: ['Digit2', null], melee: ['Digit3', null],
   gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null], inspect: ['KeyV', null],
@@ -71,7 +71,7 @@ export const DEFAULT_PAD_BINDS = {
 };
 // Actions a controller can hold, in the order the settings page lists them.
 export const PAD_ACTIONS = [
-  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['sprint', 'Sprint'], ['crouch', 'Crouch · slide'],
+  ['fire', 'Fire'], ['scope', 'Aim / scope'], ['jump', 'Jump'], ['sprint', 'Sprint · hold breath'], ['crouch', 'Crouch · slide'],
   ['reload', 'Reload'], ['swap', 'Swap weapon'], ['melee', 'Blade'], ['gadget1', 'Gadget 1'], ['gadget2', 'Gadget 2'],
   ['interact', 'Pick up (royale)'], ['armoury', 'Armoury'], ['inspect', 'Inspect weapon'], ['ping', 'Ping location'],
   ['scoreboard', 'Scoreboard'], ['menu', 'Pause / back'],

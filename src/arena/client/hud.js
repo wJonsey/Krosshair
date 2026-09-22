@@ -110,7 +110,7 @@ export class Hud {
       : [['armoury', 'armoury'], [null, 'gadgets'], ['ping', 'ping'], ['radio', 'radio'], ['chat', 'chat'], ['scoreboard', 'scores']];
     if (hint) hint.innerHTML = rows.filter(([action]) => action === null || !pad || padBindFor(action)).map(([action, text]) => `<span><b>${action ? one(action) : `${one('gadget1')} / ${one('gadget2')}`}</b> ${text}</span>`).join('');
     const breath = document.querySelector('.scope-overlay .breath span');
-    if (breath) breath.textContent = `HOLD BREATH // ${one('walk')}`;
+    if (breath) breath.textContent = `HOLD BREATH // ${one('sprint')}`;
   }
 
   onKey(code) {
