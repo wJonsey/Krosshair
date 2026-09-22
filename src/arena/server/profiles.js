@@ -1,7 +1,6 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
 import { cleanBuild, isEmptyBuild } from '../shared/attachments.js';
-import { cleanClasses, defaultClasses } from '../shared/classes.js';
 import { runway } from '../shared/itemshop.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -237,7 +236,6 @@ export class ProfileStore {
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       builds: profile.builds || {},
-      classes: profile.classes ? cleanClasses(profile.classes) : defaultClasses(),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
         ...contract, text: contractText(contract),
@@ -248,15 +246,6 @@ export class ProfileStore {
   }
 
   // Look, settings and tutorial progress follow the account between browsers.
-  // Saved classes: the shopping list the armoury is walked through in the buy phase. Cleaned here so a
-  // crafted message cannot put a rifle in the sidearm slot or name a gun that does not exist.
-  saveClasses(token, classes) {
-    const profile = this.get(token);
-    if (!Array.isArray(classes)) return;
-    profile.classes = cleanClasses(classes);
-    this.scheduleSave();
-  }
-
   // Saved gun builds, one per weapon. Cleaned against the attachment rules so a crafted message cannot
   // bolt a scope onto a knife or a part that does not fit the family.
   saveBuilds(token, builds) {

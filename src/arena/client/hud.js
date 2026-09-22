@@ -3,8 +3,6 @@
 import { ARMOR, FLAG, GADGETS, MASTERY_TIERS, MODIFIERS, QUICK_COMMANDS, REACTIONS, VARIANT_NAMES, WEAPONS, masteryTier, WEAPON_CLASSES, weaponClass } from '../shared/constants.js';
 import { zoneAt } from '../shared/map.js';
 import { outageReason } from '../shared/outage.js';
-import { classCost } from '../shared/classes.js';
-import { buildCost } from '../shared/attachments.js';
 import { bus, game, isEnemy, me, myTeam, nameOf } from './state.js';
 import { net } from './net.js';
 import { bindLabel, bindsFor, codeLabel, isBound, input, padBindFor } from './input.js';
@@ -277,8 +275,6 @@ export class Hud {
   onBuyClick(event) {
     const card = event.target.closest('[data-item]');
     if (event.target.closest('[data-close]')) { play('ui'); return this.closeBuy(); }
-    const kit = event.target.closest('[data-class]');
-    if (kit) { net.send({ type: 'buy-class', index: Number(kit.dataset.class) }); play('ready'); return; }
     const tab = event.target.closest('[data-tab]');
     if (tab) {
       this.buyTab = tab.dataset.tab;
@@ -374,19 +370,6 @@ export class Hud {
     if (!WEAPON_CLASSES.some((c) => c.id === this.buyTab)) this.buyTab = weaponClass(WEAPONS[this.buyFocus]);
     const shown = weapons.filter((weapon) => weaponClass(weapon) === this.buyTab);
     const cost = (value) => (free || !value ? 'Free' : value);
-    // Saved classes, bought in one press. Twelve seconds is not long to buy five things by hand, which
-    // is the whole reason these exist. What is unaffordable is greyed rather than hidden, so the price
-    // of the kit you want is always in front of you.
-    const kits = (game.profile?.classes || []).filter((kit) => kit && (kit.primary || kit.sidearm || kit.armor || kit.helmet || kit.gadgets?.length));
-    const classBar = kits.length ? `<div class="armoury-classes">
-      <span class="armoury-classes-label">Classes</span>
-      ${kits.map((kit, index) => {
-        const price = classCost(kit, (id) => buildCost(game.profile?.builds?.[id]));
-        const afford = free || you.credits >= price;
-        return `<button type="button" class="armoury-class${afford ? '' : ' short'}" data-class="${index}" title="${escapeHtml(kit.name)}">
-          <b>${escapeHtml(kit.name)}</b><small>${free ? 'Free' : `$${price}`}</small></button>`;
-      }).join('')}
-    </div>` : '';
     const weaponRow = (weapon) => {
       const owned = you.weapons[weapon.slot] === weapon.id;
       const refundable = owned && weapon.cost > 0 && (bought.has(`slot:${weapon.slot}`) || free);
@@ -408,7 +391,6 @@ export class Hud {
         <div class="armoury-credits"><span>Credits</span><b>${free ? '∞' : you.credits}</b></div>
         <button type="button" class="ghost-button" data-close>Deploy <kbd>${bindLabel('armoury')}</kbd></button>
       </header>
-      ${classBar}
       <div class="armoury-body">
         <nav class="arsenal" aria-label="Weapons">
           <div class="arsenal-tabs" role="tablist">${WEAPON_CLASSES.map((c) => {

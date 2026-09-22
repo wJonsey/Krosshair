@@ -2,8 +2,7 @@
 // The menu redraws often, so every animation runs off a start time: a redraw mid-spin picks up where
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
-import { ARMOR, COSMETICS, DEV_CLASS, ECONOMY, GADGETS, GADGET_SLOTS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
-import { CLASS_SLOTS, NAME_MAX, classCost, cleanClass, cleanClasses, defaultClasses, emptyClass, isEmptyClass, primaryGuns, sidearmGuns } from '../shared/classes.js';
+import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
 // SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
 import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachmentsUnlocked, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
@@ -28,7 +27,7 @@ export const coins = (n) => `<span class="coins">${COIN}${whole(n).toLocaleStrin
 const SECTIONS = {
   locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
   // Its own page rather than a tab in the locker: it is where a gun is built, not where it is dressed.
-  gunsmith: { eyebrow: 'Gunsmith', title: 'Build your <em>guns.</em>', tabs: [['gunsmith', 'Gunsmith'], ['classes', 'Classes']] },
+  gunsmith: { eyebrow: 'Gunsmith', title: 'Build your <em>guns.</em>', tabs: [['gunsmith', 'Gunsmith']] },
   shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['market', 'Crates & Shop'], ['skins', 'Skins']], balance: true },
   games: { eyebrow: 'Games', title: 'Double or <em>nothing.</em>', tabs: [['games', 'Games']], balance: true },
   wallet: { eyebrow: 'Profile', title: 'Your <em>coins.</em>', tabs: [['wallet', 'Wallet']], balance: true },
@@ -66,8 +65,6 @@ let tryOn = null;            // a gear item being tried on, not yet equipped
 let charmTry = null;
 let charmWeapon = 'talon';
 let smithDrafts = {};        // builds being worked on, by weapon. Nothing here is on the profile yet.
-let classIndex = 0;          // which saved class the Classes tab is editing
-let nameTimer = null;
 let friends = null;          // [{ name, avatar, level, title, online }] once fetched
 let friendName = '';
 let stake = 10, target = 50, pick = 'heads';
@@ -680,69 +677,6 @@ function charmsHtml() {
     </section></div>`;
 }
 
-// ------------------------------------------------------------------ classes
-// A class is a shopping list, not a spawn kit: Krosshair buys its guns each round, so this saves what
-// to buy and the armoury buys it in one press. Nothing here grants anything, which is why it can hold
-// a gun you cannot yet afford without that being a cheat.
-const myClasses = () => cleanClasses(game.profile?.classes);
-const editingClass = () => myClasses()[classIndex] || emptyClass(classIndex);
-function saveClasses(next) {
-  const list = myClasses();
-  list[classIndex] = cleanClass(next, classIndex);
-  if (game.profile) game.profile.classes = list;
-  net.send({ type: 'classes', classes: list });
-}
-function classesHtml() {
-  const list = myClasses();
-  const kit = editingClass();
-  const priceOf = (id) => buildCost(game.profile?.builds?.[id]);
-  const total = classCost(kit, priceOf);
-  const slots = list.map((entry, index) => {
-    const cost = classCost(entry, priceOf);
-    return `<button type="button" class="class-slot${index === classIndex ? ' active' : ''}" data-class-pick="${index}">
-      <b>${escapeHtml(entry.name)}</b>
-      <small>${isEmptyClass(entry) ? 'Empty' : `${WEAPONS[entry.primary]?.short || 'No gun'} · $${cost}`}</small></button>`;
-  }).join('');
-
-  const gunRow = (weapon, field) => `<button type="button" class="shop-weapon${kit[field] === weapon.id ? ' active' : ''}" data-class-gun="${field}:${weapon.id}" title="${weapon.name} · $${weapon.cost}">${weapon.short}</button>`;
-  const byClass = (guns) => WEAPON_CLASSES.map((c) => {
-    const inClass = guns.filter((w) => weaponClass(w) === c.id);
-    return inClass.length ? `<p class="shop-class">${c.name}</p>${inClass.map((w) => gunRow(w, w.slot === 'primary' ? 'primary' : 'sidearm')).join('')}` : '';
-  }).join('');
-
-  const armourRow = ['light', 'heavy'].map((id) => `<button type="button" class="class-chip${kit.armor === id ? ' on' : ''}" data-class-armor="${id}">${ARMOR[id].name}<small>$${ARMOR[id].cost}</small></button>`).join('')
-    + `<button type="button" class="class-chip${kit.helmet ? ' on' : ''}" data-class-helmet="1">${ARMOR.helmet.name}<small>$${ARMOR.helmet.cost}</small></button>`;
-  const gadgetRow = Object.values(GADGETS).map((g) => {
-    const on = kit.gadgets.includes(g.id);
-    const full = !on && kit.gadgets.length >= GADGET_SLOTS;
-    return `<button type="button" class="class-chip${on ? ' on' : ''}${full ? ' full' : ''}" data-class-gadget="${g.id}" ${full ? 'disabled' : ''} title="${g.blurb || g.name}">${g.name}<small>$${g.cost}</small></button>`;
-  }).join('');
-
-  return `<div class="shop-classes">
-    <div class="class-side">
-      <section class="mode-block"><header class="block-head"><b>Your classes</b><span>${CLASS_SLOTS} slots</span></header>
-        <div class="class-slots">${slots}</div>
-        <div class="button-row class-actions">
-          <button type="button" class="ghost-button" data-class-reset="1">Reset this one</button>
-        </div></section>
-      <section class="mode-block"><header class="block-head"><b>${escapeHtml(kit.name)}</b><span>$${total}</span></header>
-        <label class="field class-name"><span>Name</span><input id="class-name" type="text" maxlength="${NAME_MAX}" autocomplete="off" value="${escapeHtml(kit.name)}" /></label>
-        <p class="class-total">Buying all of it costs <b>$${total}</b> in a match. A round starts you on $${ECONOMY.start}.</p>
-        <p class="muted">The armoury buys this in one press during the buy phase. Anything you cannot afford that round is skipped, gun first.</p>
-      </section>
-    </div>
-    <div class="class-main">
-      <section class="mode-block"><header class="block-head"><b>Primary</b><span>${kit.primary ? `${WEAPONS[kit.primary].name} · $${WEAPONS[kit.primary].cost + priceOf(kit.primary)}` : 'None'}</span></header>
-        <div class="gun-grid">${byClass(primaryGuns())}</div>
-        ${kit.primary ? `<p class="muted">Built in the Gunsmith tab. Parts are bought with it.</p>` : ''}</section>
-      <section class="mode-block"><header class="block-head"><b>Sidearm</b><span>${kit.sidearm ? `${WEAPONS[kit.sidearm].name} · $${WEAPONS[kit.sidearm].cost}` : 'None'}</span></header>
-        <div class="gun-grid">${byClass(sidearmGuns())}</div></section>
-      <section class="mode-block"><header class="block-head"><b>Armour</b></header><div class="class-chips">${armourRow}</div></section>
-      <section class="mode-block"><header class="block-head"><b>Gadgets</b><span>${kit.gadgets.length}/${GADGET_SLOTS}</span></header><div class="class-chips">${gadgetRow}</div></section>
-    </div>
-  </div>`;
-}
-
 // ------------------------------------------------------------------ gunsmith
 // Build a gun from parts. The armoury then sells that gun with the parts on it, at the price shown
 // here. Fitting a part keeps it: there is no separate save, because a build that needed one got lost.
@@ -1129,7 +1063,7 @@ export function shopPageHtml(page = 'shop', lead = '') {
   lastTab[page] = tab;
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
   if ((tab === 'crates' || tab === 'market') && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
-  const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'classes' ? classesHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
+  const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
   const tabsHtml = tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : '';
   return `<section class="page-wide shop-page shop-${page}${tab === 'market' ? ' shop-market' : ''}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
       ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
@@ -1174,39 +1108,6 @@ export function onShopClick(button) {
     request({ type: 'shop', action: 'gear', kind, id });
     return true;
   }
-  // Classes. Every change is saved as it is made, like the gunsmith: a kit you have to remember to
-  // save is a kit people lose.
-  if (d.classPick) { classIndex = Number(d.classPick); play('ui'); return true; }
-  if (d.classGun) {
-    const [field, id] = d.classGun.split(':');
-    const kit = editingClass();
-    saveClasses({ ...kit, [field]: kit[field] === id ? null : id });
-    play(kit[field] === id ? 'uiBack' : 'ready');
-    return true;
-  }
-  if (d.classArmor) {
-    const kit = editingClass();
-    saveClasses({ ...kit, armor: kit.armor === d.classArmor ? null : d.classArmor });
-    play(kit.armor === d.classArmor ? 'uiBack' : 'ready');
-    return true;
-  }
-  if (d.classHelmet) { const kit = editingClass(); saveClasses({ ...kit, helmet: !kit.helmet }); play(kit.helmet ? 'uiBack' : 'ready'); return true; }
-  if (d.classGadget) {
-    const kit = editingClass();
-    const on = kit.gadgets.includes(d.classGadget);
-    const gadgets = on ? kit.gadgets.filter((id) => id !== d.classGadget) : [...kit.gadgets, d.classGadget].slice(0, GADGET_SLOTS);
-    saveClasses({ ...kit, gadgets });
-    play(on ? 'uiBack' : 'ready');
-    return true;
-  }
-  if (d.classReset) {
-    const fallback = defaultClasses()[classIndex] || emptyClass(classIndex);
-    saveClasses(fallback);
-    ctx.toast(`${fallback.name} put back to standard.`, 'info');
-    play('uiBack');
-    return true;
-  }
-
   // Gunsmith. Fitting a part is local; the server only hears about it on Save.
   if (d.smithPart) {
     const [slot, id] = d.smithPart.split(':');
@@ -1314,14 +1215,6 @@ export function onShopClick(button) {
 }
 let lookupTimer = null;
 export function onShopInput(input) {
-  // Renaming saves as you type, debounced so a name is one message rather than one per letter, and
-  // without redrawing, which would take the cursor with it.
-  if (input.id === 'class-name') {
-    clearTimeout(nameTimer);
-    const value = input.value;
-    nameTimer = setTimeout(() => saveClasses({ ...editingClass(), name: value }), 500);
-    return false;
-  }
   if (input.id === 'game-stake') { stake = Math.floor(Number(input.value) || 0); return false; }
   if (input.id === 'crash-auto') { crashAuto = input.value; return false; }
   if (input.id === 'friend-name') { friendName = input.value; return false; }

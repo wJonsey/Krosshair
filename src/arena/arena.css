@@ -1890,39 +1890,3 @@ button.cash-out .coins { color: var(--void); }
 .service-chip.wide { padding: 8px 12px !important; border-color: rgba(255, 157, 61, .45) !important; color: #ffc98d !important; }
 .play-card.shut-down { opacity: .5; }
 .play-card.shut-down strong { color: #ff9d3d; }
-
-/* ---------- classes: the kit the armoury buys in one press ---------- */
-.shop-classes { display: grid; gap: 18px; align-items: start; }
-.class-side, .class-main { display: grid; gap: 14px; min-width: 0; align-content: start; }
-.class-slots { display: grid; gap: 6px; }
-.class-slot { display: grid; gap: 1px; padding: 9px 12px; border: 1px solid var(--hairline); background: rgba(10, 14, 18, .45); text-align: left; }
-.class-slot b { font: 500 13px var(--body); }
-.class-slot small { color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .06em; }
-.class-slot:hover { border-color: var(--hairline-strong); }
-.class-slot.active { border-color: var(--signal); background: rgba(255, 181, 71, .07); }
-.class-slot.active small { color: var(--signal); }
-.class-name { display: block; margin-bottom: 10px; }
-.class-name span { display: block; margin-bottom: 6px; color: var(--graphite); font: 500 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.class-name input { width: 100%; padding: 9px 11px; border: 1px solid var(--hairline-strong); background: rgba(10, 14, 18, .6); color: var(--frost); font-size: 13px; outline: none; }
-.class-name input:focus { border-color: var(--signal); }
-.class-total { margin: 0 0 8px; font-size: 12px; color: var(--haze); }
-.class-total b { color: var(--signal); font: 500 14px var(--mono); }
-.class-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.class-chip { display: inline-grid; gap: 1px; padding: 7px 11px; border: 1px solid var(--hairline-strong); background: transparent; color: var(--haze); font: 500 11px var(--body); text-align: left; }
-.class-chip small { color: var(--graphite); font: 500 9px var(--mono); }
-.class-chip:hover:not(:disabled) { color: var(--frost); border-color: var(--haze); }
-.class-chip.on { border-color: var(--ally); color: var(--frost); background: rgba(108, 230, 209, .08); }
-.class-chip.on small { color: var(--ally); }
-.class-chip.full { opacity: .35; cursor: not-allowed; }
-.class-actions { margin-top: 10px; }
-@media (min-width: 1021px) { .shop-classes { grid-template-columns: minmax(300px, .8fr) minmax(0, 1.9fr); } }
-
-/* the one press buy, at the top of the armoury */
-.armoury-classes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px clamp(14px, 2vw, 26px); border-bottom: 1px solid var(--hairline); }
-.armoury-classes-label { color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
-.armoury-class { display: inline-grid; gap: 1px; padding: 7px 13px; border: 1px solid var(--hairline-strong); background: rgba(230, 237, 241, .04); color: var(--frost); text-align: left; }
-.armoury-class b { font: 500 12px var(--body); }
-.armoury-class small { color: var(--signal); font: 500 10px var(--mono); }
-.armoury-class:hover { border-color: var(--signal); }
-.armoury-class.short { opacity: .45; }
-.armoury-class.short small { color: var(--rival); }

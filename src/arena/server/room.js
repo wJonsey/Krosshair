@@ -4,7 +4,6 @@ import { performance } from 'node:perf_hooks';
 import { royaleWeapon } from '../shared/royale.js';
 import { outageLine, outageReason } from '../shared/outage.js';
 import { resolveWeapon, cleanBuild, buildCost } from '../shared/attachments.js';
-import { shoppingList } from '../shared/classes.js';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
   CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, isRanked, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,
@@ -197,8 +196,6 @@ export class Room {
       level: levelFromXp(profile.xp), rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       dev: Boolean(profile.dev),
     });
-    // Saved classes come with the pilot, for the one press buy in the armoury. Royale has no armoury.
-    player.classes = this.royale ? null : (profile.classes || null);
     // Saved gun builds come with the pilot. Royale ignores them: guns come off the floor there.
     player.builds = this.royale ? null : (profile.builds || {});
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
@@ -781,7 +778,6 @@ export class Room {
       case 'reload': return this.startReload(player);
       case 'switch': return this.switchWeapon(player, message.slot);
       case 'buy': return this.buy(player, String(message.item));
-      case 'buy-class': return this.buyClass(player, message.index);
       case 'sell': return this.sell(player, String(message.item));
       case 'gadget': return this.useGadget(player, message);
       case 'drone-end': if (player.drone) this.endDrone(player, false); return;
@@ -1304,32 +1300,29 @@ export class Room {
   }
 
   // ---------------------------------------------------------------- economy
-  // quiet: buying a whole class walks this eleven times, and eleven separate refusals is noise. The
-  // caller says its piece once instead.
-  buy(player, item, quiet = false) {
-    const say = (text, tone) => { if (!quiet) this.notice(player, text, tone); };
+  buy(player, item) {
     const free = this.mode === 'range';
-    if (!free && this.phase !== 'buy') return say('Armoury opens between rounds.', 'warn');
+    if (!free && this.phase !== 'buy') return this.notice(player, 'Armoury opens between rounds.', 'warn');
     if (!player.alive) return;
     const modifier = this.rules.modifier;
     const charge = (cost) => {
       if (free) return true;
-      if (player.credits < cost) { say('Not enough credits.', 'warn'); return false; }
+      if (player.credits < cost) { this.notice(player, 'Not enough credits.', 'warn'); return false; }
       player.credits -= cost;
       return true;
     };
     if (WEAPONS[item] && !WEAPONS[item].melee) {
       // You buy the gun as you built it, and you pay for what is bolted on.
       const weapon = (this.royale || !player.builds || Room.featureOut('gunsmith')) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
-      if (Room.out('weapon', item)) return say(outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
-      if (weapon.slot === 'primary' && modifier === 'sidearms') return say('Sidearms only.', 'warn');
-      if (MODIFIERS[modifier]?.fixed) return say(`${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
+      if (Room.out('weapon', item)) return this.notice(player, outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
+      if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
+      if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
       const families = MODIFIERS[modifier]?.families;
-      if (families && weapon.slot === 'primary' && !families.includes(weapon.family)) return say(`${MODIFIERS[modifier].name}.`, 'warn');
+      if (families && weapon.slot === 'primary' && !families.includes(weapon.family)) return this.notice(player, `${MODIFIERS[modifier].name}.`, 'warn');
       if (player.weapons[weapon.slot] === item) return;
       const previous = player.bought[`slot:${weapon.slot}`];
       const refund = previous ? previous.cost : 0;
-      if (!free && player.credits + refund < weapon.cost) return say('Not enough credits.', 'warn');
+      if (!free && player.credits + refund < weapon.cost) return this.notice(player, 'Not enough credits.', 'warn');
       if (!free) player.credits += refund - weapon.cost;
       delete player.bought[`slot:${weapon.slot}`];
       if (weapon.cost > 0) player.bought[`slot:${weapon.slot}`] = { cost: weapon.cost, item };
@@ -1337,12 +1330,12 @@ export class Room {
       player.ammo[weapon.slot] = { mag: weapon.mag, reserve: weapon.reserve };
       if (player.active === weapon.slot || weapon.slot === 'primary') { player.active = weapon.slot; player.reloadEnd = 0; }
     } else if (item === 'light' || item === 'heavy') {
-      if (modifier === 'instagib') return say('No armour in One Tap.', 'warn');
+      if (modifier === 'instagib') return this.notice(player, 'No armour in One Tap.', 'warn');
       const armor = ARMOR[item];
       if (player.armor >= armor.points) return;
       const previous = player.bought.armor;
       const refund = previous ? previous.cost : 0;
-      if (!free && player.credits + refund < armor.cost) return say('Not enough credits.', 'warn');
+      if (!free && player.credits + refund < armor.cost) return this.notice(player, 'Not enough credits.', 'warn');
       if (!free) player.credits += refund - armor.cost;
       player.bought.armor = { cost: armor.cost, item, before: previous ? previous.before : player.armor };
       player.armor = armor.points;
@@ -1351,47 +1344,12 @@ export class Room {
       player.helmet = true; player.bought.helmet = { cost: ARMOR.helmet.cost, item };
     } else if (GADGETS[item]) {
       if (player.gadgets.includes(item)) return;
-      if (player.gadgets.length >= GADGET_SLOTS) return say('Gadget slots full. Click one to sell it.', 'warn');
+      if (player.gadgets.length >= GADGET_SLOTS) return this.notice(player, 'Gadget slots full. Click one to sell it.', 'warn');
       if (!charge(GADGETS[item].cost)) return;
       player.gadgets.push(item); player.bought[`gadget:${item}`] = { cost: GADGETS[item].cost, item };
-    } else return say('Not available.', 'warn');
+    } else return this.notice(player, 'Not available.', 'warn');
     this.pushYou(player);
     this.pushRoom();
-  }
-
-  // Is this already on the pilot? Used to tell what a class buy actually managed to get.
-  hasItem(player, id) {
-    if (WEAPONS[id]) return player.weapons[WEAPONS[id].slot] === id;
-    if (id === 'light' || id === 'heavy') return player.armor >= (ARMOR[id]?.points || 0);
-    if (id === 'helmet') return Boolean(player.helmet);
-    if (GADGETS[id]) return player.gadgets.includes(id);
-    return false;
-  }
-
-  // One press walks a saved class through the armoury above, in the order that matters, paying the
-  // ordinary price for each. Nothing is granted: a class can only ever buy what the pilot could have
-  // bought by hand. Anything the wallet will not stretch to is skipped rather than refused, so a thin
-  // round still comes away with the gun.
-  buyClass(player, index) {
-    const free = this.mode === 'range';
-    if (!free && this.phase !== 'buy') return this.notice(player, 'Armoury opens between rounds.', 'warn');
-    if (!player.alive) return;
-    const kit = (player.classes || [])[Number(index)];
-    if (!kit) return this.notice(player, 'Nothing saved in that slot.', 'warn');
-    const wanted = shoppingList(kit);
-    if (!wanted.length) return this.notice(player, `${kit.name} is empty.`, 'warn');
-    let got = 0, already = 0, missed = 0;
-    for (const id of wanted) {
-      if (this.hasItem(player, id)) { already += 1; continue; }
-      this.buy(player, id, true);
-      if (this.hasItem(player, id)) got += 1; else missed += 1;
-    }
-    if (!got && !already) return this.notice(player, `Not enough credits for ${kit.name}.`, 'warn');
-    const parts = [];
-    if (got) parts.push(`${got} bought`);
-    if (already) parts.push(`${already} already on you`);
-    if (missed) parts.push(`${missed} you could not afford`);
-    this.notice(player, `${kit.name}: ${parts.join(', ')}.`, missed ? 'warn' : 'good');
   }
 
   sell(player, item) {
