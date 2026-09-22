@@ -1093,7 +1093,6 @@ function settingsBodyHtml(tab) {
         ${slider('brightness', 'Brightness', 0.6, 1.6, 0.05, 'pct', s.brightness, 'Helps on night maps.')}
         <p class="eyebrow sub">Performance</p>
         ${select('fpsCap', 'Frame rate cap', [[0, 'Unlimited'], [30, '30 FPS'], [60, '60 FPS'], [120, '120 FPS'], [144, '144 FPS'], [240, '240 FPS']], s.fpsCap, 'Saves battery.')}
-        ${toggle('aimBlur', 'Blur the gun when aiming', 'Your eye focuses on the target, not the sight.')}
         ${toggle('showFps', 'Show FPS counter')}
         ${toggle('autoQuality', 'Lower graphics automatically', 'Drops the preset if FPS stays under 38.')}</div></div>`;
   }

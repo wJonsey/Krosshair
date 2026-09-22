@@ -623,11 +623,23 @@ test('a gun model is cached per build, not just per skin', () => {
   assert.match(characters, /was\.builds === entry\.builds/, 'and a changed build restyles the pilot');
 });
 
+// A setting the browser can change but the server drops is set again every session and never sticks,
+// which is how viewDistance went missing. Reading both lists rather than naming a few by hand means a
+// setting added later cannot be forgotten, and one removed cannot leave a stale name behind.
 test('every setting the browser can set is allowed through', async () => {
-  const profiles = readFileSync(new URL('../server/profiles.js', import.meta.url), 'utf8');
-  const rules = profiles.slice(profiles.indexOf('const SETTING_RULES'), profiles.indexOf('};', profiles.indexOf('const SETTING_RULES')));
-  // These two were dropped on the way in, so they were set again every session and never stuck.
-  for (const key of ['viewDistance', 'aimBlur', 'shadows', 'renderScale', 'fov', 'sensitivity']) {
-    assert.ok(rules.includes(key), `${key} is not in the whitelist, so it can never be saved`);
+  const strip = (text) => text.replace(/\/\/[^\n]*/g, '');
+  const block = (text, from) => text.slice(text.indexOf(from), text.indexOf('};', text.indexOf(from)));
+  const rules = strip(block(readFileSync(new URL('../server/profiles.js', import.meta.url), 'utf8'), 'const SETTING_RULES'));
+  const defaults = strip(block(readFileSync(new URL('../client/state.js', import.meta.url), 'utf8'), 'export const DEFAULT_SETTINGS'));
+  const keys = [...defaults.matchAll(/[{,]\s*(\w+):/g)].map((match) => match[1]);
+  assert.ok(keys.length > 20, `only found ${keys.length} settings, so the parse is wrong, not the code`);
+  // binds and crosshair are sanitised on their own (cleanBinds, cleanCrosshair), so they are not rules.
+  for (const key of keys) {
+    if (key === 'binds' || key === 'crosshair') continue;
+    assert.match(rules, new RegExp(`\\b${key}:`), `${key} is a setting but is not in the whitelist, so it can never be saved`);
+  }
+  // And nothing is whitelisted that the browser no longer has, which would be a name left behind.
+  for (const [, key] of rules.matchAll(/[{,]\s*(\w+):/g)) {
+    assert.ok(keys.includes(key), `${key} is whitelisted but is not a setting any more`);
   }
 });

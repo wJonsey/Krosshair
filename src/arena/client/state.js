@@ -29,7 +29,7 @@ try {
 export const DEFAULT_SETTINGS = {
   sensitivity: 1, scopeSensitivity: 0.7, fov: 78, volume: 0.8, ambience: 0.6, music: 0.9, musicInMatch: true, announcer: true, invertY: false, padSensitivity: 1, aimAssist: true, padLayout: '', toggleScope: false, toggleCrouch: false, toggleSprint: false, speedFov: true, moveDebug: false, visualizeSound: true,
   // Graphics: `quality` is a preset; touching any of the fine controls below turns it into 'custom'.
-  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', aimBlur: true, brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
+  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
   binds: {},        // action → [primary, secondary]; anything missing falls back to DEFAULT_BINDS (input.js)
   crosshair: null,  // null = the default in crosshair.js
   settingsVersion: 4,

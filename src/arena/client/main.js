@@ -503,54 +503,17 @@ function countFrame(rawDt) {
 
 let firstFrame = false;
 let lastFrameAt = 0;
-// Aiming, your eye focuses on the target, so the gun and the sight housing go soft (and what you look
-// THROUGH, the scope picture and the reticles, stays sharp). The gun is drawn into its own buffer, blurred
-// by how far you are into the aim, and laid over the world; the sharp parts (layer 1) go on top.
-const gunTarget = new THREE.WebGLRenderTarget(2, 2, { samples: 4, type: THREE.HalfFloatType });
-const blurMaterial = new THREE.ShaderMaterial({
-  uniforms: { uGun: { value: gunTarget.texture }, uStep: { value: new THREE.Vector2() }, uRadius: { value: 0 } },
-  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-  fragmentShader: `
-    uniform sampler2D uGun; uniform vec2 uStep; uniform float uRadius; varying vec2 vUv;
-    void main() {
-      vec4 sum = texture2D(uGun, vUv) * 0.16;
-      for (int ring = 1; ring <= 2; ring++) {
-        float reach = uRadius * float(ring) * 0.5;
-        for (int k = 0; k < 8; k++) { float a = float(k) * 0.7854 + float(ring) * 0.39; sum += texture2D(uGun, vUv + vec2(cos(a), sin(a)) * uStep * reach) * 0.0525; }
-      }
-      gl_FragColor = sum;
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-    }`,
-  transparent: true, depthTest: false, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, premultipliedAlpha: true,
-});
-const blurScene = new THREE.Scene();
-blurScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blurMaterial));
-blurScene.children[0].frustumCulled = false;
-const blurCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-const bufferSize = new THREE.Vector2(), clearWas = new THREE.Color();
+// The gun is drawn over the world once, sharp. There used to be a focus blur here: aiming rendered the
+// viewmodel into a full screen 4x multisampled float buffer, resolved it, ran a seventeen tap blur over
+// every pixel on the screen and then drew the gun again for the sharp parts. That is four extra full
+// frame operations and about a hundred megabytes of buffer at 1440p, every frame you were aimed, on
+// every gun. It halved the frame rate, and the judder that came with it read as the screen shaking.
+// Nice idea, nowhere near worth it.
+const bufferSize = new THREE.Vector2();
 function drawViewmodel() {
-  const amount = game.settings.aimBlur === false ? 0 : viewmodel.ads;
   renderer.clearDepth();
-  if (amount < 0.03) { viewmodel.camera.layers.enableAll(); renderer.render(viewmodel.scene, viewmodel.camera); return; }
-  renderer.getDrawingBufferSize(bufferSize);
-  if (gunTarget.width !== bufferSize.x || gunTarget.height !== bufferSize.y) gunTarget.setSize(bufferSize.x, bufferSize.y);
-  const alphaWas = renderer.getClearAlpha(); renderer.getClearColor(clearWas);
-  viewmodel.camera.layers.set(0);
-  renderer.setRenderTarget(gunTarget);
-  renderer.setClearColor(0x000000, 0); renderer.clear();
-  renderer.render(viewmodel.scene, viewmodel.camera);
-  renderer.setRenderTarget(null);
-  renderer.setClearColor(clearWas, alphaWas);
-  blurMaterial.uniforms.uStep.value.set(1 / bufferSize.x, 1 / bufferSize.y);
-  // A scope's eyepiece sits an inch from the eye, so the tube around it goes soft. Open sights are the
-  // thing you aim with, so they stay sharp enough to read: any more and the gun is no use.
-  blurMaterial.uniforms.uRadius.value = amount * amount * (bufferSize.y / 1080) * (viewmodel.current?.userData.lens ? 11 : 2);
-  renderer.render(blurScene, blurCamera);
-  viewmodel.camera.layers.set(1);
-  renderer.clearDepth();
-  renderer.render(viewmodel.scene, viewmodel.camera);
   viewmodel.camera.layers.enableAll();
+  renderer.render(viewmodel.scene, viewmodel.camera);
 }
 const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
 const scopeTilt = new THREE.Quaternion();

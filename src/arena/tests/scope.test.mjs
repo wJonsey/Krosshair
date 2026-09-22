@@ -50,3 +50,23 @@ test('the render actually uses the size, and only resizes when it changes', () =
 test('SCOPE_STEPS is declared before the class that uses it', () => {
   assert.ok(viewmodel.indexOf('const SCOPE_STEPS') < viewmodel.indexOf('export class ViewModel'), 'or it throws on the first scoped frame');
 });
+
+// Aiming used to render the viewmodel into a full screen 4x multisampled float buffer, resolve it, blur
+// every pixel on the screen with seventeen taps and then draw the gun again. That ran on every gun the
+// moment you aimed, iron sights included, where there is no glass to justify any of it. It halved the
+// frame rate and the judder read as the screen shaking.
+test('aiming does not cost a full screen pass on every gun', () => {
+  const draw = main.slice(main.indexOf('function drawViewmodel'), main.indexOf('const scopeCamera'));
+  assert.ok(!/setRenderTarget\(/.test(draw), 'drawing the gun must not go via a render target');
+  assert.ok(!/blur/i.test(draw), 'and must not blur');
+  assert.equal((draw.match(/renderer\.render\(/g) || []).length, 1, 'the gun is drawn once, not three times');
+});
+
+test('nothing allocates a multisampled full screen buffer any more', () => {
+  const targets = [...main.matchAll(/new THREE\.WebGLRenderTarget\(([^)]*)\)/g)].map((m) => m[1]);
+  for (const args of targets) assert.ok(!/samples:/.test(args), `a multisampled target is back: ${args}`);
+});
+
+test('a gun with no glass pays nothing extra for aiming', () => {
+  assert.match(viewmodel, /scopeWanted\(\) \{\s*\n\s*if \(!this\.current\?\.userData\.lens/, 'the scope pass is gated on the gun actually having a lens');
+});
