@@ -419,3 +419,69 @@ test('the hover listener is delegated, not one per card', () => {
   const count = (menu.match(/addEventListener\('pointerover'/g) || []).length;
   assert.equal(count, 1, 'and only one, however many parts there are');
 });
+
+// The bug people actually hit: a build saved, persisted and reached the server, and the server scored
+// with it, but the browser drew the stock gun because it resolved the weapon from the table and never
+// looked at the build. Nothing you fitted changed anything you could see or feel, so it read as the
+// build never saving at all.
+test('the server tells you which build it is scoring with', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-held-'));
+  const profiles = new ProfileStore(path.join(dir, 'profiles.json'));
+  await profiles.load();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10, 'seed', 'x');
+  profiles.saveBuilds(token, { m44: { optic: 'dot' } });
+
+  const room = new Room({ name: 'held', queue: 'casual', profiles, onEmpty: () => {} });
+  clearInterval(room.interval);
+  room.rules.map = 'yard';
+  const player = room.join({ readyState: 1, send: () => {} }, { token, session: 'a', name: 'Pilot' }, look);
+  const state = room.youState(player);
+  assert.ok(state.builds, 'the you state carries the build');
+  assert.equal(state.builds.m44.optic, 'dot', 'and it is the one that was saved');
+  room.close();
+});
+
+test('the gun in your hands is the one you built, not the stock one', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-held2-'));
+  const profiles = new ProfileStore(path.join(dir, 'profiles.json'));
+  await profiles.load();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10, 'seed', 'x');
+  profiles.saveBuilds(token, { m44: { optic: 'dot' } });
+  const room = new Room({ name: 'held2', queue: 'casual', profiles, onEmpty: () => {} });
+  clearInterval(room.interval);
+  room.rules.map = 'yard';
+  const player = room.join({ readyState: 1, send: () => {} }, { token, session: 'a', name: 'Pilot' }, look);
+  const state = room.youState(player);
+
+  // Exactly what client/player.js does with what it is sent.
+  const stock = WEAPONS.m44;
+  const held = resolveWeapon('m44', state.builds?.m44) || stock;
+  assert.notEqual(held.sight, stock.sight, 'a fitted optic changes the sight you look through');
+  assert.equal(held.sight, 'dot', 'to the one that was fitted');
+  room.close();
+});
+
+test('royale hands out floor guns, so no build is sent there', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-held3-'));
+  const profiles = new ProfileStore(path.join(dir, 'profiles.json'));
+  await profiles.load();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10, 'seed', 'x');
+  profiles.saveBuilds(token, { m44: { optic: 'dot' } });
+  const { RoyaleRoom } = await import('../server/royale.js');
+  const room = new RoyaleRoom({ name: 'roy2', queue: 'royale', profiles, onEmpty: () => {} });
+  clearInterval(room.interval);
+  const player = room.join({ readyState: 1, send: () => {} }, { token, session: 'a', name: 'Pilot' }, look);
+  assert.equal(room.youState(player).builds, null, 'a build means nothing where guns come off the floor');
+  room.close();
+});
+
+test('the browser never resolves a held gun from the table alone', () => {
+  const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
+  const getter = player.slice(player.indexOf('get weapon()'), player.indexOf('get ammo()'));
+  assert.match(getter, /resolveWeapon\(/, 'the held gun is resolved through its build');
+  assert.match(getter, /game\.you\?\.builds/, 'using the build the server sent, not one the browser guessed');
+  assert.match(player, /import \{ resolveWeapon \}/, 'and the import is actually there');
+});

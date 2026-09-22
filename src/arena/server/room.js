@@ -132,6 +132,10 @@ export class Room {
     return {
       type: 'you', hp: Math.ceil(player.hp), armor: Math.ceil(player.armor), helmet: player.helmet, credits: player.credits, alive: player.alive,
       weapons: player.weapons, ammo: player.ammo, active: player.active, gadgets: player.gadgets, bought: Object.keys(player.bought),
+      // The build the server is actually scoring with. Without it the browser drew the stock gun while
+      // the server used the built one, so a fitted part changed nothing you could see or feel. Null in
+      // royale and while the gunsmith is pulled: that is the server's call, not the browser's.
+      builds: (this.royale || Room.featureOut('gunsmith')) ? null : (player.builds || null),
       // Royale only: what rarity the guns in hand were found at, so the pickup card can compare properly.
       ...(this.royale && player.rarity ? { rarity: player.rarity } : {}),
     };

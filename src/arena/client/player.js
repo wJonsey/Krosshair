@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '../shared/constants.js';
 import { SpreadTracker, applySpread, ballisticsFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
 import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
+import { resolveWeapon } from '../shared/attachments.js';
 import { bus, game, isEnemy } from './state.js';
 import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
@@ -55,7 +56,14 @@ export class LocalPlayer {
     this.bind();
   }
 
-  get weapon() { return WEAPONS[game.you?.weapons?.[this.active]] || WEAPONS.knife; }
+  // The gun as the server built it, not the stock one off the shelf. The server sends the build it is
+  // actually scoring with, so the sight you fitted is the sight you look through and the feel matches
+  // the numbers. Reading WEAPONS directly here was why a saved build appeared to do nothing in a match.
+  get weapon() {
+    const id = game.you?.weapons?.[this.active];
+    if (!id) return WEAPONS.knife;
+    return resolveWeapon(id, game.you?.builds?.[id]) || WEAPONS[id] || WEAPONS.knife;
+  }
   get ammo() { return game.you?.ammo?.[this.active] || null; }
   get locked() { return document.pointerLockElement === this.canvas; }
   get canAct() { return this.alive && this.mode === 'play' && !this.uiBlocked(); }
