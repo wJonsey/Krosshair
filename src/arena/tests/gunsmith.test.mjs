@@ -556,10 +556,13 @@ test('holding jump hops whenever you have footing', () => {
 });
 
 test('stepping up does not swallow the jump', () => {
+  // The rule itself now lives in shared/physics.js as hasFooting; what it does is in flight.test.mjs.
+  const physics = readFileSync(new URL('../shared/physics.js', import.meta.url), 'utf8');
+  const footing = physics.slice(physics.indexOf('export function hasFooting'), physics.indexOf('export function jumpArc'));
+  assert.ok(!/vy/.test(footing), 'rising over a kerb reads as airborne, and refusing the jump there is what made rough ground feel dead');
+  assert.match(footing, /if \(onGround\) return true;/, 'ground still counts first');
   const player = readFileSync(new URL('../client/player.js', import.meta.url), 'utf8');
-  const footing = player.slice(player.indexOf('const footing ='), player.indexOf('const footing =') + 220);
-  assert.ok(!/body\.vy <= 0/.test(footing), 'rising over a kerb reads as airborne, and refusing the jump there is what made rough ground feel dead');
-  assert.match(footing, /body\.onGround \|\|/, 'ground still counts first');
+  assert.match(player, /const footing = hasFooting\(/, 'the player asks for the rule rather than keeping its own');
 });
 
 // A cheek riser raises the eye to a mounted optic. Over irons it sits on the sight line, so aiming put

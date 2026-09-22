@@ -238,6 +238,14 @@ export function bhopSpeed(slideNow) {
 // How high a jump goes. A slide hop stays low and fast; scoped is lower still, which is the short hop
 // used to get back on the ground and into the next slide sooner. Standing up first gives full height,
 // and that is the moon jump: trade the speed for the reach.
+// A jump needs ground under you, or the last moment of the ground you just left. That grace is spent
+// once per time you leave it: renewing it on each jump let a held jump key fly you up for ever.
+export function hasFooting(onGround, jumped, leftGroundAt, now) {
+  if (onGround) return true;
+  if (jumped || leftGroundAt < 0) return false;
+  return now - leftGroundAt <= BODY.coyoteTime;
+}
+
 export function jumpArc(sliding, scoped) {
   return BODY.jumpVelocity * (sliding ? BODY.slideArc : 1) * (scoped ? BODY.scopeArc : 1);
 }

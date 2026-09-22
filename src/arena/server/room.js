@@ -12,9 +12,10 @@ import {
 import { killCoins } from '../shared/economy.js';
 import { DEV_ACTION_IDS, DEV_SERVER_TOOLS, DEV_SPEED } from '../shared/devtools.js';
 import { MAP_IDS, getMap, zoneAt } from '../shared/map.js';
+import { PAD_LAUNCH, POWERS } from '../shared/royale.js';
 import { mapFingerprint } from '../shared/version.js';
 import { beginMatch, castMapVote, inSpawnZone, initMapFlow, mapState, navFor, pickVariant, tickMapVote, validMapRule } from './mapflow.js';
-import { World, makeBody } from '../shared/physics.js';
+import { World, jumpArc, makeBody } from '../shared/physics.js';
 import { SpreadTracker, applySpread, ballisticsFor, damageFor, hashString, mulberry32, spreadAngle, traceShot, rayPlayer } from '../shared/combat.js';
 import { createBot, createDummy, updateBot, resetBot, botBuy, botOnHurt, botOnSound } from './bots.js';
 
@@ -406,7 +407,7 @@ export class Room {
   // at: an exact spot, for modes that choose their own (the royale drop).
   spawn(player, index = 0, at = null) {
     const point = at || (player.dummy ? player.home : this.spawnPoint(player, index));
-    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0 });
+    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, footing: point.y, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0 });
     player.epoch += 1;
     player.history = [];
     player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee';
@@ -824,6 +825,7 @@ export class Room {
         player.x = clamp(spot[0], bounds.minX, bounds.maxX);
         player.y = clamp(spot[1], bounds.minY, bounds.maxY + 6);
         player.z = clamp(spot[2], bounds.minZ, bounds.maxZ);
+        player.footing = player.y;
         this.send(player, { type: 'correct', x: player.x, y: player.y, z: player.z });
       }
       this.pushYou(player);
@@ -864,6 +866,24 @@ export class Room {
     this.pushRoom();
   }
 
+  // How high a pilot can get over the ground they left: one jump (or a royale pad), plus slack.
+  hopHeight() {
+    const gravity = BODY.gravity * (this.rules.modifier === 'lowgrav' ? 0.34 : 1);
+    const jump = jumpArc(false, false);
+    // Spring boots and jump pads are royale only, and that is the map with the pads on it.
+    const launch = this.map.pads?.length ? Math.max(PAD_LAUNCH, jump * (POWERS.jump?.jump || 1)) : jump;
+    return (launch * launch) / (2 * gravity) + 1.2;
+  }
+
+  // Open air is free space, so bodyFree alone never stopped a tampered client holding jump and
+  // climbing away. You only ever get a jump's worth above the last ground under your feet, and that
+  // mark follows you down as you fall, so height has to be fallen for first.
+  climbOk(player, x, y, z) {
+    const footed = y - this.world.groundBelow(x, y + 0.2, z) < 0.4;
+    if (footed || !(y > player.footing)) { player.footing = y; return true; }
+    return y <= player.footing + this.hopHeight();
+  }
+
   onState(player, m) {
     if (!player.alive || m.e !== player.epoch) return;
     const values = [m.x, m.y, m.z, m.yaw, m.pitch];
@@ -881,6 +901,7 @@ export class Room {
     // During the buy phase pilots stay behind their gate.
     if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
     if (!reject && !fly && !this.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9)) reject = true;
+    if (!reject && !fly && !this.climbOk(player, x, y, z)) reject = true;
     player.lastStateAt = t;
     if (reject) {
       player.strikes += 1;

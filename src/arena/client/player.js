@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { BODY, FLAG, GADGETS, INTERP_DELAY, MATERIALS, WEAPONS, clamp } from '../shared/constants.js';
 import { SpreadTracker, applySpread, ballisticsFor, hashString, mulberry32, spreadAngle, traceShot } from '../shared/combat.js';
-import { airAccelerate, bhopSpeed, groundAccelerate, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
+import { airAccelerate, bhopSpeed, groundAccelerate, hasFooting, jumpArc, makeBody, slideEntry, slideSpeedAt, strafeAir } from '../shared/physics.js';
 import { resolveWeapon } from '../shared/attachments.js';
 import { bus, game, isEnemy, heldBuilds } from './state.js';
 import { devState } from './devtools.js';
@@ -39,7 +39,7 @@ export class LocalPlayer {
     this.flow = 0;
     // Jump feel: a press just before landing still counts, and stepping off an edge leaves a moment
     // where a jump is still owed to you. Both are about the input never being silently dropped.
-    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false;
+    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false; this.jumped = false;
     this.scopeAmount = 0; this.zoomIndex = 0;
     this.viewY = 0; this.recoilPitch = 0; this.recoilYaw = 0; this.swayX = 0; this.swayY = 0; this.swayTime = 0;
     this.breath = 1; this.holdingBreath = false; this.winded = false;
@@ -169,7 +169,7 @@ export class LocalPlayer {
     this.alive = true; this.mode = 'play';
     this.crouching = false; this.crouchToggle = false; this.scopeToggle = false; this.crouchAmount = 0; this.scopeAmount = 0;
     this.slide = { since: -1, start: 0, endedAt: -1 }; this.flow = 0;
-    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false;
+    this.jumpPressedAt = -1; this.leftGroundAt = -1; this.jumpHeld = false; this.jumped = false;
     this.recoilPitch = 0; this.recoilYaw = 0; this.suppression = 0; this.breath = 1;
     this.reloadEnd = 0; this.nextFire = 0;
     this.spectateId = null; this.pendingKillcam = null;
@@ -647,22 +647,21 @@ export class LocalPlayer {
     // Remember the press, not just the hold: a jump asked for a frame before landing is owed.
     if (jump && !this.jumpHeld) this.jumpPressedAt = now;
     this.jumpHeld = jump;
-    if (body.onGround) this.leftGroundAt = -1; else if (this.leftGroundAt < 0) this.leftGroundAt = now;
+    if (body.onGround) { this.leftGroundAt = -1; this.jumped = false; } else if (this.leftGroundAt < 0) this.leftGroundAt = now;
     // Holding jump hops whenever there is ground under you, which is what every shooter does and what
     // sprinting with a thumb on the bar expects. The skill in a bhop is the slide timing, getting out
     // of one early rather than late, and that is untouched: this only decides whether you leave the
     // floor at all. The buffer covers a press made a moment before landing.
     const asked = jump || (this.jumpPressedAt >= 0 && now - this.jumpPressedAt <= BODY.jumpBuffer);
-    // Walking off an edge leaves a moment where a jump is still owed. Rising does not count as falling
-    // off anything, but stepping up a kerb briefly reads as airborne with a positive vy, and refusing
-    // the jump there is what made a sprint over rough ground feel like it swallowed the input.
-    const footing = body.onGround || (this.leftGroundAt >= 0 && now - this.leftGroundAt <= BODY.coyoteTime);
+    // Walking off an edge leaves a moment where a jump is still owed, and stepping up a kerb reads as
+    // airborne as well, so which way you are going does not matter.
+    const footing = hasFooting(body.onGround, this.jumped, this.leftGroundAt, now);
     if (asked && footing && (!this.crouching || sliding)) {
       // Out of a slide it is a low fast arc that keeps the speed. Stand up first and you get the full
       // height instead, which is the trade when you need to reach something rather than cover ground.
       body.vy = jumpArc(sliding, this.scopeAmount > 0.3) * (clock < this.boost.jumpUntil ? this.boost.jump : 1);
       body.onGround = false;
-      this.jumpPressedAt = -1; this.leftGroundAt = now;
+      this.jumpPressedAt = -1; this.jumped = true;
       if (sliding) { this.flow = bhopSpeed(slideSpeedAt(this.slide.start, now - this.slide.since)); this.slide = { since: -1, start: 0, endedAt: now }; }
       play('jump'); bus.emit('tutorial', 'jump');
     }
@@ -682,7 +681,7 @@ export class LocalPlayer {
     body.x = clamp(body.x, bounds.minX + 0.4, bounds.maxX - 0.4); body.z = clamp(body.z, bounds.minZ + 0.4, bounds.maxZ - 0.4);
     if (body.y < bounds.minY - 3) { body.y = 0.5; body.vy = 0; }
     // Jump pads (royale): step on one and it throws you at the nearest roof.
-    if (body.onGround && this.arena.map.pads) for (const [px, pz] of this.arena.map.pads) if (Math.abs(body.x - px) < 1 && Math.abs(body.z - pz) < 1 && body.y < 0.6) { body.vy = PAD_LAUNCH; body.onGround = false; play('jump'); play('ready', { volume: 0.6 }); bus.emit('royale-pad'); break; }
+    if (body.onGround && this.arena.map.pads) for (const [px, pz] of this.arena.map.pads) if (Math.abs(body.x - px) < 1 && Math.abs(body.z - pz) < 1 && body.y < 0.6) { body.vy = PAD_LAUNCH; body.onGround = false; this.jumped = true; play('jump'); play('ready', { volume: 0.6 }); bus.emit('royale-pad'); break; }
     const moved = Math.hypot(movedX, movedZ);
     this.speed = dt > 0 ? moved / dt : 0;
     if (body.onGround && !wasGrounded && fallSpeed < -4) { play('land', { volume: Math.min(1, -fallSpeed / 12) }); this.viewmodel.land(-fallSpeed / 10); this.shake = Math.min(1, this.shake + -fallSpeed / 30); }
