@@ -51,6 +51,38 @@ finish, exclude `finish.shop === 'item'` and add a test.
 sets a client is never told about, so it is computed on the server and attached to the profile view for
 dev accounts only. Do not move it client side: it will read zero.
 
+## Classes
+
+Krosshair buys its guns each round, so a class is a shopping list, not a spawn kit. You build one in
+Gunsmith > Classes and the armoury buys the lot in one press during the buy phase. Twelve seconds is
+not long to buy five things by hand, which is the whole reason these exist.
+
+| Piece | File | What it holds |
+| --- | --- | --- |
+| The shape | `shared/classes.js` | Five slots, the shopping order, and `cleanClass`, which is the only thing that decides what a class may contain. |
+| The store | `server/profiles.js` `saveClasses` | On the profile beside the gunsmith builds, cleaned on the way in and on the way out. |
+| The buy | `server/room.js` `buyClass` | Walks the list through the ordinary `buy()`, most important first. |
+| The menu | `client/shop.js` `classesHtml` | Draws it and saves every change as it is made. |
+| The press | `client/hud.js` armoury | A button per class at the top of the armoury. |
+
+**A class grants nothing.** It is ids only, and `buyClass` pays the ordinary price through the ordinary
+armoury, so it can never hand a pilot a gun they could not have bought by hand. The modifiers, the
+outages, the refund for what is already in the slot and the gunsmith build all still apply, because it
+is the same code path. Do not be tempted to shortcut it.
+
+**The gun comes first.** `BUY_ORDER` is primary, armour, sidearm, helmet, gadgets. A round that cannot
+afford everything still comes away with a gun, because a round without one is over. What is skipped is
+counted and said once, not refused six times: that is what the `quiet` flag on `buy()` is for.
+
+**Nothing waits to be saved.** Picking a gun, an armour, a gadget or a name writes straight through,
+the same lesson as the gunsmith. A kit you have to remember to save is a kit people lose.
+
+**Traps.**
+- Royale has no armoury, so `player.classes` is null there. Guns come off the floor.
+- A saved class outlives the gun it names. `cleanClass` drops a weapon that has been retired, a gadget
+  that has gone, and anything in the wrong slot, so an old profile cannot break the armoury.
+- The browser never prices anything. It shows `classCost` as a guide; the room decides what is paid.
+
 ## Friends and parties
 
 Mutual friendship and the party you queue with. It is a drawer off the menu bar, not a page: the

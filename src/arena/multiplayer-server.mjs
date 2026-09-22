@@ -822,6 +822,14 @@ wss.on('connection', (socket) => {
         for (const room of rooms.values()) room.applyOutages();
         return;
       }
+      // Saved classes. Ids only: the room prices them through the ordinary armoury, so nothing here
+      // can hand a pilot a gun they did not pay for.
+      if (message.type === 'classes' && socket.identified) {
+        profiles.saveClasses(socket.token, message.classes);
+        const saved = profiles.get(socket.token).classes || [];
+        if (socket.player) socket.player.classes = saved;
+        return send(socket, { type: 'profile', profile: profiles.view(socket.token) });
+      }
       if (message.type === 'builds' && socket.identified) {
         if (outages.featureOut('gunsmith')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'gunsmith'), 'The Gunsmith') });
         profiles.saveBuilds(socket.token, message.builds);
