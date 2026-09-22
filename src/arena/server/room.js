@@ -804,8 +804,10 @@ export class Room {
   // ---------------------------------------------------------------- input
   handle(player, message) {
     // Watching must never be able to change what is being watched, so nothing a watcher sends is acted
-    // on. Listing what is safe would mean revisiting this every time a message is added.
-    if (player.watching) return;
+    // on. Listing what is safe would mean revisiting this every time a message is added. The single
+    // exception is talking, which goes out marked as staff: being heard is the point of it, and it
+    // changes nothing about the match itself.
+    if (player.watching) { if (message.type === 'chat') this.onChat(player, message); return; }
     switch (message.type) {
       case 'state': return this.onState(player, message);
       case 'fire': return this.onFire(player, message);
@@ -1536,8 +1538,13 @@ export class Room {
     const t = now();
     if (!text || t - (player.lastChat || 0) < 0.5) return;
     player.lastChat = t;
-    const payload = { type: 'chat', from: player.id, name: player.name, bot: player.bot, team: player.team, text, scope: m.team ? 'team' : 'all', dead: !player.alive && this.live };
-    if (m.team) this.sendTeam(player.team, payload); else this.broadcast(payload);
+    // A watcher is staff talking over the top of a match, not somebody in it: they hold no team, so
+    // there is no side to say it to and nothing about being dead to report.
+    const staff = Boolean(player.watching);
+    const payload = staff
+      ? { type: 'chat', from: null, name: player.name, bot: false, team: null, text, scope: 'all', dead: false, staff: true }
+      : { type: 'chat', from: player.id, name: player.name, bot: player.bot, team: player.team, text, scope: m.team ? 'team' : 'all', dead: !player.alive && this.live };
+    if (m.team && !staff) this.sendTeam(player.team, payload); else this.broadcast(payload);
   }
   onQuick(player, m) {
     const command = QUICK_COMMANDS.find((entry) => entry.id === m.id);

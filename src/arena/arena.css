@@ -229,6 +229,8 @@ button.mini:hover { border-color: var(--signal) !important; color: var(--signal)
 
 .chat { position: absolute; left: 22px; bottom: 138px; width: 330px; text-transform: none; letter-spacing: 0; font: 400 13px var(--body); }
 .chat-log div { margin-bottom: 3px; text-shadow: 0 1px 3px #000; transition: opacity 1.5s; }
+/* Staff talking over a match: amber, so it reads as the people running the game and not a pilot. */
+.chat-log b.staff { color: var(--signal); letter-spacing: .06em; }
 .chat-log div.faded { opacity: 0; }
 .chat input { pointer-events: auto; width: 100%; margin-top: 6px; padding: 9px 10px; border: 0; border-bottom: 1px solid var(--signal); background: var(--glass-solid); outline: none; font-size: 13px; }
 

@@ -135,10 +135,12 @@ export class Hud {
 
   openChat(team) {
     if (this.chatOpen) return;
-    this.chatOpen = true; this.chatTeam = team;
+    // Watching, there is no team to talk to: the server sends it to the whole match either way, so the
+    // box must not offer something it cannot do, and it says who you are speaking as.
+    this.chatOpen = true; this.chatTeam = game.watching ? false : team;
     const input = this.dom.chatInput;
     input.classList.remove('hidden');
-    input.placeholder = team ? 'Message team…' : 'Message all…';
+    input.placeholder = game.watching ? 'Message the match as staff…' : this.chatTeam ? 'Message team…' : 'Message all…';
     input.value = '';
     document.exitPointerLock?.();
     setTimeout(() => input.focus(), 0);
@@ -169,8 +171,11 @@ export class Hud {
   chat(message) {
     const line = document.createElement('div');
     const enemy = message.team !== myTeam();
+    // Staff hold no team, so the friend and enemy colours say nothing about them. Marked instead, so
+    // nobody reads it as one of the pilots in the match.
+    if (message.staff) line.innerHTML = `<b class="staff">STAFF ${escapeHtml(message.name)}</b> ${escapeHtml(message.text)}`;
     // Bots say so, so nobody wonders who they are talking to.
-    line.innerHTML = `<b class="${enemy ? 'foe' : 'friend'}">${message.scope === 'team' ? '[TEAM] ' : ''}${message.dead ? '☠ ' : ''}${escapeHtml(message.name)}${message.bot ? ' <em class="bot-tag">BOT</em>' : ''}</b> ${escapeHtml(message.text)}`;
+    else line.innerHTML = `<b class="${enemy ? 'foe' : 'friend'}">${message.scope === 'team' ? '[TEAM] ' : ''}${message.dead ? '☠ ' : ''}${escapeHtml(message.name)}${message.bot ? ' <em class="bot-tag">BOT</em>' : ''}</b> ${escapeHtml(message.text)}`;
     this.dom.chatLog.append(line);
     while (this.dom.chatLog.children.length > 7) this.dom.chatLog.firstChild.remove();
     setTimeout(() => line.classList.add('faded'), 9000);

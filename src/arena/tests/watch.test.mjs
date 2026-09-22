@@ -194,3 +194,55 @@ test('a watcher can follow both sides, a dead player still only their own', () =
   assert.match(fn, /everyone \|\| p\.team === team/, 'and a dead player in their own match still follows their own side');
   assert.match(fn, /p\.alive/, 'you can only follow someone who is alive');
 });
+
+// Talking is the one thing a watcher may do. It is the only hole in handle(), so it gets pinned from
+// both sides: the message must get through, and nothing else may ride in beside it.
+test('a watcher can talk, and it goes out marked as staff', async () => {
+  const { room } = await makeRoom();
+  const socket = fakeSocket();
+  room.join(socket, hello('A'), look);
+  const watcher = room.watch(fakeSocket(), hello('Boss'), look);
+  socket.sent.length = 0;
+  room.handle(watcher, { type: 'chat', text: 'stop that' });
+  const chat = socket.sent.find((m) => m.type === 'chat');
+  assert.ok(chat, 'the match never heard it');
+  assert.equal(chat.staff, true, 'it was not marked as staff, so it reads as a pilot in the match');
+  assert.equal(chat.text, 'stop that');
+  assert.equal(chat.name, 'Boss');
+  assert.equal(chat.team, null, 'staff hold no team, so it must not be coloured as one');
+  assert.equal(chat.from, null, 'and the seat id is nobody else’s business');
+  room.close();
+});
+
+test('team chat from a watcher goes to everyone, since they have no team', async () => {
+  const { room } = await makeRoom();
+  const socket = fakeSocket();
+  room.join(socket, hello('A'), look);
+  const watcher = room.watch(fakeSocket(), hello('Boss'), look);
+  socket.sent.length = 0;
+  room.handle(watcher, { type: 'chat', text: 'hello', team: true });
+  const chat = socket.sent.find((m) => m.type === 'chat');
+  assert.ok(chat, 'a team message from a watcher went nowhere at all');
+  assert.equal(chat.scope, 'all', 'it was sent to a team the watcher is not on');
+  room.close();
+});
+
+test('talking is the only thing that gets through', async () => {
+  const { room } = await makeRoom();
+  room.join(fakeSocket(), hello('A'), look);
+  const watcher = room.watch(fakeSocket(), hello('Boss'), look);
+  watcher.credits = 9000; watcher.alive = true;
+  room.phase = 'buy';
+  for (const message of [{ type: 'buy', item: 'talon' }, { type: 'team', team: 'B' }, { type: 'ready' }, { type: 'reload' }]) room.handle(watcher, message);
+  assert.notEqual(watcher.weapons.primary, 'talon', 'a watcher bought a gun');
+  assert.equal(watcher.team, 'watch', 'a watcher joined a team');
+  assert.equal(watcher.ready, false, 'a watcher readied up');
+  room.close();
+});
+
+// Staying invisible is still the default: it is only talking that gives a watcher away.
+test('a silent watcher is still invisible', async () => {
+  const { sent, watcher } = await playedOut(true);
+  const raw = JSON.stringify(sent);
+  assert.ok(!raw.includes(MARK) && !raw.includes(`"${watcher.id}"`), 'a watcher who said nothing was still noticed');
+});
