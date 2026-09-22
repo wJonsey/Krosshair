@@ -485,3 +485,23 @@ test('the browser never resolves a held gun from the table alone', () => {
   assert.match(getter, /game\.you\?\.builds/, 'using the build the server sent, not one the browser guessed');
   assert.match(player, /import \{ resolveWeapon \}/, 'and the import is actually there');
 });
+
+// This one has bitten twice. The saver read a variable that was not declared in it, which throws a
+// ReferenceError inside a setTimeout: swallowed, silent, and nothing ever sent. Every static check
+// passed and the build simply never left the browser.
+test('the saver declares everything it sends', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const fn = shop.slice(shop.indexOf('function keepBuilds'), shop.indexOf('const savedBuild'));
+  assert.ok(fn.includes('const dirty = smithDirty()'), 'keepBuilds works out what is dirty itself');
+  assert.ok(fn.indexOf('const dirty') < fn.indexOf('dirty.length'), 'and does so before reading it');
+  assert.match(fn, /net\.send\(\{ type: 'builds'/, 'and then actually sends it');
+});
+
+test('no stray reference to a dirty list outside the saver', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  // Every mention of `dirty` has to sit in a scope that declares one. There is exactly one such scope.
+  const declared = (shop.match(/const dirty = smithDirty\(\)/g) || []).length;
+  assert.equal(declared, 1, 'one place works it out');
+  const gunsmith = shop.slice(shop.indexOf('function gunsmithHtml'), shop.indexOf('// ------------------------------------------------------------------ games'));
+  assert.ok(!/\bdirty\b/.test(gunsmith), 'and the render does not reach for one it never declared');
+});

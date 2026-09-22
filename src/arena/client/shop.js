@@ -703,7 +703,8 @@ let buildTimer = null;
 function keepBuilds() {
   clearTimeout(buildTimer);
   buildTimer = setTimeout(() => {
-      if (!dirty.length || !attachmentsUnlocked(game.profile?.level || 1)) return;
+    const dirty = smithDirty();
+    if (!dirty.length || !attachmentsUnlocked(game.profile?.level || 1)) return;
     net.send({ type: 'builds', builds: Object.fromEntries(dirty.map((id) => [id, smithDrafts[id]])) });
   }, 400);
 }
@@ -783,7 +784,6 @@ function gunsmithHtml() {
   const level = game.profile.level || 1;
   const unlocked = attachmentsUnlocked(level);
   const partsCost = buildCost(build);
-  const dirty = smithDirty();
   const fitted = GUN_SLOTS.filter((slot) => build[slot]).length;
   const guns = WEAPON_CLASSES.map((c) => {
     const list = smithGuns.filter((weapon) => weaponClass(weapon) === c.id);
