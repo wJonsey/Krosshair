@@ -10,6 +10,7 @@ import { net } from './net.js';
 import { bindLabel, held, isBound } from './input.js';
 import { play } from './audio.js';
 import { buildWeapon, stripHands } from './guns.js';
+import { weaponArt } from './weaponart.js';
 
 const TOP_GUNS = new Set(LOOT_TABLE[2].pool), MID_GUNS = new Set(LOOT_TABLE[1].pool);
 const LOOT_COLOURS = { common: ROYALE_RARITIES.common.color, rare: ROYALE_RARITIES.rare.color, epic: ROYALE_RARITIES.epic.color, legendary: ROYALE_RARITIES.legendary.color, mid: '#5fa8ff', top: '#ffb547', armor: '#6ce6d1', helmet: '#6ce6d1', heal: '#7dff8a', gadget: '#b07cff', ammo: '#ff9a3a', power: '#ff5fd2' };
@@ -34,51 +35,49 @@ body.royale-mode .scorebar, body.royale-mode .minimap-wrap, body.royale-mode #sc
 .royale-radar { position: absolute; left: 16px; top: 16px; width: 190px; height: 190px; background: rgba(10, 14, 18, .6); border: 1px solid rgba(230, 237, 241, .22); }
 .royale-map { position: absolute; left: 50%; top: 50%; width: min(640px, 80vh); height: min(640px, 80vh); transform: translate(-50%, -50%); background: rgba(10, 14, 18, .88); border: 1px solid rgba(230, 237, 241, .3); display: none; }
 .royale-map.on { display: block; }
-/* What you are carrying. Opens on the scoreboard key, which royale does not otherwise use. */
-.royale-kit { position: absolute; left: 50%; top: 50%; width: min(760px, 92vw); max-height: 84vh; overflow-y: auto; transform: translate(-50%, -50%); padding: 18px 20px; background: rgba(7, 9, 12, .9); backdrop-filter: blur(12px); border: 1px solid rgba(230, 237, 241, .18); display: none; }
+/* What you are carrying. A panel down the right, the way a battle royale does it, and a bay down the
+   left to throw things into. The HUD is pointer-events: none, so anything you click has to say so. */
+.royale-kit { position: absolute; inset: 0; display: none; z-index: 28; pointer-events: auto; }
 .royale-kit.on { display: block; }
-.royale-kit > header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
-.royale-kit h3 { margin: 0; font: 400 20px var(--display); text-transform: uppercase; letter-spacing: .08em; }
-.royale-kit header small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
-.royale-kit .kit-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(230, 237, 241, .1); }
-.royale-kit .kit-slot { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
-.royale-kit .kit-name { font: 400 15px var(--body); color: var(--frost); }
-.royale-kit .kit-name b { display: block; font: 400 15px var(--display); text-transform: uppercase; letter-spacing: .04em; color: var(--tier, var(--frost)); }
-.royale-kit .kit-name small { color: var(--haze); font: 400 12px var(--body); }
-.royale-kit .kit-ammo { font: 500 13px var(--mono); color: var(--frost); white-space: nowrap; }
-.royale-kit .kit-ammo i { font-style: normal; color: var(--haze); }
-.royale-kit .kit-empty { color: var(--haze); font: 400 14px var(--body); font-style: italic; }
-.royale-kit footer { margin-top: 14px; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.royale-way { position: absolute; top: 94px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 7px 14px; background: rgba(140, 40, 170, .7); font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.royale-way.on { display: flex; }
-.royale-way i { display: block; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid #fff; transform: rotate(var(--turn, 0rad)); }
-.royale-swap { position: absolute; left: calc(50% + 70px); top: calc(50% - 40px); width: 270px; padding: 14px 16px; background: rgba(7, 9, 12, .84); backdrop-filter: blur(10px); border-left: 3px solid var(--tier, var(--frost)); display: none; }
-.royale-swap.on { display: block; }
-.royale-swap small { display: block; color: var(--tier, var(--haze)); font: 500 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
-.royale-swap h4 { margin: 4px 0 2px; font: 400 17px/1.2 var(--display); text-transform: uppercase; }
-.royale-swap p { margin: 0 0 8px; color: var(--haze); font: 400 12px var(--body); }
-.royale-swap .stat { display: grid; grid-template-columns: 74px 1fr 46px; align-items: center; gap: 8px; margin: 5px 0; color: var(--haze); font: 500 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
-.royale-swap .stat i { display: block; height: 4px; background: rgba(230, 237, 241, .14); position: relative; }
-.royale-swap .stat i::after { content: ''; position: absolute; inset: 0; width: var(--v); background: var(--frost); }
-.royale-swap .stat em { font-style: normal; text-align: right; color: var(--frost); }
-.royale-swap .stat em.up { color: #7dff8a; } .royale-swap .stat em.down { color: #ff6b5e; }
-.royale-swap .take { margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(230, 237, 241, .14); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--haze); }
-.royale-swap .take b { display: inline-block; margin-right: 8px; padding: 3px 7px; background: var(--signal); color: #07090c; font-weight: 600; }
-.royale-swap .take.no b { background: rgba(230, 237, 241, .2); color: var(--frost); }
-.royale-alt { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); text-align: center; display: none; }
-.royale-alt.on { display: block; }
-.royale-alt b { display: block; font: 400 40px/1 var(--display); }
-.royale-alt span { display: block; margin-top: 6px; padding: 5px 12px; background: var(--hud-glass); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
-.royale-powers { position: absolute; left: 16px; top: 220px; display: grid; gap: 6px; }
-.royale-powers div { padding: 6px 10px; background: rgba(255, 95, 210, .2); border-left: 2px solid #ff5fd2; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.royale-card { position: absolute; left: 50%; top: 22%; transform: translateX(-50%); min-width: 340px; padding: 22px 30px; text-align: center; background: rgba(7, 9, 12, .82); backdrop-filter: blur(10px); border-top: 2px solid var(--signal); display: none; animation: royale-card-in .5s var(--ease) both; }
-.royale-card.on { display: block; }
-.royale-card.win { border-top-color: var(--ally); }
-.royale-card small { display: block; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; }
-.royale-card h2 { margin: 8px 0 6px; font: 400 44px/1 var(--display); text-transform: uppercase; }
-.royale-card h2 em { color: var(--haze); font-style: normal; font-size: 20px; }
-.royale-card p { margin: 0; color: var(--haze); font: 400 13px var(--body); }
-@keyframes royale-card-in { from { opacity: 0; transform: translate(-50%, 14px); } }
+.royale-kit .kit-panel { position: absolute; right: 0; top: 0; bottom: 0; width: min(420px, 38vw); padding: 22px 22px 18px; overflow-y: auto; background: linear-gradient(90deg, rgba(7, 9, 12, .82), rgba(7, 9, 12, .94)); backdrop-filter: blur(14px); border-left: 1px solid rgba(230, 237, 241, .2); }
+.royale-kit .kit-panel::before { content: ''; position: absolute; inset: 14px 14px 14px 10px; pointer-events: none; --c: rgba(230, 237, 241, .5); --l: 11px;
+  background: linear-gradient(var(--c), var(--c)) 0 0 / var(--l) 1px no-repeat, linear-gradient(var(--c), var(--c)) 0 0 / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) 100% 0 / var(--l) 1px no-repeat, linear-gradient(var(--c), var(--c)) 100% 0 / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) 0 100% / var(--l) 1px no-repeat, linear-gradient(var(--c), var(--c)) 0 100% / 1px var(--l) no-repeat,
+    linear-gradient(var(--c), var(--c)) 100% 100% / var(--l) 1px no-repeat, linear-gradient(var(--c), var(--c)) 100% 100% / 1px var(--l) no-repeat; }
+.royale-kit .kit-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 18px; }
+.royale-kit .kit-head h3 { margin: 0; font: 400 22px var(--display); letter-spacing: .08em; text-transform: uppercase; }
+.royale-kit .kit-head small, .royale-kit .kit-eyebrow { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+.royale-kit .kit-eyebrow { display: block; margin: 0 0 8px; }
+.royale-kit section { margin-bottom: 18px; }
+.royale-kit .kit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; }
+/* A tile: rarity down the side, the piece itself, what is left in it in the corner. */
+.royale-kit .tile { position: relative; aspect-ratio: 1; display: grid; place-items: center; padding: 6px; background: rgba(230, 237, 241, .05); border: 1px solid rgba(230, 237, 241, .16); border-left: 3px solid var(--tier, rgba(230, 237, 241, .3)); cursor: grab; user-select: none; }
+.royale-kit .tile.on { background: rgba(255, 181, 71, .14); border-color: var(--signal); }
+.royale-kit .tile.empty { cursor: default; border-left-color: rgba(230, 237, 241, .12); opacity: .45; }
+.royale-kit .tile img { width: 100%; height: auto; pointer-events: none; }
+.royale-kit .tile i { font-style: normal; font-size: 26px; color: var(--tier, var(--frost)); }
+.royale-kit .tile b { position: absolute; right: 5px; bottom: 4px; font: 500 11px var(--mono); color: var(--frost); text-shadow: 0 1px 3px #000; }
+.royale-kit .tile span.slot { position: absolute; left: 6px; top: 4px; font: 500 8px var(--mono); letter-spacing: .12em; color: var(--haze); }
+.royale-kit .kit-foot { margin-top: 6px; color: var(--haze); font: 500 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+/* The card for whatever is picked, over on the left where the screen is empty. */
+.royale-kit .kit-card { position: absolute; left: 34px; top: 84px; width: min(340px, 30vw); padding: 14px 16px; background: rgba(7, 9, 12, .86); backdrop-filter: blur(10px); border-left: 3px solid var(--tier, var(--frost)); }
+.royale-kit .kit-card small { display: block; color: var(--tier, var(--haze)); font: 500 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+.royale-kit .kit-card h4 { margin: 5px 0 3px; font: 400 21px/1.1 var(--display); text-transform: uppercase; }
+.royale-kit .kit-card p { margin: 0 0 10px; color: var(--haze); font: 400 12px var(--body); }
+.royale-kit .kit-card .stat { display: grid; grid-template-columns: 70px 1fr 48px; align-items: center; gap: 8px; margin: 5px 0; color: var(--haze); font: 500 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.royale-kit .kit-card .stat i { display: block; height: 4px; background: rgba(230, 237, 241, .14); position: relative; font-style: normal; }
+.royale-kit .kit-card .stat i::after { content: ''; position: absolute; inset: 0; width: var(--v); background: var(--frost); }
+.royale-kit .kit-card .stat em { font-style: normal; text-align: right; color: var(--frost); }
+/* Drag a tile over here to put it down. */
+.royale-kit .kit-bin { position: absolute; left: 0; top: 0; bottom: 0; width: 42%; display: none; place-items: center; border-right: 1px dashed rgba(230, 237, 241, .25); }
+.royale-kit.dragging .kit-bin { display: grid; }
+.royale-kit .kit-bin > div { padding: 26px 34px; border: 1px dashed rgba(230, 237, 241, .35); color: var(--haze); font: 500 12px var(--mono); letter-spacing: .2em; text-transform: uppercase; text-align: center; }
+.royale-kit .kit-bin.hot { background: rgba(255, 181, 71, .1); border-right-color: var(--signal); }
+.royale-kit .kit-bin.hot > div { border-color: var(--signal); color: var(--signal); }
+.royale-kit .kit-ghost { position: fixed; z-index: 60; width: 72px; height: 72px; display: grid; place-items: center; padding: 6px; pointer-events: none; background: rgba(7, 9, 12, .9); border: 1px solid var(--tier, var(--frost)); transform: translate(-50%, -50%); }
+.royale-kit .kit-ghost img { width: 100%; }
+.royale-kit .kit-ghost i { font-style: normal; font-size: 26px; color: var(--tier, var(--frost)); }
 .royale-drop { position: absolute; inset: 0; display: none; grid-template-rows: auto 1fr auto; justify-items: center; gap: 12px; padding: 64px 16px 24px; background: rgba(6, 9, 12, .94); pointer-events: auto; cursor: crosshair; z-index: 30; }
 .royale-drop.on { display: grid; }
 .royale-drop header { text-align: center; }
@@ -96,7 +95,7 @@ export function initRoyale({ arena, hud, player }) {
   document.head.append(style);
   const root = document.createElement('div');
   root.className = 'royale-hud hidden';
-  root.innerHTML = '<div class="royale-outside"></div><div class="royale-top"><div>Alive<b id="royale-alive">0</b></div><div>Kills<b id="royale-kills">0</b></div></div><div class="royale-storm" id="royale-storm"></div><div class="royale-way" id="royale-way"><i></i><span></span></div><div class="royale-swap" id="royale-swap"></div><div class="royale-alt" id="royale-alt"><b></b><span></span></div><div class="royale-powers" id="royale-powers"></div><div class="royale-card" id="royale-card"></div><canvas class="royale-radar" width="380" height="380"></canvas><canvas class="royale-map" width="1280" height="1280"></canvas><div class="royale-kit" id="royale-kit"></div><div class="royale-drop" id="royale-drop"><header><small>Battle royale · Kestrel Island</small><h2>Pick your drop <b id="royale-drop-clock"></b></h2></header><canvas width="1280" height="1280"></canvas><footer id="royale-drop-foot"></footer></div>';
+  root.innerHTML = '<div class="royale-outside"></div><div class="royale-top"><div>Alive<b id="royale-alive">0</b></div><div>Kills<b id="royale-kills">0</b></div></div><div class="royale-storm" id="royale-storm"></div><div class="royale-way" id="royale-way"><i></i><span></span></div><div class="royale-swap" id="royale-swap"></div><div class="royale-alt" id="royale-alt"><b></b><span></span></div><div class="royale-powers" id="royale-powers"></div><div class="royale-card" id="royale-card"></div><canvas class="royale-radar" width="380" height="380"></canvas><canvas class="royale-map" width="1280" height="1280"></canvas><div class="royale-kit" id="royale-kit"><div class="kit-bin" id="kit-bin"><div>Drag here<br>to drop</div></div><div class="kit-card" id="kit-card"></div><aside class="kit-panel"><div class="kit-head"><h3>Carrying</h3><small id="kit-close"></small></div><div id="kit-body"></div></aside></div><div class="royale-drop" id="royale-drop"><header><small>Battle royale · Kestrel Island</small><h2>Pick your drop <b id="royale-drop-clock"></b></h2></header><canvas width="1280" height="1280"></canvas><footer id="royale-drop-foot"></footer></div>';
   document.querySelector('#hud').append(root);
   const radar = root.querySelector('.royale-radar'), bigMap = root.querySelector('.royale-map');
   const alive = root.querySelector('#royale-alive'), kills = root.querySelector('#royale-kills'), stormLabel = root.querySelector('#royale-storm'), outsideFx = root.querySelector('.royale-outside');
@@ -106,36 +105,70 @@ export function initRoyale({ arena, hud, player }) {
   const kit = root.querySelector('#royale-kit');
 
   // ---- what you are carrying, and putting it down
-  // The scoreboard key: royale hides the scoreboard, so the key is free, and the island map moved to its
-  // own so this could have it. A screen with buttons on it needs the pointer, so it is a toggle.
-  let kitOpen = false;
-  const kitRow = (slot, label, body, ammo = '', drop = null) =>
-    `<div class="kit-row"><span class="kit-slot">${label}</span><span class="kit-name">${body}</span><span class="kit-ammo">${ammo}</span>${drop || '<span></span>'}</div>`;
-  const dropButton = (data) => `<button type="button" class="mini" ${data}>Drop</button>`;
+  // A panel down the right, and a bay down the left to throw things into. There is no Drop button: you
+  // drag a tile out of the panel and let go on the left, which is one gesture rather than a hunt for a
+  // small target. The scoreboard key opens it, royale having no scoreboard to put there.
+  const bin = root.querySelector('#kit-bin'), kitCard = root.querySelector('#kit-card'), kitBody = root.querySelector('#kit-body');
+  let kitOpen = false, kitPick = null, drag = null;
+
+  // Everything carried, as one list, so the tiles and the card read from the same place.
+  function carrying() {
+    const you = game.you;
+    if (!you) return [];
+    const out = [];
+    for (const [slot, label] of [['primary', 'PRI'], ['sidearm', 'SEC']]) {
+      const id = you.weapons?.[slot];
+      if (!id) { out.push({ key: slot, slot, label, empty: true }); continue; }
+      const rarity = ROYALE_RARITIES[you.rarity?.[slot] || weaponRarity(id)] || ROYALE_RARITIES.common;
+      out.push({ key: slot, slot, label, kind: 'weapon', id, rarity, weapon: royaleWeapon(WEAPONS[id], rarity.id) || WEAPONS[id], ammo: you.ammo?.[slot], drop: { slot } });
+    }
+    const blade = WEAPONS[you.weapons?.melee] || WEAPONS.knife;
+    out.push({ key: 'melee', slot: 'melee', label: 'BLD', kind: 'weapon', id: blade.id, rarity: ROYALE_RARITIES.common, weapon: blade });
+    for (const id of you.gadgets || []) out.push({ key: `g:${id}`, label: 'GDT', kind: 'gadget', id, gadget: GADGETS[id], drop: { gadget: id } });
+    return out;
+  }
+
+  const tileHtml = (item) => {
+    if (item.empty) return `<div class="tile empty"><span class="slot">${item.label}</span></div>`;
+    const tier = item.rarity?.color || 'var(--frost)';
+    const face = item.kind === 'gadget' ? `<i>${item.gadget.icon}</i>` : `<img src="${weaponArt(item.id)}" alt="" />`;
+    const count = item.ammo ? `<b>${item.ammo.mag}/${item.ammo.reserve}</b>` : '';
+    return `<div class="tile${kitPick === item.key ? ' on' : ''}" style="--tier:${tier}" data-kit="${item.key}" draggable="false"><span class="slot">${item.label}</span>${face}${count}</div>`;
+  };
+
+  function cardHtml(item) {
+    if (!item || item.empty) return '';
+    if (item.kind === 'gadget') return `<small>Gadget</small><h4>${item.gadget.name}</h4><p>${item.gadget.desc}</p>`;
+    const weapon = item.weapon, tier = item.rarity?.color || 'var(--frost)';
+    const bar = (value) => `<i style="--v:${Math.round(Math.max(0.04, Math.min(1, value)) * 100)}%"></i>`;
+    const rows = [
+      ['Damage', `${weapon.damage}${weapon.pellets > 1 ? ` × ${weapon.pellets}` : ''}`, (weapon.damage * weapon.pellets) / 130],
+      ['Fire rate', `${Math.round(60 / weapon.cooldown)}`, 0.09 / weapon.cooldown + 0.04],
+      ['Range', weapon.falloff ? `${weapon.falloff[0]} m` : 'Full', weapon.falloff ? weapon.falloff[1] / 90 : 1],
+      ['Magazine', `${weapon.mag}`, Math.min(1, weapon.mag / 60)],
+    ];
+    return `<small style="--tier:${tier}">${item.rarity.name} · ${weapon.tag}</small><h4>${weapon.name}</h4>
+      ${rows.map(([label, text, value]) => `<div class="stat"><span>${label}</span>${bar(value)}<em>${text}</em></div>`).join('')}`;
+  }
 
   function drawKit() {
-    const you = game.you;
-    if (!you) { kit.innerHTML = ''; return; }
-    const gunRow = (slot, label) => {
-      const id = you.weapons?.[slot];
-      if (!id) return kitRow(slot, label, '<span class="kit-empty">Nothing</span>');
-      const rarity = ROYALE_RARITIES[you.rarity?.[slot] || weaponRarity(id)] || ROYALE_RARITIES.common;
-      const weapon = royaleWeapon(WEAPONS[id], rarity.id) || WEAPONS[id];
-      const ammo = you.ammo?.[slot];
-      return kitRow(slot, label,
-        `<b style="--tier:${rarity.color}">${weapon.name}</b><small>${rarity.name} · ${weapon.tag}</small>`,
-        ammo ? `${ammo.mag}<i> / ${ammo.reserve}</i>` : '',
-        dropButton(`data-toss-slot="${slot}"`));
-    };
-    const blade = WEAPONS[you.weapons?.melee] || WEAPONS.knife;
-    const gadgets = (you.gadgets || []).map((id) => kitRow('gadget', 'Gadget',
-      `<b>${GADGETS[id].name}</b><small>${GADGETS[id].desc}</small>`, '', dropButton(`data-toss-gadget="${id}"`))).join('');
-    kit.innerHTML = `<header><h3>Carrying</h3><small>${bindLabel('scoreboard')} to close · ${bindLabel('interact')} to pick up</small></header>
-      ${gunRow('primary', 'Primary')}${gunRow('sidearm', 'Sidearm')}
-      ${kitRow('melee', 'Blade', `<b>${blade.name}</b><small>Always with you</small>`)}
-      ${gadgets || kitRow('gadget', 'Gadgets', '<span class="kit-empty">Nothing</span>')}
-      ${kitRow('armour', 'Armour', you.armor > 0 ? `<b>${you.armor} plate</b><small>${you.helmet ? 'Helmet on' : 'No helmet'}</small>` : `<span class="kit-empty">None${you.helmet ? ' · helmet on' : ''}</span>`)}
-      <footer>A gun goes down with what is left in it.</footer>`;
+    const items = carrying();
+    if (!items.some((item) => item.key === kitPick)) kitPick = items.find((item) => !item.empty)?.key || null;
+    const pick = items.find((item) => item.key === kitPick);
+    const guns = items.filter((item) => item.kind !== 'gadget');
+    const gadgets = items.filter((item) => item.kind === 'gadget');
+    const you = game.you || {};
+    kitBody.innerHTML = `<section><span class="kit-eyebrow">Equipment</span><div class="kit-grid">${guns.map(tileHtml).join('')}</div></section>
+      <section><span class="kit-eyebrow">Gadgets</span><div class="kit-grid">${gadgets.length ? gadgets.map(tileHtml).join('') : '<div class="tile empty"><span class="slot">GDT</span></div>'}</div></section>
+      <section><span class="kit-eyebrow">Armour</span><div class="kit-grid">
+        <div class="tile empty" style="opacity:1"><span class="slot">PLT</span><i>${you.armor > 0 ? '▣' : '▢'}</i><b>${Math.round(you.armor || 0)}</b></div>
+        <div class="tile empty" style="opacity:${you.helmet ? 1 : 0.45}"><span class="slot">HLM</span><i>${you.helmet ? '⬢' : '⬡'}</i></div>
+      </div></section>
+      <p class="kit-foot">Drag a piece left to put it down. It keeps what is in it.</p>`;
+    kitCard.innerHTML = cardHtml(pick);
+    kitCard.style.setProperty('--tier', pick?.rarity?.color || 'var(--frost)');
+    kitCard.style.display = pick ? 'block' : 'none';
+    root.querySelector('#kit-close').textContent = `${bindLabel('scoreboard')} to close`;
   }
 
   function showKit(open) {
@@ -143,16 +176,53 @@ export function initRoyale({ arena, hud, player }) {
     kitOpen = open;
     hud.royaleKitOpen = open;
     kit.classList.toggle('on', open);
+    endDrag(false);
     if (open) { drawKit(); document.exitPointerLock?.(); play('ui'); } else { play('uiBack'); player.lock(); }
   }
 
-  kit.addEventListener('click', (event) => {
-    const slot = event.target.closest('[data-toss-slot]'), gadget = event.target.closest('[data-toss-gadget]');
-    if (slot) net.send({ type: 'royale-toss', slot: slot.dataset.tossSlot });
-    else if (gadget) net.send({ type: 'royale-toss', gadget: gadget.dataset.tossGadget });
-    else return;
-    play('ready');
+  // Dragging is done by hand rather than with the browser's drag and drop, which needs a data transfer
+  // and fights the pointer lock this screen has just let go of.
+  function endDrag(dropped) {
+    if (drag?.ghost) drag.ghost.remove();
+    drag = null;
+    kit.classList.remove('dragging');
+    bin.classList.remove('hot');
+    if (dropped) play('ready');
+  }
+  const overBin = (event) => event.clientX < innerWidth * 0.42;
+
+  kit.addEventListener('mousedown', (event) => {
+    const tile = event.target.closest('[data-kit]');
+    if (!tile) return;
+    event.preventDefault();
+    const item = carrying().find((entry) => entry.key === tile.dataset.kit);
+    if (!item || item.empty) return;
+    kitPick = item.key;
+    drawKit();
+    if (!item.drop) return;   // the blade stays, so there is nothing to drag it to
+    const ghost = document.createElement('div');
+    ghost.className = 'kit-ghost';
+    ghost.style.setProperty('--tier', item.rarity?.color || 'var(--frost)');
+    ghost.innerHTML = item.kind === 'gadget' ? `<i>${item.gadget.icon}</i>` : `<img src="${weaponArt(item.id)}" alt="" />`;
+    ghost.style.left = `${event.clientX}px`; ghost.style.top = `${event.clientY}px`;
+    kit.append(ghost);
+    drag = { item, ghost };
+    kit.classList.add('dragging');
   });
+  addEventListener('mousemove', (event) => {
+    if (!drag) return;
+    drag.ghost.style.left = `${event.clientX}px`;
+    drag.ghost.style.top = `${event.clientY}px`;
+    bin.classList.toggle('hot', overBin(event));
+  });
+  addEventListener('mouseup', (event) => {
+    if (!drag) return;
+    const item = drag.item;
+    const put = overBin(event);
+    endDrag(put);
+    if (put) net.send({ type: 'royale-toss', ...item.drop });
+  });
+
   bus.on('you', () => {
     if (!kitOpen) return;
     if (!game.you?.alive) { showKit(false); return; }   // nothing to carry once you are down

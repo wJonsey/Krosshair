@@ -373,7 +373,29 @@ test('the inventory is wired to the free key and blocks play while it is open', 
   assert.match(royale, /code === 'Escape' && kitOpen\) showKit\(false\)/, 'Escape must close it');
   assert.match(royale, /hud\.royaleKitOpen = open/, 'the rest of the game is never told it is open');
   assert.match(hud, /get blocking\(\)[^}]*this\.royaleKitOpen/, 'firing through an open inventory');
-  assert.match(royale, /document\.exitPointerLock/, 'a screen with buttons needs the pointer back');
-  assert.match(royale, /royale-toss', slot: slot\.dataset\.tossSlot/, 'the Drop button does nothing');
+  assert.match(royale, /document\.exitPointerLock/, 'a screen you click needs the pointer back');
   assert.match(royale, /!kitOpen && held\(player\.keys[^)]*\), 'map'\)/, 'the map shows through the inventory');
+});
+
+// The whole royale HUD is pointer-events: none so it never eats a shot. Anything meant to be clicked has
+// to turn that back on for itself, and the first inventory did not: the Drop button could not be pressed.
+test('the inventory takes clicks, unlike the rest of the HUD', () => {
+  const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  assert.match(royale, /\.royale-hud \{[^}]*pointer-events: none/, 'the HUD should still ignore the mouse');
+  assert.match(royale, /\.royale-kit \{[^}]*pointer-events: auto/, 'so the inventory has to ask for it back');
+});
+
+// Dragging by hand rather than the browser's drag and drop, which wants a data transfer and fights the
+// pointer lock this screen has just released.
+test('a piece is put down by dragging it left, not by a button', () => {
+  const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  assert.match(royale, /kit\.addEventListener\('mousedown'/, 'nothing starts a drag');
+  assert.match(royale, /const overBin = \(event\) => event\.clientX < innerWidth \* 0\.4\d/, 'the bay has to be the left of the screen');
+  assert.match(royale, /if \(put\) net\.send\(\{ type: 'royale-toss', \.\.\.item\.drop \}\)/, 'letting go in the bay must put it down');
+  assert.ok(!/<button[^>]*Drop<\/button>/.test(royale), 'the Drop button is meant to be gone');
+  // The blade carries no drop, so there is nothing to drag it into the bay with.
+  assert.match(royale, /if \(!item\.drop\) return;/, 'anything that cannot be dropped must not start a drag');
+  assert.match(royale, /out\.push\(\{ key: 'melee'[^}]*\}\);/, 'the blade is listed');
+  const blade = royale.match(/out\.push\(\{ key: 'melee'[^}]*\}\);/)[0];
+  assert.ok(!/drop:/.test(blade), 'the blade must not be droppable');
 });
