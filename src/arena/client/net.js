@@ -19,6 +19,23 @@ function remember(name) {
   try { if (name) sessionStorage.setItem('krosshair:room', name); else sessionStorage.removeItem('krosshair:room'); } catch { /* private mode */ }
 }
 
+// One tab plays at a time: the newest to connect wins, and any other tab of the game in this browser
+// stands down and says so. Guests get a new identity per tab, so without this two tabs were two pilots
+// who could queue into the same match and play each other. Accounts are held to one connection on the
+// server as well, which covers other browsers and machines; this covers guests and saves a round trip.
+const tabId = (() => { try { return crypto.randomUUID(); } catch { return `${Date.now()}-${Math.random()}`; } })();
+let tabs = null;
+try { tabs = new BroadcastChannel('krosshair-play'); } catch { /* old browser: the server rule still holds for accounts */ }
+tabs?.addEventListener('message', (event) => { if (event.data?.type === 'take' && event.data.id !== tabId) standDown('tab'); });
+// where: 'tab' for another tab in this browser, 'device' for this account signing in somewhere else.
+function standDown(where) {
+  if (suspended) return;
+  suspended = true;
+  clearInterval(pingTimer);
+  try { socket?.close(4004, 'playing elsewhere'); } catch { /* already gone */ }
+  bus.emit('elsewhere', where);
+}
+
 export const net = {
   connected: false,
   // Discord login stores its session on the server's own origin, so it only works when the page is served from there.
@@ -64,6 +81,7 @@ function connect() {
     net.connected = true;
     offsetSamples = [];
     bus.emit('net-status', { state: 'open' });
+    tabs?.postMessage({ type: 'take', id: tabId });
     clearInterval(pingTimer);
     const ping = () => net.send({ type: 'ping', c: performance.now(), rtt: net.rtt });
     ping();
@@ -75,6 +93,7 @@ function connect() {
     let message;
     try { message = JSON.parse(event.data); } catch { return; }
     if (message.type === 'pong') return sample(message);
+    if (message.type === 'replaced') return standDown('device');
     if (message.type === 'identity') {
       if (message.session) { game.authSession = message.session; store('authSession', message.session); }
       if (message.token) { game.token = message.token; tabStore('guest', message.token); }
@@ -83,6 +102,8 @@ function connect() {
       if (wantRoom) net.send({ type: 'enter', action: 'rejoin', room: wantRoom, look: game.look });
     }
     if (message.type === 'rejoin-failed') remember(null);
+    // This account was in a match in the tab this one took over from: step into it, as a refresh would.
+    if (message.type === 'rejoin-offer' && typeof message.room === 'string') { remember(message.room); net.send({ type: 'enter', action: 'rejoin', room: message.room, look: game.look }); }
     // First thing the server says. It decides how this browser introduces itself: a saved login wins,
     // then a guest callsign if the server still allows guests, otherwise the menu asks for a login.
     if (message.type === 'menu') { game.online = message.online; game.publicRooms = message.rooms; bus.emit('menu'); }
@@ -122,6 +143,8 @@ function connect() {
     net.connected = false;
     net.identified = false;
     clearInterval(pingTimer);
+    // Stood down on purpose (another tab, or the anti-cheat): not a lost connection, so no banner.
+    if (suspended) return;
     bus.emit('net-status', { state: 'closed', rejoining: Boolean(wantRoom) });
     scheduleRetry();
   });

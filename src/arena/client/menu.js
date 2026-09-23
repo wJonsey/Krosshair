@@ -784,9 +784,11 @@ export function hideLoading() {
 const noticeCard = document.createElement('div');
 noticeCard.className = 'notice-card hidden';
 document.body.append(noticeCard);
-let noticeGo = null;
-function showNotice({ tag, title, body, accept = 'Got it', cancel = null, tone = '', onAccept = null }) {
+let noticeGo = null, noticeSticky = false;
+// sticky: Escape does not dismiss it. For a card whose only way on is its button.
+function showNotice({ tag, title, body, accept = 'Got it', cancel = null, tone = '', onAccept = null, sticky = false }) {
   noticeGo = onAccept;
+  noticeSticky = sticky;
   noticeCard.className = `notice-card${tone ? ` ${tone}` : ''}`;
   noticeCard.innerHTML = `<div class="notice-panel" role="alertdialog" aria-modal="true">
     <p class="eyebrow">${tag}</p><h2>${title}</h2><div class="notice-body">${body}</div>
@@ -811,8 +813,23 @@ noticeCard.addEventListener('click', (event) => {
 });
 addEventListener('keydown', (event) => {
   if (noticeCard.classList.contains('hidden')) return;
-  if (event.key === 'Escape') { event.preventDefault(); closeNotice(false); }
+  if (event.key === 'Escape') { event.preventDefault(); if (!noticeSticky) closeNotice(false); }
 }, true);
+
+// Another tab, or this account somewhere else, took over the game. Dismissing this would leave a tab
+// that looks alive and is not connected, so the only way on is to take it back.
+bus.on('elsewhere', (where) => {
+  document.exitPointerLock?.();
+  netBanner.classList.add('hidden');
+  showNotice({
+    tag: 'Krosshair',
+    title: where === 'device' ? 'Signed in somewhere else' : 'Open in another tab',
+    body: `<p>${where === 'device' ? 'Your account is playing in another tab or on another device.' : 'The game is open in another tab.'} Only one can play at a time.</p>`,
+    accept: 'Play here',
+    sticky: true,
+    onAccept: () => net.resume(),
+  });
+});
 
 // The whole game is a work in progress, and the first thing a pilot sees should say so.
 addEventListener('krosshair:entered', () => showNotice({

@@ -153,6 +153,16 @@ turns it: all the way round, a little tilt, and back to side on for a new gun. E
 the same way (skins, charms, crates, the Locker and Play page pilot), all through `client/turntable.js`.
 A crate lets go of its angle the moment it is opened, so the opening always swings round to face you.
 
+## One game per person
+
+The newest tab or connection wins. In one browser the tabs tell each other over a `BroadcastChannel`
+(`net.js`), which covers guests: they get a new identity per tab, so the server cannot tell two of them
+apart. For accounts the server also keeps one connection each (`signIn`), which covers other browsers
+and machines, and a takeover mid-match carries the seat into the new tab with a `rejoin-offer`. A tab
+that is taken over stands down (`net.suspend` state, no retries) and shows a card whose only way on is
+Play here: if it reconnected by itself the two tabs would take the game from each other for ever.
+Two different browsers as two guests are still two players; nothing ties them together.
+
 ## Traps that have already cost a day
 
 - **The gunsmith stage must stay inside the floor, first on it, and `width: auto`.** It takes drags to

@@ -418,6 +418,20 @@ function signIn(socket, account, message, session = null) {
   socket.name = account.username;
   socket.account = account.username.toLowerCase();
   socket.identified = true;
+  // One connection per account. Signing in again, in another tab or on another machine, takes over from
+  // the old one rather than running beside it: two tabs on one account could each queue, and meet. The
+  // old tab is told first so it stops reconnecting, or the two would take it back from each other for
+  // ever. Its seat in a match is held like any dropped connection, so taking over mid-match loses nothing.
+  let heldIn = null;
+  for (const other of sockets) {
+    if (other === socket || !other.identified || other.account !== socket.account) continue;
+    send(other, { type: 'replaced' });
+    // Out of its match now rather than when the socket finally closes, so the seat is already held for
+    // this connection to step into.
+    if (other.room && other.player) heldIn = other.room;
+    leaveRoom(other);
+    other.close(4004, 'signed in elsewhere');
+  }
   const profile = profiles.get(socket.token);
   profile.name = account.username;
   profiles.setDev(socket.token, isDev(account));
@@ -427,6 +441,8 @@ function signIn(socket, account, message, session = null) {
   parties.ensure(account.username);
   pushSocial(socket);
   tellFriends(account.username);
+  // Took over from a tab that was in a match: carry on in it here, the way a refresh does.
+  if (heldIn && rooms.get(heldIn.name) === heldIn && heldIn.seatOf(socket.token) && !heldIn.seatOf(socket.token).connected) send(socket, { type: 'rejoin-offer', room: heldIn.name });
 }
 
 async function handleAuth(socket, message) {
@@ -683,7 +699,8 @@ function enter(socket, message) {
   let room = null;
   if (action === 'rejoin') {
     room = rooms.get(String(message.room || ''));
-    const held = room && [...room.players.values()].some((p) => !p.bot && !p.connected && p.session === socket.session);
+    // The same tab coming back, or the same account in a new one (after taking over from the old tab).
+    const held = room && [...room.players.values()].some((p) => !p.bot && !p.connected && (p.session === socket.session || (socket.account && p.token === socket.token)));
     if (!held) return send(socket, { type: 'rejoin-failed' });
   } else if (action === 'range') room = createRoom(`range-${roomCounter++}`, { queue: 'range' });
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
