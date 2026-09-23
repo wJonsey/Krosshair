@@ -205,6 +205,10 @@ export function hiloMultiplier(card, pick) { const odds = hiloOdds(card, pick); 
 export const CRASH = { rate: 0.12, max: 100, minAuto: 1.01 };
 export const crashAt = (seconds) => Math.floor(Math.exp(CRASH.rate * Math.max(0, seconds)) * 100) / 100;
 export const crashTime = (multiplier) => Math.log(multiplier) / CRASH.rate;
+// An auto cash-out pays when the multiplier gets to it, and crashing exactly there still got there. It
+// used to need the crash to be strictly past it, so auto at x5 and a crash at x5 lost the whole stake
+// with x5.00 on the screen.
+export const autoCashOut = (auto, crash) => (auto && auto <= crash ? auto : null);
 
 export const WAGER = { sizes: [1, 2, 3], minStake: 10, maxStake: 5000 };
 export const TRANSFER = { min: 1, max: 100000 };

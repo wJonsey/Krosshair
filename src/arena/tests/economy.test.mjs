@@ -463,3 +463,17 @@ test('a crate reveal does not claim a skin belongs to one gun', () => {
   assert.ok(!/WEAPONS\[drop\.weapon\]/.test(reveal), 'so no card beside it may name a gun');
   assert.ok(!/WEAPONS\[item\.weapon\]/.test(shop.slice(shop.indexOf('reel-strip'), shop.indexOf('reel-mark'))), 'nor the reel it span in on');
 });
+
+// Auto cash-out at x5, crash at x5: the multiplier got there, so it pays. It used to need the crash to be
+// strictly past the target, and a round that crashed on the target lost the whole stake with x5.00 showing.
+test('a crash that lands exactly on the auto cash-out pays it', async () => {
+  const { autoCashOut } = await import('../shared/economy.js');
+  assert.equal(autoCashOut(5, 5), 5, 'reaching the target exactly paid nothing');
+  assert.equal(autoCashOut(5, 5.01), 5);
+  assert.equal(autoCashOut(5, 4.99), null, 'a crash short of the target still loses');
+  assert.equal(autoCashOut(null, 3), null, 'no auto cash-out set means none happens');
+  assert.equal(autoCashOut(1.01, 1), null, 'an instant bust beats any target');
+  const server = readFileSync(new URL('../server/economy.js', import.meta.url), 'utf8');
+  assert.match(server, /const cashes = autoCashOut\(auto, crash\);/, 'the server has to use the rule, not its own copy of it');
+  assert.ok(!/auto < crash/.test(server), 'the old strict comparison is still in there');
+});

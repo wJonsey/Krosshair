@@ -3,7 +3,7 @@
 import { randomInt } from 'node:crypto';
 import { COSMETICS, WEAPONS } from '../shared/constants.js';
 import { bundleOn, bundlePrice, inShop, itemName, itemPrice, itemSet, ownsItem } from '../shared/itemshop.js';
-import { CRASH, COINFLIP, CRATES, PLINKO, crashAt, crashTime, hiloMultiplier, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, SCRAP, SLOTS, TRADE_UP, crateFinishes, crateOdds, STAKE, TRANSFER, diceMultiplier, finishInfo, finishPrice, finishValue, slotsMultiplier } from '../shared/economy.js';
+import { CRASH, COINFLIP, CRATES, PLINKO, crashAt, crashTime, hiloMultiplier, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, SCRAP, SLOTS, TRADE_UP, crateFinishes, crateOdds, STAKE, TRANSFER, diceMultiplier, finishInfo, finishPrice, finishValue, slotsMultiplier, autoCashOut } from '../shared/economy.js';
 
 const SKINNABLE = Object.keys(WEAPONS);
 const GAME_NAMES = { coinflip: 'Coin flip', dice: 'Dice', slots: 'Slots', plinko: 'Plinko', hilo: 'Higher or lower', crash: 'Crash' };
@@ -221,8 +221,8 @@ export function startCrash(profiles, token, message, clock, notify) {
   const roll = randomInt(0, 1e6) / 1e6;
   const crash = Math.min(CRASH.max, Math.max(1, Math.floor((0.95 / (1 - roll)) * 100) / 100));
   const round = { stake, crash, auto, start: clock(), clock, notify, profiles, token };
-  const end = auto && auto < crash ? auto : crash;
-  round.timer = setTimeout(() => finishCrash(round, auto && auto < crash ? auto : null), crashTime(end) * 1000 + 30);
+  const cashes = autoCashOut(auto, crash);
+  round.timer = setTimeout(() => finishCrash(round, cashes), crashTime(cashes || crash) * 1000 + 30);
   round.timer.unref?.();
   crashRounds.set(token, round);
   return { crashStarted: { stake, auto, start: round.start } };
