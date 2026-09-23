@@ -246,3 +246,93 @@ test('a silent watcher is still invisible', async () => {
   const raw = JSON.stringify(sent);
   assert.ok(!raw.includes(MARK) && !raw.includes(`"${watcher.id}"`), 'a watcher who said nothing was still noticed');
 });
+
+// ---------------------------------------------------------------- battle royale
+// RoyaleRoom runs its own match: it drops everyone on the island, sends positions and loot to each pilot
+// itself, and handles its own messages before the room's. None of that knew about watchers, so a watcher
+// was parachuted in as a live body, listed in the placements, and sent no positions at all: an empty
+// island to look at. These pin it to the same watching as a normal match.
+const { RoyaleRoom } = await import('../server/royale.js');
+const royaleProfiles = { get: () => ({ xp: 0, rating: 1000, rankedMatches: 0 }), view: () => ({ level: 1, rating: 1000, rankedMatches: 0 }), recordMatch: () => ({}), coins: () => 0, sanitizeCosmetics: (type, list) => list };
+function royale() {
+  const room = new RoyaleRoom({ name: `royale-watch-${Math.random()}`, profiles: royaleProfiles, onEmpty: () => {} });
+  clearInterval(room.interval);
+  return room;
+}
+
+test('a watcher is not dropped onto the island', () => {
+  const room = royale();
+  room.join(fakeSocket(), hello('A'), look);
+  const socket = fakeSocket();
+  const watcher = room.watch(socket, hello(MARK), look);
+  room.startMatch(); room.deploy();
+  assert.equal(watcher.alive, false, 'the watcher was parachuted in as a body that can be shot');
+  assert.equal(watcher.team, 'watch', 'and was dealt a team of their own like a pilot');
+  assert.ok(!room.alivePilots().includes(watcher), 'and is counted among the living');
+  assert.ok(!room.roomState().royale || room.roomState().royale.total === [...room.players.values()].filter((p) => !p.watching && !p.dummy).length, 'the field size counts a watcher');
+  room.close();
+});
+
+test('a watcher sees the island: every pilot’s position, and the loot', () => {
+  const room = royale();
+  room.join(fakeSocket(), hello('A'), look);
+  const socket = fakeSocket();
+  room.watch(socket, hello(MARK), look);
+  room.startMatch(); room.deploy();
+  room.snapshot(performance.now() / 1000);
+  const positions = socket.sent.filter((m) => m.type === 's');
+  assert.ok(positions.length, 'a watcher was sent no positions, so they watched an empty island');
+  const alive = room.alivePilots().length;
+  assert.equal(positions.at(-1).p.length, alive, 'and should see the whole field, not only who is near them');
+  assert.ok(socket.sent.some((m) => m.type === 'loot'), 'nor any loot');
+  room.close();
+});
+
+test('a watcher cannot pick a drop, take loot or throw anything about', () => {
+  const room = royale();
+  room.join(fakeSocket(), hello('A'), look);
+  const watcher = room.watch(fakeSocket(), hello(MARK), look);
+  room.startMatch();
+  room.handle(watcher, { type: 'royale-drop', x: 10, z: 10 });
+  assert.ok(!room.drops.has(watcher.id), 'a watcher picked a landing spot');
+  room.deploy();
+  const loot = [...room.loot.values()][0];
+  const before = room.loot.size;
+  room.handle(watcher, { type: 'royale-take', id: loot?.id });
+  room.handle(watcher, { type: 'royale-toss', slot: 'primary' });
+  assert.equal(room.loot.size, before, 'a watcher moved loot');
+  room.close();
+});
+
+test('a watcher is not in the placements, and costs the lobby no bot', () => {
+  const room = royale();
+  room.join(fakeSocket(), hello('A'), look);
+  const socket = fakeSocket();
+  room.watch(socket, hello(MARK), look);
+  room.startMatch();
+  const seated = [...room.players.values()].filter((p) => !p.watching).length;
+  const alone = royale();
+  alone.join(fakeSocket(), hello('B'), look);
+  alone.startMatch();
+  assert.equal(seated, alone.players.size, 'a watcher took the place of a bot in the field');
+  alone.close();
+  room.deploy();
+  room.endMatch();
+  const end = socket.sent.find((m) => m.type === 'match-end');
+  assert.ok(end, 'the match never ended');
+  assert.ok(!end.table.some((row) => row.name === MARK), 'the watcher was given a placement');
+  room.close();
+});
+
+test('the royale client gives a watcher no drop map and no inventory', () => {
+  const client = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  assert.match(client, /const dropping = game\.room\.phase === 'drop' && !game\.watching;/, 'the drop map would cover the screen with nowhere to drop');
+  assert.match(client, /!game\.room\?\.royale \|\| game\.watching\) return;/, 'a watcher carries nothing to open');
+  const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
+  assert.match(hud, /const canReact = [^;]*&& !game\.watching;/, 'reactions from a watcher are refused, so the buttons must not be offered');
+});
+
+test('a watcher is not offered reactions it cannot send', () => {
+  const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
+  assert.match(hud, /const canReact = !player\.alive && room\.mode !== 'range' && !game\.watching;/, 'the reaction buttons show for a watcher and do nothing');
+});

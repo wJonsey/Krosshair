@@ -678,7 +678,8 @@ export class Hud {
     if (dom.variant.textContent !== variant) dom.variant.textContent = variant;
     this.updateVision(dt);
     this.drawMinimap();
-    const canReact = !player.alive && room.mode !== 'range';
+    // A watcher's reactions are refused like everything else they send but chat, so offer none.
+    const canReact = !player.alive && room.mode !== 'range' && !game.watching;
     dom.reactions.classList.toggle('hidden', !canReact);
   }
 }

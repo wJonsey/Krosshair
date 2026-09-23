@@ -47,16 +47,21 @@ export class RoyaleRoom extends Room {
     this.autoStartAt = this.autoStartAt ? Math.min(this.autoStartAt, now() + wait) : now() + wait;
   }
   fillBots() {
-    const target = Math.min(ROYALE.max, Math.max(ROYALE.fill, this.players.size));
+    const seated = () => [...this.players.values()].filter((p) => !p.watching).length;
+    const target = Math.min(ROYALE.max, Math.max(ROYALE.fill, seated()));
     // A spread of skill, so the field has easy pickings and a few real threats.
-    while (this.players.size < target) if (!this.addBot('A', pick(['recruit', 'recruit', 'veteran', 'veteran', 'veteran', 'elite']))) break;
+    while (seated() < target) if (!this.addBot('A', pick(['recruit', 'recruit', 'veteran', 'veteran', 'veteran', 'elite']))) break;
   }
 
   roomState() {
     const state = super.roomState();
-    state.royale = { alive: this.alivePilots().length, total: [...this.players.values()].filter((p) => !p.dummy).length };
+    state.royale = { alive: this.alivePilots().length, total: [...this.players.values()].filter((p) => !p.dummy && !p.watching).length };
     return state;
   }
+  // A developer watching from the online card. Royale sends positions and loot to each pilot itself
+  // rather than through broadcast, and humans() leaves watchers out on purpose, so they are added here or
+  // a watcher sees an empty island.
+  watchers() { return [...this.players.values()].filter((p) => p.watching && p.connected && p.socket); }
   alivePilots() { return [...this.players.values()].filter((p) => p.alive && !p.dummy); }
 
   // ---------------------------------------------------------------- match flow
@@ -77,6 +82,7 @@ export class RoyaleRoom extends Room {
     this.decoys.clear();
     this.roundKills = new Map();
     for (const player of this.players.values()) {
+      if (player.watching) continue;   // not in the match: no team, no kit, no placement
       player.team = player.id;
       player.match = freshMatchStats();
       player.weapons = { ...ROYALE_LOADOUT };
@@ -126,6 +132,8 @@ export class RoyaleRoom extends Room {
     this.drops.set(player.id, { x: Math.max(-limit, Math.min(limit, x)), z: Math.max(-limit, Math.min(limit, z)) });
   }
   handle(player, message) {
+    // Before royale's own messages, or a watcher could pick a drop, take loot and throw it about.
+    if (player.watching) return super.handle(player, message);
     if (message.type === 'royale-drop') return this.chooseDrop(player, message);
     if (message.type === 'royale-take') return this.takeLoot(player, message);
     if (message.type === 'royale-toss') return this.toss(player, message);
@@ -166,7 +174,7 @@ export class RoyaleRoom extends Room {
     this.phaseEnds = now() + 3600;
     const taken = [];
     for (const player of this.players.values()) {
-      if (!(player.bot || player.connected)) { player.alive = false; continue; }
+      if (player.watching || !(player.bot || player.connected)) { player.alive = false; continue; }
       const point = this.landingPoint(this.drops.get(player.id), taken);
       taken.push(point);
       // Bots ride the parachute straight down to their spot; pilots start a little off theirs and steer.
@@ -179,7 +187,7 @@ export class RoyaleRoom extends Room {
     }
     this.broadcast({ type: 'phase', phase: 'live', phaseEnds: this.phaseEnds });
     this.sendStorm();
-    for (const player of this.humans()) this.sendLoot(player);
+    for (const player of [...this.humans(), ...this.watchers()]) this.sendLoot(player);
     this.pushRoom();
   }
   // The nearest free ground to where they pointed, a few metres clear of anyone already landing there.
@@ -437,7 +445,7 @@ export class RoyaleRoom extends Room {
     this.phase = 'matchEnd';
     this.phaseEnds = now() + this.rules.matchEndTime;
     if (this.storm) this.storm.nextAt = Infinity;
-    const everyone = [...this.players.values()].filter((p) => !p.dummy);
+    const everyone = [...this.players.values()].filter((p) => !p.dummy && !p.watching);
     const humans = everyone.filter((p) => !p.bot).length;
     const topKills = Math.max(1, ...everyone.map((p) => p.match.kills));
     const table = everyone.map((p) => ({
@@ -461,7 +469,7 @@ export class RoyaleRoom extends Room {
   toLobby() {
     this.loot.clear();
     this.storm = null;
-    for (const player of this.players.values()) player.team = 'A';
+    for (const player of this.players.values()) if (!player.watching) player.team = 'A';
     super.toLobby();
   }
 
@@ -574,7 +582,7 @@ export class RoyaleRoom extends Room {
       rows.push({ player, row: [player.id, round2(player.x), round2(player.y), round2(player.z), round3(player.yaw), round3(player.pitch), flags, player.weapons[player.active] || 'knife', 0] });
     }
     const range = ROYALE.viewRange;
-    for (const viewer of this.humans()) {
+    for (const viewer of [...this.humans(), ...this.watchers()]) {
       if (!viewer.connected || !viewer.socket) continue;
       // Dead pilots watch someone else, so they see around whoever they last followed: the whole field.
       const near = viewer.alive ? rows.filter(({ player }) => player === viewer || (Math.abs(player.x - viewer.x) < range && Math.abs(player.z - viewer.z) < range)) : rows;

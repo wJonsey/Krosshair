@@ -229,7 +229,7 @@ export function initRoyale({ arena, hud, player }) {
     drawKit();
   });
   bus.on('key', (code) => {
-    if (game.screen !== 'game' || !game.room?.royale) return;
+    if (game.screen !== 'game' || !game.room?.royale || game.watching) return;   // a watcher carries nothing
     if (isBound('scoreboard', code)) showKit(!kitOpen);
     else if (code === 'Escape' && kitOpen) showKit(false);
   });
@@ -541,12 +541,13 @@ export function initRoyale({ arena, hud, player }) {
       root.classList.toggle('hidden', !on || game.screen !== 'game');
       if (!on) { if (state.loot.size || beams.count) clearLoot(); if (state.airdrops.size) clearAirdrops(); if (state.wall) state.wall.visible = false; dropScreen.classList.remove('on'); card.classList.remove('on'); return; }
       if (game.room.phase !== lastPhase) {
-        if (game.room.phase === 'live') hud.banner('KESTREL ISLAND', 'Steer to your mark. You land with a blade and nothing else.', 'ROYALE', 'go', 3600);
+        if (game.room.phase === 'live' && !game.watching) hud.banner('KESTREL ISLAND', 'Steer to your mark. You land with a blade and nothing else.', 'ROYALE', 'go', 3600);
         if (game.room.phase === 'drop') { state.powers.clear(); state.drop = null; state.storm = null; clearLoot(); clearAirdrops(); card.classList.remove('on'); document.exitPointerLock?.(); }
         lastPhase = game.room.phase;
       }
       // The drop map covers everything until the match goes live.
-      const dropping = game.room.phase === 'drop';
+      // A watcher has nowhere to drop: they see the island and follow whoever they like once it goes live.
+      const dropping = game.room.phase === 'drop' && !game.watching;
       dropScreen.classList.toggle('on', dropping);
       if (dropping) {
         if (document.pointerLockElement) document.exitPointerLock?.();
