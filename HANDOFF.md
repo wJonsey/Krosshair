@@ -148,12 +148,13 @@ same `resolveWeapon` output as the detailed rows and only place each number agai
 At 1920x1080 the slots sit around the gun. Below 1800 wide or 1000 tall they go in a row above the gun
 and a row below, with the numbers in a column of their own; below 1020 wide it all stacks. The gun's box
 is kept clear of the side slots by `--callout-w`, the slots' own width, and the camera fits the gun to
-that box whatever its shape (the `tab === 'gunsmith'` branch in the stage's `fit`).
+that box whatever its shape (the `tab === 'gunsmith'` branch in the stage's `fit`). Dragging the gun
+turns it (`turn` in `shop.js`): all the way round, a little tilt, and back to side on for a new gun.
 
 ## Traps that have already cost a day
 
-- **The gunsmith stage must stay `pointer-events: none` and `width: auto`.** The canvas takes the click
-  anywhere it overlaps, which once made a gun unpickable. `.skin-stage` is `width: 100%` for every other
+- **The gunsmith stage must stay inside the floor, first on it, and `width: auto`.** It takes drags to
+  turn the gun, and a canvas takes the click anywhere it overlaps, which once made a gun unpickable. `.skin-stage` is `width: 100%` for every other
   stage, and an explicit width beats `left`/`right`, so without `width: auto` the box silently ran the
   full width and the gun sat off to one side.
 

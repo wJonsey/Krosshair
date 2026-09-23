@@ -780,12 +780,29 @@ test('every slot glyph and callout is a slot that exists', async () => {
   }
 });
 
-// The turntable fills the floor under the slot callouts and the gun picker. A canvas takes the click
-// wherever it overlaps, which is exactly how a nudge to its position made a gun unpickable.
-test('the gunsmith turntable never takes a click from what it sits under', () => {
+// The turntable takes drags now, to turn the gun. A canvas takes the click wherever it overlaps, which is
+// how a nudge to its position once made a gun unpickable, so it has to stay inside the floor and come
+// before everything else on it.
+test('the gunsmith turntable can be dragged without taking clicks from anything else', () => {
   const css = readFileSync(new URL('../arena.css', import.meta.url), 'utf8');
-  assert.match(css, /\.smith-stage \{[^}]*pointer-events: none/, 'the stage has to let clicks through');
-  assert.ok(!/\.smith-stage \{[^}]*inset: -/.test(css), 'and must not reach up over the gun picker');
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.ok(!/\.smith-stage \{[^}]*inset: -/.test(css), 'the stage must not reach up over the gun picker');
+  const floor = shop.slice(shop.indexOf('<div class="smith-floor">'), shop.indexOf('<footer class="smith-keys">'));
+  assert.ok(floor.indexOf('id="skin-stage"') < floor.indexOf('smithRail('), 'the stage comes first, so the slots sit on top of it');
+  assert.ok(floor.indexOf('id="skin-stage"') < floor.indexOf('class="smith-list"'), 'and so does the list');
+  assert.ok(floor.indexOf('id="skin-stage"') < floor.indexOf('class="smith-stats"'), 'and the numbers');
+  assert.match(css, /\.smith-callouts \{[^}]*pointer-events: none/, 'the slot layer only takes clicks on the slots themselves');
+});
+
+test('dragging turns the gun and nothing else', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const down = shop.slice(shop.indexOf("canvas.addEventListener('pointerdown'"), shop.indexOf("canvas.addEventListener('pointerdown'") + 400);
+  assert.match(down, /if \(tab !== 'gunsmith' \|\| event\.button !== 0\) return;/, 'only the gunsmith turns the gun, and only with the main button');
+  const drag = shop.slice(shop.indexOf('const turn = {'), shop.indexOf('function ensureStage'));
+  assert.ok(!/smithDrafts|keepBuilds|net\.send/.test(drag), 'turning the gun is presentation only');
+  assert.match(drag, /Math\.max\(-TILT_MAX, Math\.min\(TILT_MAX/, 'the tilt is clamped, so it never goes end over end');
+  assert.match(shop, /if \(turn\.gun !== weaponId\) Object\.assign\(turn, \{ gun: weaponId, yaw: 0, pitch: 0, carry: 0 \}\)/, 'a new gun starts side on');
+  assert.match(shop, /\['Drag', 'Rotate'\]/, 'and the footer says it can be done');
 });
 
 // .skin-stage is width: 100% for every other stage, and an explicit width beats left and right insets,

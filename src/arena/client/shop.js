@@ -265,10 +265,40 @@ function makeThumbs() {
 }
 const thumb = (name) => { try { makeThumbs(); } catch { /* no WebGL to spare: the CSS icons stay */ } return thumbs.get(name) || ''; };
 
+// Dragging the gun on the gunsmith turns it: all the way round, and a little over the top or under.
+// It stays where it is let go, with a little carry from a flick, and goes back to side on when you
+// pick another gun. Window listeners rather than pointer capture: the menu redraws while you drag,
+// and moving the canvas into the new page releases a capture.
+const turn = { yaw: 0, pitch: 0, carry: 0, dragging: false, x: 0, y: 0, movedAt: 0, gun: null };
+const TURN_RATE = 0.0105, TILT_RATE = 0.006, TILT_MAX = 0.35;
+addEventListener('pointermove', (event) => {
+  if (!turn.dragging) return;
+  const dx = event.clientX - turn.x, dy = event.clientY - turn.y;
+  turn.x = event.clientX; turn.y = event.clientY;
+  turn.yaw += dx * TURN_RATE;
+  turn.pitch = Math.max(-TILT_MAX, Math.min(TILT_MAX, turn.pitch - dy * TILT_RATE));
+  turn.carry = dx * TURN_RATE;
+  turn.movedAt = performance.now();
+});
+const endTurn = () => {
+  if (!turn.dragging) return;
+  turn.dragging = false;
+  stage?.canvas.classList.remove('grabbing');
+  // Held still before letting go is a placement, not a flick.
+  if (performance.now() - turn.movedAt > 70) turn.carry = 0;
+};
+addEventListener('pointerup', endTurn);
+addEventListener('pointercancel', endTurn);
 function ensureStage() {
   if (stage) return stage;
   const canvas = document.createElement('canvas');
   canvas.className = 'skin-canvas';
+  canvas.addEventListener('pointerdown', (event) => {
+    if (tab !== 'gunsmith' || event.button !== 0) return;
+    event.preventDefault();
+    Object.assign(turn, { dragging: true, x: event.clientX, y: event.clientY, carry: 0, movedAt: performance.now() });
+    canvas.classList.add('grabbing');
+  });
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
@@ -375,11 +405,21 @@ function spin() {
   } else {
     // On the Charms tab the gun is given a shake every few seconds so you see the charm move.
     const shake = s.charm ? Math.max(0, Math.sin(t * 1.1)) ** 6 * Math.sin(t * 17) * 0.09 : 0;
-    // On the gunsmith the gun holds side on, muzzle to the right, and only breathes: the slot callouts
-    // are placed where the parts are, and a gun swinging half a turn would leave them pointing at air.
+    // On the gunsmith the gun starts side on, muzzle to the right, and only breathes until it is turned
+    // by hand. Tilt is about the screen's horizontal axis, applied after the turn, so dragging down
+    // always brings the top of the gun towards you whichever way round it is.
     const bench = tab === 'gunsmith';
-    s.pivot.rotation.y = bench ? Math.sin(t * 0.35) * 0.1 - 0.06 : Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
-    s.pivot.rotation.x = bench ? Math.sin(t * 0.27) * 0.025 : Math.sin(t * 0.3) * 0.06 + shake * 0.6;
+    if (bench) {
+      if (turn.gun !== weaponId) Object.assign(turn, { gun: weaponId, yaw: 0, pitch: 0, carry: 0 });
+      if (!turn.dragging && Math.abs(turn.carry) > 0.0005) { turn.yaw += turn.carry; turn.carry *= 0.86; }
+      s.pivot.rotation.order = 'ZYX';
+      s.pivot.rotation.set(Math.sin(t * 0.27) * 0.02, Math.sin(t * 0.35) * 0.08 - 0.06 + turn.yaw, turn.pitch);
+    } else {
+      s.pivot.rotation.order = 'XYZ';
+      s.pivot.rotation.z = 0;
+    }
+    if (!bench) s.pivot.rotation.y = Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
+    if (!bench) s.pivot.rotation.x = Math.sin(t * 0.3) * 0.06 + shake * 0.6;
     s.rim.color.set(bench ? '#5aa9ff' : '#ffb547');
   }
   if (s.charm) updateCharm(s.charm, Math.min(0.05, t - (s.lastT || t)) || 1 / 60);
@@ -926,6 +966,7 @@ function gunsmithHtml() {
     // Locked, a click on a part does nothing, so the footer does not offer one.
     ...(smithPicking && !unlocked ? [] : [['Click', smithPicking ? 'Equip' : 'Select slot']]),
     ['Hover', 'Preview'],
+    ['Drag', 'Rotate'],
     ...(smithPicking ? [[codeLabel('Escape'), 'Back']] : []),
     ...(smithPicking && part && unlocked ? [[codeLabel('KeyR'), 'Remove']] : []),
   ];
