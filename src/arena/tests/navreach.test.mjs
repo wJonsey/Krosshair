@@ -47,3 +47,11 @@ test('an unreachable spot is ruled out without a search', () => {
   for (let i = 0; i < 200; i += 1) assert.equal(nav.path(nav.nodes[0], nav.nodes[lonely]), null);
   assert.ok(performance.now() - t < 200, 'two hundred impossible routes should take next to no time');
 });
+
+// The island's graph takes seconds to build and is not in the map vote, so it has to be built with the
+// rest after boot: built on demand, the first royale lobby after a deploy froze every match with it.
+test('the island is built at boot with the arenas, not when the first royale opens', async () => {
+  const { readFileSync } = await import('node:fs');
+  const flow = readFileSync(new URL('../server/mapflow.js', import.meta.url), 'utf8');
+  assert.match(flow, /const queue = \[\.\.\.MAP_IDS, ROYALE_MAP\];/, 'the island is left to be built mid-session');
+});

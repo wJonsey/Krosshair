@@ -2,7 +2,7 @@
 // Kept apart from room.js so the match state machine only needs a few hooks.
 import { performance } from 'node:perf_hooks';
 import { VARIANT_NAMES } from '../shared/constants.js';
-import { MAP_IDS, MAP_INFO, getMap } from '../shared/map.js';
+import { MAP_IDS, MAP_INFO, getMap, ROYALE_MAP } from '../shared/map.js';
 import { World } from '../shared/physics.js';
 import { NavGrid } from './nav.js';
 
@@ -22,7 +22,9 @@ let warming = false;
 export function warmNavigation() {
   if (warming) return;
   warming = true;
-  const queue = [...MAP_IDS];
+  // The island last and on its own: it is not in the vote, so it used to be built when the first royale
+  // lobby opened after a deploy, which froze every match on the server for about four seconds.
+  const queue = [...MAP_IDS, ROYALE_MAP];
   const next = () => {
     const id = queue.shift();
     if (!id) return;
