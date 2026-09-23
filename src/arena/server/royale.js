@@ -128,7 +128,36 @@ export class RoyaleRoom extends Room {
   handle(player, message) {
     if (message.type === 'royale-drop') return this.chooseDrop(player, message);
     if (message.type === 'royale-take') return this.takeLoot(player, message);
+    if (message.type === 'royale-toss') return this.toss(player, message);
     return super.handle(player, message);
+  }
+
+  // Putting something down on purpose, from the inventory. A gun goes down with what is in it, the same
+  // as one swapped out, so this is not a way to launder ammo. The blade does not go: it is what you land
+  // with, and a pilot with nothing at all would just be standing there.
+  toss(player, message) {
+    if (!player.alive || this.phase !== 'live') return;
+    const put = (item) => Object.assign(this.addLoot(player.x, player.y, player.z, item), { dropper: player.id, dropUntil: now() + 2.5 });
+    const slot = String(message.slot || '');
+    if (slot === 'primary' || slot === 'sidearm') {
+      const id = player.weapons[slot];
+      if (!id) return;
+      const ammo = player.ammo[slot];
+      put({ kind: 'weapon', id, rarity: player.rarity?.[slot], mag: ammo?.mag ?? 0, reserve: ammo?.reserve ?? 0 });
+      player.weapons[slot] = null;
+      player.ammo[slot] = null;
+      if (player.rarity) delete player.rarity[slot];
+      player.kit = null; player.kitFor = null;
+      // Landing with a blade only is already how a royale starts, so an empty hand is nothing new.
+      if (player.active === slot) this.switchWeapon(player, player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee');
+      this.pushYou(player);
+      return;
+    }
+    const gadget = String(message.gadget || '');
+    if (!gadget || !player.gadgets.includes(gadget)) return;
+    player.gadgets = player.gadgets.filter((held) => held !== gadget);
+    put({ kind: 'gadget', id: gadget });
+    this.pushYou(player);
   }
   // Everyone lands: on the spot they chose, or somewhere with loot if they chose nothing.
   deploy() {

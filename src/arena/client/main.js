@@ -174,6 +174,7 @@ net.on('room', (message) => {
 net.on('you', (message) => {
   const previous = game.you;
   game.you = message;
+  bus.emit('you', message);
   // The build arrives with the you state, and the gun models are cached, so a change has to reach the
   // viewmodel or you keep holding the gun you had before the part went on.
   if (JSON.stringify(previous?.builds) !== JSON.stringify(message.builds)) {

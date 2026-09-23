@@ -38,7 +38,7 @@ export class Hud {
     this.blips = new Map(); // enemy id → { x, z, until }
     this.pings = [];
     this.layers = null;
-    this.chatOpen = false; this.chatTeam = false; this.chatHistory = [];
+    this.chatOpen = false; this.chatTeam = false; this.chatHistory = []; this.royaleKitOpen = false;
     this.buyOpen = false; this.scoreOpen = false; this.quickOpen = false;
     this.bannerTimer = null;
     this.lastClockSecond = -1;
@@ -98,7 +98,7 @@ export class Hud {
     for (const [name, entry] of lines) this.notice(`${name} is disabled. ${outageReason(entry)}`, 'warn');
   }
 
-  get blocking() { return this.buyOpen || this.chatOpen || this.quickOpen; }
+  get blocking() { return this.buyOpen || this.chatOpen || this.quickOpen || this.royaleKitOpen; }
 
   show(visible) { this.root.classList.toggle('hidden', !visible); if (!visible) { this.closeBuy(); this.toggleScoreboard(false); this.closeChat(); } }
 

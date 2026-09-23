@@ -70,8 +70,11 @@ test('a pad press of a key-side action holds the key, not just raises an event',
 test('royale reads the pick up the way the pad now writes it', () => {
   const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
   assert.match(royale, /held\(player\.keys[^,]*, 'interact'\)/, 'royale polls the key set for interact');
-  // Which is exactly why raising an event alone was never going to reach it.
-  assert.ok(!/bus\.on\('key'/.test(royale), 'and does not listen for the key event');
+  // Which is exactly why raising an event alone was never going to reach it: a pad press puts a key in
+  // the set for a moment, and nothing else. The inventory toggle does listen for the event, which is the
+  // right shape for a toggle on a key no pad presses. Picking up must never be driven that way.
+  const listeners = [...royale.matchAll(/bus\.on\('key'[\s\S]*?\n  \}\);/g)].map((match) => match[0]);
+  for (const listener of listeners) assert.ok(!/interact/.test(listener), 'picking up must not be driven by the key event');
 });
 
 test('the pad hold is long enough to be seen and short enough to be one press', async () => {

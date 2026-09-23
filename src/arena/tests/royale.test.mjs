@@ -8,7 +8,7 @@ performance.now = () => clock;
 const { RoyaleRoom } = await import('../server/royale.js');
 const { AIRDROP_LOOT, LOOT_TABLE, POWERS, ROYALE, ROYALE_LOADOUT } = await import('../shared/royale.js');
 const { MAP_IDS } = await import('../shared/map.js');
-const { WEAPONS } = await import('../shared/constants.js');
+const { WEAPONS, GADGETS } = await import('../shared/constants.js');
 const { ProfileStore } = await import('../server/profiles.js');
 const { mkdtemp } = await import('node:fs/promises');
 const { tmpdir } = await import('node:os');
@@ -278,4 +278,102 @@ test('an empty gun of the kind you hold is not worth walking over', () => {
   assert.ok(me.ammo.primary.reserve > before, 'it should have given something');
   assert.ok(me.ammo.primary.reserve <= WEAPONS.talon.reserve, 'and never more than the gun can hold');
   room.close();
+});
+
+// The inventory: putting something down on purpose. The ammo rule is the same as a swap, so this cannot
+// be used to launder rounds, and the blade never goes because a pilot with nothing would just stand there.
+test('dropping a gun puts it on the floor with what was in it', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000040', session: 's40', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+  room.take(me, { kind: 'weapon', id: 'talon' }, true);
+  me.ammo.primary.mag = 3; me.ammo.primary.reserve = 7;
+
+  room.handle(me, { type: 'royale-toss', slot: 'primary' });
+  assert.ok(!me.weapons.primary, 'the gun is still in hand');
+  assert.equal(me.ammo.primary, null, 'its ammo stayed behind');
+  const put = [...room.loot.values()].find((entry) => entry.dropper === me.id && entry.item.id === 'talon');
+  assert.ok(put, 'nothing was put on the floor');
+  assert.equal(put.item.mag, 3, 'the magazine did not go with it');
+  assert.equal(put.item.reserve, 7, 'nor the reserve');
+  assert.notEqual(me.active, 'primary', 'still holding the slot it just dropped');
+  room.close();
+});
+
+test('dropping and taking back is not a reload, through the inventory either', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000041', session: 's41', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+  room.take(me, { kind: 'weapon', id: 'talon' }, true);
+  me.ammo.primary.mag = 1; me.ammo.primary.reserve = 2;
+  room.handle(me, { type: 'royale-toss', slot: 'primary' });
+  const put = [...room.loot.values()].find((entry) => entry.dropper === me.id && entry.item.id === 'talon');
+  room.take(me, put.item, true);
+  assert.equal(me.ammo.primary.mag, 1, 'the round trip reloaded it');
+  assert.equal(me.ammo.primary.reserve, 2, 'the round trip refilled the reserve');
+  room.close();
+});
+
+test('the blade cannot be dropped, and nor can anything you are not carrying', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000042', session: 's42', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+  const blade = me.weapons.melee;
+  room.handle(me, { type: 'royale-toss', slot: 'melee' });
+  assert.equal(me.weapons.melee, blade, 'the blade went');
+  const before = room.loot.size;
+  room.handle(me, { type: 'royale-toss', slot: 'sidearm' });        // empty slot
+  room.handle(me, { type: 'royale-toss', gadget: 'not-a-gadget' }); // never held
+  room.handle(me, { type: 'royale-toss', slot: 'nonsense' });
+  assert.equal(room.loot.size, before, 'something was conjured onto the floor');
+  room.close();
+});
+
+test('a gadget can be put down, and only once', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000043', session: 's43', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+  const id = Object.keys(GADGETS)[0];
+  me.gadgets = [id];
+  room.handle(me, { type: 'royale-toss', gadget: id });
+  assert.deepEqual(me.gadgets, [], 'still carrying it');
+  const put = [...room.loot.values()].filter((entry) => entry.dropper === me.id && entry.item.id === id);
+  assert.equal(put.length, 1, 'it should be on the floor exactly once');
+  room.handle(me, { type: 'royale-toss', gadget: id });
+  assert.equal([...room.loot.values()].filter((entry) => entry.dropper === me.id && entry.item.id === id).length, 1, 'dropped twice');
+  room.close();
+});
+
+test('the dead and the not-yet-landed cannot drop anything', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000044', session: 's44', name: 'Solo' }, look);
+  room.startMatch();
+  me.alive = true;
+  assert.equal(room.phase, 'drop');
+  room.handle(me, { type: 'royale-toss', slot: 'melee' });
+  room.deploy();
+  room.take(me, { kind: 'weapon', id: 'talon' }, true);
+  me.alive = false;
+  const before = room.loot.size;
+  room.handle(me, { type: 'royale-toss', slot: 'primary' });
+  assert.equal(room.loot.size, before, 'a dead pilot dropped their gun');
+  assert.equal(me.weapons.primary, 'talon', 'and lost it');
+  room.close();
+});
+
+// Tab is the key, and the screen has to stop the game reading the same presses.
+test('the inventory is wired to the free key and blocks play while it is open', () => {
+  const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
+  assert.match(royale, /isBound\('scoreboard', code\)\) showKit\(!kitOpen\)/, 'nothing opens it');
+  assert.match(royale, /code === 'Escape' && kitOpen\) showKit\(false\)/, 'Escape must close it');
+  assert.match(royale, /hud\.royaleKitOpen = open/, 'the rest of the game is never told it is open');
+  assert.match(hud, /get blocking\(\)[^}]*this\.royaleKitOpen/, 'firing through an open inventory');
+  assert.match(royale, /document\.exitPointerLock/, 'a screen with buttons needs the pointer back');
+  assert.match(royale, /royale-toss', slot: slot\.dataset\.tossSlot/, 'the Drop button does nothing');
+  assert.match(royale, /!kitOpen && held\(player\.keys[^)]*\), 'map'\)/, 'the map shows through the inventory');
 });

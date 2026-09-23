@@ -70,8 +70,10 @@ test('the royale map has its own key, and it is not the scoreboard', () => {
   assert.equal(binds.scoreboard[0], 'Tab', 'and the scoreboard stays on Tab');
   assert.ok(!Object.entries(binds).some(([id, keys]) => id !== 'map' && keys.includes('KeyM')), 'M is doing something else as well');
   const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
-  assert.match(royale, /const showMap = held\(player\.keys \|\| new Set\(\), 'map'\)/, 'the island still opens on the scoreboard key');
-  assert.ok(!/'scoreboard'/.test(royale), 'nothing in royale should be reading the scoreboard key any more');
+  assert.match(royale, /showMap = [^;]*held\(player\.keys \|\| new Set\(\), 'map'\)/, 'the island still opens on the scoreboard key');
+  // The scoreboard key is free in royale, which is why the map moved off it: it opens the inventory now.
+  assert.ok(!/'scoreboard'\)[\s\S]{0,40}showMap/.test(royale), 'the map must not be back on the scoreboard key');
+  assert.match(royale, /isBound\('scoreboard', code\)\) showKit/, 'and the key it freed up should open the inventory');
 });
 
 test('the map is listed so it can be rebound, and needs no controller button', () => {

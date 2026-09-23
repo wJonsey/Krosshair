@@ -7,7 +7,7 @@ import { ARMOR, GADGETS, WEAPONS } from '../shared/constants.js';
 import { DROP, LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { bus, game } from './state.js';
 import { net } from './net.js';
-import { bindLabel, held } from './input.js';
+import { bindLabel, held, isBound } from './input.js';
 import { play } from './audio.js';
 import { buildWeapon, stripHands } from './guns.js';
 
@@ -34,6 +34,21 @@ body.royale-mode .scorebar, body.royale-mode .minimap-wrap, body.royale-mode #sc
 .royale-radar { position: absolute; left: 16px; top: 16px; width: 190px; height: 190px; background: rgba(10, 14, 18, .6); border: 1px solid rgba(230, 237, 241, .22); }
 .royale-map { position: absolute; left: 50%; top: 50%; width: min(640px, 80vh); height: min(640px, 80vh); transform: translate(-50%, -50%); background: rgba(10, 14, 18, .88); border: 1px solid rgba(230, 237, 241, .3); display: none; }
 .royale-map.on { display: block; }
+/* What you are carrying. Opens on the scoreboard key, which royale does not otherwise use. */
+.royale-kit { position: absolute; left: 50%; top: 50%; width: min(760px, 92vw); max-height: 84vh; overflow-y: auto; transform: translate(-50%, -50%); padding: 18px 20px; background: rgba(7, 9, 12, .9); backdrop-filter: blur(12px); border: 1px solid rgba(230, 237, 241, .18); display: none; }
+.royale-kit.on { display: block; }
+.royale-kit > header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.royale-kit h3 { margin: 0; font: 400 20px var(--display); text-transform: uppercase; letter-spacing: .08em; }
+.royale-kit header small { color: var(--haze); font: 500 10px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.royale-kit .kit-row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(230, 237, 241, .1); }
+.royale-kit .kit-slot { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.royale-kit .kit-name { font: 400 15px var(--body); color: var(--frost); }
+.royale-kit .kit-name b { display: block; font: 400 15px var(--display); text-transform: uppercase; letter-spacing: .04em; color: var(--tier, var(--frost)); }
+.royale-kit .kit-name small { color: var(--haze); font: 400 12px var(--body); }
+.royale-kit .kit-ammo { font: 500 13px var(--mono); color: var(--frost); white-space: nowrap; }
+.royale-kit .kit-ammo i { font-style: normal; color: var(--haze); }
+.royale-kit .kit-empty { color: var(--haze); font: 400 14px var(--body); font-style: italic; }
+.royale-kit footer { margin-top: 14px; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .royale-way { position: absolute; top: 94px; left: 50%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 7px 14px; background: rgba(140, 40, 170, .7); font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .royale-way.on { display: flex; }
 .royale-way i { display: block; width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 14px solid #fff; transform: rotate(var(--turn, 0rad)); }
@@ -81,13 +96,73 @@ export function initRoyale({ arena, hud, player }) {
   document.head.append(style);
   const root = document.createElement('div');
   root.className = 'royale-hud hidden';
-  root.innerHTML = '<div class="royale-outside"></div><div class="royale-top"><div>Alive<b id="royale-alive">0</b></div><div>Kills<b id="royale-kills">0</b></div></div><div class="royale-storm" id="royale-storm"></div><div class="royale-way" id="royale-way"><i></i><span></span></div><div class="royale-swap" id="royale-swap"></div><div class="royale-alt" id="royale-alt"><b></b><span></span></div><div class="royale-powers" id="royale-powers"></div><div class="royale-card" id="royale-card"></div><canvas class="royale-radar" width="380" height="380"></canvas><canvas class="royale-map" width="1280" height="1280"></canvas><div class="royale-drop" id="royale-drop"><header><small>Battle royale · Kestrel Island</small><h2>Pick your drop <b id="royale-drop-clock"></b></h2></header><canvas width="1280" height="1280"></canvas><footer id="royale-drop-foot"></footer></div>';
+  root.innerHTML = '<div class="royale-outside"></div><div class="royale-top"><div>Alive<b id="royale-alive">0</b></div><div>Kills<b id="royale-kills">0</b></div></div><div class="royale-storm" id="royale-storm"></div><div class="royale-way" id="royale-way"><i></i><span></span></div><div class="royale-swap" id="royale-swap"></div><div class="royale-alt" id="royale-alt"><b></b><span></span></div><div class="royale-powers" id="royale-powers"></div><div class="royale-card" id="royale-card"></div><canvas class="royale-radar" width="380" height="380"></canvas><canvas class="royale-map" width="1280" height="1280"></canvas><div class="royale-kit" id="royale-kit"></div><div class="royale-drop" id="royale-drop"><header><small>Battle royale · Kestrel Island</small><h2>Pick your drop <b id="royale-drop-clock"></b></h2></header><canvas width="1280" height="1280"></canvas><footer id="royale-drop-foot"></footer></div>';
   document.querySelector('#hud').append(root);
   const radar = root.querySelector('.royale-radar'), bigMap = root.querySelector('.royale-map');
   const alive = root.querySelector('#royale-alive'), kills = root.querySelector('#royale-kills'), stormLabel = root.querySelector('#royale-storm'), outsideFx = root.querySelector('.royale-outside');
 
   const way = root.querySelector('#royale-way'), swap = root.querySelector('#royale-swap'), card = root.querySelector('#royale-card');
   const alt = root.querySelector('#royale-alt'), powersBox = root.querySelector('#royale-powers');
+  const kit = root.querySelector('#royale-kit');
+
+  // ---- what you are carrying, and putting it down
+  // The scoreboard key: royale hides the scoreboard, so the key is free, and the island map moved to its
+  // own so this could have it. A screen with buttons on it needs the pointer, so it is a toggle.
+  let kitOpen = false;
+  const kitRow = (slot, label, body, ammo = '', drop = null) =>
+    `<div class="kit-row"><span class="kit-slot">${label}</span><span class="kit-name">${body}</span><span class="kit-ammo">${ammo}</span>${drop || '<span></span>'}</div>`;
+  const dropButton = (data) => `<button type="button" class="mini" ${data}>Drop</button>`;
+
+  function drawKit() {
+    const you = game.you;
+    if (!you) { kit.innerHTML = ''; return; }
+    const gunRow = (slot, label) => {
+      const id = you.weapons?.[slot];
+      if (!id) return kitRow(slot, label, '<span class="kit-empty">Nothing</span>');
+      const rarity = ROYALE_RARITIES[you.rarity?.[slot] || weaponRarity(id)] || ROYALE_RARITIES.common;
+      const weapon = royaleWeapon(WEAPONS[id], rarity.id) || WEAPONS[id];
+      const ammo = you.ammo?.[slot];
+      return kitRow(slot, label,
+        `<b style="--tier:${rarity.color}">${weapon.name}</b><small>${rarity.name} · ${weapon.tag}</small>`,
+        ammo ? `${ammo.mag}<i> / ${ammo.reserve}</i>` : '',
+        dropButton(`data-toss-slot="${slot}"`));
+    };
+    const blade = WEAPONS[you.weapons?.melee] || WEAPONS.knife;
+    const gadgets = (you.gadgets || []).map((id) => kitRow('gadget', 'Gadget',
+      `<b>${GADGETS[id].name}</b><small>${GADGETS[id].desc}</small>`, '', dropButton(`data-toss-gadget="${id}"`))).join('');
+    kit.innerHTML = `<header><h3>Carrying</h3><small>${bindLabel('scoreboard')} to close · ${bindLabel('interact')} to pick up</small></header>
+      ${gunRow('primary', 'Primary')}${gunRow('sidearm', 'Sidearm')}
+      ${kitRow('melee', 'Blade', `<b>${blade.name}</b><small>Always with you</small>`)}
+      ${gadgets || kitRow('gadget', 'Gadgets', '<span class="kit-empty">Nothing</span>')}
+      ${kitRow('armour', 'Armour', you.armor > 0 ? `<b>${you.armor} plate</b><small>${you.helmet ? 'Helmet on' : 'No helmet'}</small>` : `<span class="kit-empty">None${you.helmet ? ' · helmet on' : ''}</span>`)}
+      <footer>A gun goes down with what is left in it.</footer>`;
+  }
+
+  function showKit(open) {
+    if (open === kitOpen) return;
+    kitOpen = open;
+    hud.royaleKitOpen = open;
+    kit.classList.toggle('on', open);
+    if (open) { drawKit(); document.exitPointerLock?.(); play('ui'); } else { play('uiBack'); player.lock(); }
+  }
+
+  kit.addEventListener('click', (event) => {
+    const slot = event.target.closest('[data-toss-slot]'), gadget = event.target.closest('[data-toss-gadget]');
+    if (slot) net.send({ type: 'royale-toss', slot: slot.dataset.tossSlot });
+    else if (gadget) net.send({ type: 'royale-toss', gadget: gadget.dataset.tossGadget });
+    else return;
+    play('ready');
+  });
+  bus.on('you', () => {
+    if (!kitOpen) return;
+    if (!game.you?.alive) { showKit(false); return; }   // nothing to carry once you are down
+    drawKit();
+  });
+  bus.on('key', (code) => {
+    if (game.screen !== 'game' || !game.room?.royale) return;
+    if (isBound('scoreboard', code)) showKit(!kitOpen);
+    else if (code === 'Escape' && kitOpen) showKit(false);
+  });
   const dropScreen = root.querySelector('#royale-drop'), dropMap = dropScreen.querySelector('canvas'), dropClock = root.querySelector('#royale-drop-clock'), dropFoot = root.querySelector('#royale-drop-foot');
   const state = { storm: null, alive: 0, loot: new Map(), group: null, wall: null, beamsDirty: true, airdrops: new Map(), drop: null, look: null, fWas: false, powers: new Map(), pads: null, padsMap: null, cardUntil: 0, layer: null, layerMap: null };
   const active = () => Boolean(game.room?.royale) && arena.map?.royale;
@@ -491,7 +566,8 @@ export function initRoyale({ arena, hud, player }) {
       stormLabel.classList.toggle('closing', Boolean(closing));
       // The radar is cheap, but no need to redraw it 144 times a second.
       if (performance.now() - lastRadar > 60) { lastRadar = performance.now(); drawMap(radar, false); }
-      const showMap = held(player.keys || new Set(), 'map');
+      // Not through the inventory: one screen at a time.
+      const showMap = !kitOpen && held(player.keys || new Set(), 'map');
       bigMap.classList.toggle('on', showMap);
       if (showMap) drawMap(bigMap, true);
     },
