@@ -266,13 +266,14 @@ function makeThumbs() {
 }
 const thumb = (name) => { try { makeThumbs(); } catch { /* no WebGL to spare: the CSS icons stay */ } return thumbs.get(name) || ''; };
 
-// Every preview on these pages can be dragged round, except a crate: it has its own opening to play.
-// Guns also tilt a little over the top or under; the pilot only turns, since tipping a person reads as
-// falling over.
+// Every preview on these pages can be dragged round. Guns and crates also tilt a little over the top or
+// under; the pilot only turns, since tipping a person reads as falling over. A crate being opened is left
+// alone: it has to swing round to face you for the opening to read.
+const crateOpening = () => Boolean(crate && !reveal?.landed);
 const turn = turntable({
   tiltMax: 0.35,
-  current: () => ({ yaw: stage?.pivot.rotation.y || 0, pitch: stage?.operator ? 0 : stage?.pivot.rotation.z || 0 }),
-  canTurn: () => Boolean(stage && !stage.crate),
+  current: () => ({ yaw: stage?.pivot.rotation.y || 0, pitch: stage?.operator || stage?.crate ? 0 : stage?.pivot.rotation.z || 0 }),
+  canTurn: () => Boolean(stage && !(stage.crate && crateOpening())),
 });
 function ensureStage() {
   if (stage) return stage;
@@ -305,7 +306,7 @@ function showOnStage(subject) {
   // of kit on the same one keeps the angle you left it at, so the two can be compared.
   const turnKey = `${tab}:${subject.kind}:${subject.weapon || subject.id || ''}`;
   if (turnKey !== s.turnKey) { s.turnKey = turnKey; turn.reset(); }
-  turn.allow(subject.kind !== 'crate');
+  turn.allow(true);
   for (const child of [...s.pivot.children]) { s.pivot.remove(child); child.traverse((mesh) => mesh.geometry?.dispose()); }
   s.charm = null; s.operator = null; s.crate = null; s.fit = null;
   if (subject.kind === 'crate') {
@@ -385,10 +386,16 @@ function spin() {
     animateOperator(s.operator, { speed: 0, crouch: false, pitch: Math.sin(t / 1.7) * 0.08, weapon: 'm44', dt: 1 / 60 });
   } else if (s.crate) {
     // Waiting: a slow turn. Opening: it swings round to face you and goes off.
+    // Turned by hand it holds where it was left, until it is opened: then it lets go and swings round to
+    // face you from wherever it was, so the opening plays the same whatever angle it started at.
     const open = crate && !reveal?.landed ? now() - crate.at : null;
+    if (open !== null && turn.touched) turn.reset();
+    turn.allow(open === null);
     const facing = open === null ? Math.sin(t * 0.5) * 0.5 - 0.35 : -0.35 * Math.max(0, 1 - open / 0.3);
     s.pivot.rotation.order = 'XYZ';
-    s.pivot.rotation.set(0.12, s.pivot.rotation.y + (facing - s.pivot.rotation.y) * 0.12, 0);
+    // The camera looks at a crate from the front, so a tilt is about x; dragging down brings the lid round.
+    if (turn.touched) s.pivot.rotation.set(0.12 - turn.pitch, turn.yaw, 0);
+    else s.pivot.rotation.set(0.12, s.pivot.rotation.y + (facing - s.pivot.rotation.y) * 0.12, 0);
     poseCrate(s.crate, open, t);
   } else {
     // On the Charms tab the gun is given a shake every few seconds so you see the charm move.

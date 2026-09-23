@@ -150,7 +150,8 @@ and a row below, with the numbers in a column of their own; below 1020 wide it a
 is kept clear of the side slots by `--callout-w`, the slots' own width, and the camera fits the gun to
 that box whatever its shape (the `tab === 'gunsmith'` branch in the stage's `fit`). Dragging the gun
 turns it: all the way round, a little tilt, and back to side on for a new gun. Every other preview turns
-the same way (skins, charms, the Locker and Play page pilot), all through `client/turntable.js`.
+the same way (skins, charms, crates, the Locker and Play page pilot), all through `client/turntable.js`.
+A crate lets go of its angle the moment it is opened, so the opening always swings round to face you.
 
 ## Traps that have already cost a day
 

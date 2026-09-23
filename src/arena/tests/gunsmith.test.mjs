@@ -802,7 +802,9 @@ test('every preview turns by hand, through the one turntable', () => {
   const table = readFileSync(new URL('../client/turntable.js', import.meta.url), 'utf8');
   assert.match(shop, /turn\.attach\(canvas\)/, 'the shop stage takes drags');
   assert.match(menu, /previewTurn\.attach\(canvas\)/, 'and so does the pilot on the Play page');
-  assert.match(shop, /canTurn: \(\) => Boolean\(stage && !stage\.crate\)/, 'a crate being opened is left alone');
+  assert.match(shop, /canTurn: \(\) => Boolean\(stage && !\(stage\.crate && crateOpening\(\)\)\)/, 'a crate turns while it waits, and is left alone while it opens');
+  assert.match(shop, /if \(open !== null && turn\.touched\) turn\.reset\(\);/, 'opening one lets go of the angle so it can swing round to face you');
+  assert.match(shop, /if \(turn\.touched\) s\.pivot\.rotation\.set\(0\.12 - turn\.pitch, turn\.yaw, 0\)/, 'and a waiting crate holds where it was left');
   assert.match(shop, /turn\.touched \? turn\.yaw : Math\.PI/, 'the Locker pilot turns');
   assert.match(shop, /if \(turn\.touched\) s\.pivot\.rotation\.set\(shake \* 0\.6, turn\.yaw \+ shake, turn\.pitch\)/, 'every gun turns, and a charm still shakes');
   assert.match(menu, /previewTurn\.touched \? previewTurn\.yaw/, 'the Play page pilot turns');

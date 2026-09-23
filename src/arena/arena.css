@@ -1025,7 +1025,7 @@ body[data-screen='home'] .fps-counter, body[data-screen='lobby'] .fps-counter { 
 /* ---------- shop: turntable, rarity, crates ---------- */
 .skin-stage { position: relative; width: 100%; height: 260px; }
 .skin-canvas { display: block; width: 100%; height: 100%; }
-/* A preview that can be dragged round (turntable.js). A crate being opened cannot, so it loses the hand. */
+/* A preview that can be dragged round (turntable.js). A crate mid-opening cannot, so it loses the hand. */
 canvas.turnable { cursor: grab; touch-action: none; }
 canvas.turnable.grabbing { cursor: grabbing; }
 .skin-price { margin: 10px 0 0; }
