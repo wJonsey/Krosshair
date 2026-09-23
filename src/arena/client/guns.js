@@ -169,7 +169,11 @@ function barrel(k, m, y, zStart, length, bore, device, fluted = false) {
   return muzzleDevice(k, m, y, zStart - length, bore, device);
 }
 // Magnified scope: tube, bells, turrets, mounts and glass at both ends.
-function scope(k, m, y, z, length, r) {
+// mount: the short guns have no rail under the glass, and a scope set high enough to clear their sights
+// left its feet in the air above the gun. Given the height it stands on (and where, if not under the
+// rings), it gets a base bar under the tube and posts down to the gun. The scope itself does not move, so
+// neither does the sight line or where the eye sits when aiming.
+function scope(k, m, y, z, length, r, mount = null) {
   k.tube(m.black, r * 0.72, length, [0, y, z], 16);
   k.tube(m.black, r, length * 0.3, [0, y, z - length * 0.4], 16, ALONG, r * 0.74);
   k.tube(m.black, r * 1.34, length * 0.2, [0, y, z + length * 0.42], 24, ALONG, r * 0.78);
@@ -179,7 +183,15 @@ function scope(k, m, y, z, length, r) {
   k.tube(m.grey, r * 0.5, 0.03, [0, y + r * 0.95, z], 12, null);
   k.tube(m.grey, r * 0.5, 0.03, [r * 0.95, y, z], 12, [0, 0, Math.PI / 2]);
   k.disc(GLASS, r * 0.9, [0, y, z - length * 0.553], [0, Math.PI, 0]);
-  for (const dz of [-length * 0.2, length * 0.22]) { k.ring(m.grey, r * 0.78, 0.005, [0, y, z + dz]); k.box(m.grey, 0.022, r * 0.9, 0.022, [0, y - r * 0.9, z + dz]); }
+  const rings = [z - length * 0.2, z + length * 0.22];
+  for (const rz of rings) { k.ring(m.grey, r * 0.78, 0.005, [0, y, rz]); if (!mount) k.box(m.grey, 0.022, r * 0.9, 0.022, [0, y - r * 0.9, rz]); }
+  if (mount) {
+    const posts = mount.posts || rings, barY = y - r * 0.98;
+    const front = Math.min(...rings, ...posts) - 0.01, back = Math.max(...rings, ...posts) + 0.01;
+    for (const rz of rings) k.box(m.grey, 0.018, r * 0.24, 0.018, [0, y - r * 0.86, rz]);
+    k.box(m.dark, 0.022, 0.008, back - front, [0, barY, (front + back) / 2]);
+    for (const pz of posts) { const h = barY - 0.004 - mount.base; if (h > 0) k.box(m.dark, 0.02, h, 0.022, [0, mount.base + h / 2, pz]); }
+  }
   return { y, z: z + length * 0.52 + 0.0015, r: r * 0.99 };
 }
 // Open optics you actually look through. Both return the height of the window centre.
@@ -523,7 +535,10 @@ function pistol(root, id, m, build) {
   if (optic) for (const side of [-1, 1]) k.box(m.dark, 0.006, 0.03, 0.024, [side * 0.02, y + 0.016, 0.028]);
   if (optic === 'dot') sightY = redDot(k, m, y + 0.028, 0.012);
   else if (optic === 'holo') sightY = holoSight(k, m, y + 0.028, -0.01);
-  else if (optic) glass = scope(k, m, y + 0.086, -0.03, optic === 'prism' ? 0.15 : 0.22, 0.028);
+  else if (optic) {
+    k.box(m.dark, 0.046, 0.012, 0.024, [0, y + 0.034, 0.028]);
+    glass = scope(k, m, y + 0.086, -0.03, optic === 'prism' ? 0.15 : 0.22, 0.028, { base: y + 0.04, posts: [0.028] });
+  }
   if (build?.grip === 'vertgrip' || build?.grip === 'anglegrip') foreGrip(k, m, y - 0.036, -L + 0.05, build.grip === 'anglegrip');
   k.bake();
   return { mag: mag.group, slide: slide.group, slideTravel: 0.035, muzzle, sightY, glass, window: k.lastWindow || null, charmAt: [-0.019, y - 0.038, -L + 0.05] };
@@ -554,7 +569,7 @@ function revolver(root, m, build) {
   let sightY = y + 0.047, glass = null;
   if (optic === 'dot') sightY = redDot(k, m, y + 0.03, -0.1);
   else if (optic === 'holo') sightY = holoSight(k, m, y + 0.03, -0.09);
-  else if (optic) glass = scope(k, m, y + 0.09, -0.12, optic === 'prism' ? 0.16 : 0.24, 0.028);
+  else if (optic) glass = scope(k, m, y + 0.09, -0.12, optic === 'prism' ? 0.16 : 0.24, 0.028, { base: y + 0.019, posts: [-0.005] });
   const muzzle = build?.muzzle ? muzzleDevice(k, m, y + 0.006, -end, bore, DEVICE_KIND[build.muzzle]) : -end - 0.005;
   k.bake();
   return { mag: null, cylinder: cylinder.group, muzzle, sightY, glass, window: k.lastWindow || null, charmAt: [-0.013, y - 0.024, -0.2] };
@@ -581,7 +596,7 @@ function sawnOff(root, m, build) {
   let sightY = 0.0525, glass = null;
   if (optic === 'dot') sightY = redDot(k, m, 0.034, -0.02);
   else if (optic === 'holo') sightY = holoSight(k, m, 0.034, -0.01);
-  else if (optic) glass = scope(k, m, 0.094, -0.04, optic === 'prism' ? 0.16 : 0.24, 0.028);
+  else if (optic) glass = scope(k, m, 0.094, -0.04, optic === 'prism' ? 0.16 : 0.24, 0.028, { base: 0.031 });
   k.bake();
   return { mag: null, hinge: barrels.group, muzzle: -0.085 - bl, sightY, glass, window: k.lastWindow || null, charmAt: [-0.034, -0.022, -0.04] };
 }

@@ -837,3 +837,19 @@ test('the gun box keeps clear of the side slots by their own width', () => {
   assert.match(css, /\.smith-screen\.picking \.smith-stage \{ right: calc\(var\(--list-w\) \+ 20px \+ var\(--callout-w\)/, 'and clears the list and the muzzle slot when it is open');
   assert.match(css, /\.smith-callout \{ position: absolute; width: var\(--callout-w\)/, 'with the slots drawn at that same width');
 });
+
+// A scope on a long gun stands on the rail; the short guns have no rail, and their scopes were placed high
+// enough to clear the sights with feet sized for a rail, so a 2x on a pistol, the Viper or the sawn-off
+// floated in the air above the gun. Any scope not set off a rail has to say what it stands on.
+test('every scope stands on the gun, rail or no rail', () => {
+  const guns = readFileSync(new URL('../client/guns.js', import.meta.url), 'utf8');
+  const calls = [...guns.matchAll(/glass = scope\(k, m, ([^;]*)\);/g)].map((match) => match[1]);
+  assert.ok(calls.length >= 6, `only found ${calls.length} scope calls`);
+  for (const args of calls) {
+    const onRail = /^(railTop|railY) \+/.test(args);
+    assert.ok(onRail || /\{ base: /.test(args), `a scope with nothing under it: scope(k, m, ${args})`);
+  }
+  const body = guns.slice(guns.indexOf('function scope('), guns.indexOf('// Open optics you actually look through'));
+  assert.match(body, /const h = barY - 0\.004 - mount\.base;/, 'the posts run from the bar down to the height given');
+  assert.match(body, /if \(!mount\) k\.box\(m\.grey, 0\.022, r \* 0\.9, 0\.022, \[0, y - r \* 0\.9, rz\]\)/, 'and a scope on a rail keeps the feet it always had');
+});
