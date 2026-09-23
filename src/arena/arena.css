@@ -695,6 +695,23 @@ button.room-teaser:hover { --tick: var(--signal); background: rgba(20, 27, 34, .
 .side-tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--hairline); }
 .lobby-grid .lobby-chat #lobby-chat-log { height: 150px; max-height: none; }
 
+/* Between a phone-ish width and a wide monitor the three columns of the bar used to share what the nav
+   left over equally, so at 1280 the right-hand tools got 170 px, needed 330, and the friends button, the
+   coins, the pilot and Settings were pushed off the screen on every page. The tools and the brand take
+   their own width now, the nav takes the middle and scrolls before it can push anything off, and it
+   tightens as the window narrows. */
+@media (min-width: 1021px) and (max-width: 1640px) {
+  .menu-bar { grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; }
+  .menu-nav { min-width: 0; justify-content: center; overflow-x: auto; scrollbar-width: none; }
+  .menu-nav::-webkit-scrollbar { display: none; }
+  .menu-nav button { padding: 0 12px !important; letter-spacing: .12em !important; flex: none; }
+  .menu-nav button::after { left: 12px; right: 12px; }
+  .menu-nav button small { display: none; }
+}
+@media (min-width: 1021px) and (max-width: 1380px) {
+  .menu-bar .brand b { display: none; }
+  .menu-nav button { padding: 0 10px !important; }
+}
 @media (max-width: 1020px) {
   .menu-bar { grid-template-columns: auto 1fr; height: auto; padding-top: 12px; row-gap: 0; }
   .menu-nav { grid-column: 1 / -1; grid-row: 2; height: 46px; overflow-x: auto; }
