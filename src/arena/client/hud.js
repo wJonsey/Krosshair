@@ -9,7 +9,7 @@ import { net } from './net.js';
 import { bindLabel, bindsFor, codeLabel, isBound, input, padBindFor } from './input.js';
 import { crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, announce } from './audio.js';
-import { skinArt, skinArtReady, weaponArt } from './weaponart.js';
+import { feedArt, feedArtReady, makeFeedArt, weaponArt } from './weaponart.js';
 
 const $ = (selector) => document.querySelector(selector);
 // Chat: a few lines over the match that clear themselves, and the whole match's worth behind them for
@@ -229,12 +229,12 @@ export class Hud {
     // The gun the kill was made with, wearing the killer's own skin. Drawing one costs a frame, so a
     // gun nobody has killed with yet shows its name and the picture is made while the game is idle.
     const finish = (event.killer ? game.roster.get(event.killer)?.skins?.[event.weapon] : null) || null;
-    const known = WEAPONS[event.weapon] && skinArtReady(event.weapon, finish);
+    const known = WEAPONS[event.weapon] && feedArtReady(event.weapon, finish);
     const short = WEAPON_SHORT[event.weapon] || (event.reason === 'disconnect' ? 'LOST LINK' : '?');
-    const gun = known ? `<span class="gun art${finish ? ' skinned' : ''}"><img src="${skinArt(event.weapon, finish)}" alt="${short}" title="${short}" /></span>`
+    const gun = known ? `<span class="gun art${finish ? ' skinned' : ''}"><img src="${feedArt(event.weapon, finish)}" alt="${short}" title="${short}" /></span>`
       : `<span class="gun">${short}</span>`;
     if (!known && WEAPONS[event.weapon]) {
-      const draw = () => { try { skinArt(event.weapon, finish); } catch { /* no WebGL to spare */ } };
+      const draw = () => { try { makeFeedArt(event.weapon, finish); } catch { /* no WebGL to spare */ } };
       if (window.requestIdleCallback) requestIdleCallback(draw, { timeout: 4000 }); else setTimeout(draw, 500);
     }
     line.innerHTML = `${killer}${assist}${gun}<b class="${side(event.victim)}">${escapeHtml(nameOf(event.victim))}</b>${tags.join('')}`;

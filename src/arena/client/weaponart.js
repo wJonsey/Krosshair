@@ -22,8 +22,8 @@ function ensureStage() {
 }
 
 // Three-quarter side view, barrel to the right, framed to the model's length.
-function shoot(model) {
-  const { canvas, renderer, scene, camera } = ensureStage();
+function frame(model) {
+  const { renderer, scene, camera } = ensureStage();
   model.rotation.set(0.06, -0.42, 0);
   scene.add(model);
   model.updateMatrixWorld(true);
@@ -36,12 +36,14 @@ function shoot(model) {
   camera.lookAt(center);
   renderer.render(scene, camera);
   scene.remove(model);
-  return canvas.toDataURL('image/png');
 }
+function shoot(model) {
+  frame(model);
+  return ensureStage().canvas.toDataURL('image/png');
+}
+const freeModel = (model) => model.traverse((mesh) => { if (mesh.geometry) mesh.geometry.dispose(); });
 
 // The gun as it looks in hand with a finish on, for the shop.
-// Already drawn? The kill feed only draws art it can show at once, and builds the rest when idle.
-export const skinArtReady = (id, finish) => cache.has(`${id}:${finish}`);
 export function skinArt(id, finish) {
   const key = `${id}:${finish}`;
   if (cache.has(key)) return cache.get(key);
@@ -50,9 +52,39 @@ export function skinArt(id, finish) {
     const model = buildWeapon(id, '#ffb547', finish);
     stripHands(model);
     url = shoot(model);
+    freeModel(model);   // it used to be left on the GPU, one gun's worth per gun and skin ever drawn
   } catch { url = ''; }
   cache.set(key, url);
   return url;
+}
+
+// The kill feed shows a gun 20 pixels tall. It used to get the shop's picture: rendered at 720 by 300
+// and encoded as a PNG on the main thread, a long frame every time a new gun and skin turned up, which in
+// a royale of 30 pilots is dozens of times a match (the idle callback it waited for times out in a game
+// that is never idle). It gets its own small render now, encoded off the main thread with toBlob.
+const feed = new Map();   // key -> object URL, or null while it is being made
+const FEED_SIZE = [240, 100];
+export const feedArtReady = (id, finish) => typeof feed.get(`${id}:${finish}`) === 'string';
+export const feedArt = (id, finish) => feed.get(`${id}:${finish}`) || '';
+export function makeFeedArt(id, finish) {
+  const key = `${id}:${finish}`;
+  if (feed.has(key)) return;
+  feed.set(key, null);
+  const { canvas, renderer, camera } = ensureStage();
+  const full = [canvas.width, canvas.height];
+  try {
+    const model = buildWeapon(id, '#ffb547', finish);
+    stripHands(model);
+    renderer.setSize(...FEED_SIZE, false);
+    camera.aspect = FEED_SIZE[0] / FEED_SIZE[1]; camera.updateProjectionMatrix();
+    frame(model);
+    freeModel(model);
+    // toBlob copies the picture now and encodes it later, off this thread, so the canvas can go straight
+    // back to its own size.
+    canvas.toBlob((blob) => feed.set(key, blob ? URL.createObjectURL(blob) : ''), 'image/png');
+  } catch { feed.set(key, ''); }
+  renderer.setSize(...full, false);
+  camera.aspect = full[0] / full[1]; camera.updateProjectionMatrix();
 }
 
 export function weaponArt(id) {

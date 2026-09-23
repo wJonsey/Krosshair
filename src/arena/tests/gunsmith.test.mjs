@@ -853,3 +853,20 @@ test('every scope stands on the gun, rail or no rail', () => {
   assert.match(body, /const h = barY - 0\.004 - mount\.base;/, 'the posts run from the bar down to the height given');
   assert.match(body, /if \(!mount\) k\.box\(m\.grey, 0\.022, r \* 0\.9, 0\.022, \[0, y - r \* 0\.9, rz\]\)/, 'and a scope on a rail keeps the feet it always had');
 });
+
+// The kill feed shows a gun 20 px tall, and used to get the shop's 720 by 300 picture, PNG-encoded on the
+// main thread: a long frame for every new gun and skin, dozens a royale. It has its own small art now.
+test('the kill feed draws small art off the main thread, and frees what it built', () => {
+  const art = readFileSync(new URL('../client/weaponart.js', import.meta.url), 'utf8');
+  const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
+  const feed = art.slice(art.indexOf('export function makeFeedArt'), art.indexOf('export function weaponArt'));
+  assert.match(feed, /canvas\.toBlob\(/, 'the PNG has to be encoded off the main thread');
+  assert.ok(!/toDataURL/.test(feed), 'toDataURL encodes on the main thread');
+  assert.match(art, /const FEED_SIZE = \[240, 100\]/, 'and small, for a picture shown 20 px tall');
+  assert.match(feed, /freeModel\(model\)/, 'the gun it built is freed');
+  const skin = art.slice(art.indexOf('export function skinArt'), art.indexOf('// The kill feed shows'));
+  assert.match(skin, /freeModel\(model\)/, 'skinArt used to leave every gun it drew on the GPU');
+  const kill = hud.slice(hud.indexOf('  killFeed(event) {'), hud.indexOf('  banner('));
+  assert.match(kill, /feedArtReady\(event\.weapon, finish\)/, 'the kill feed uses the small art');
+  assert.ok(!/skinArt\(/.test(kill), 'and not the shop picture');
+});
