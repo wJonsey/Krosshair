@@ -15,6 +15,7 @@ import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
 import { buildCharm, buildWeapon, stripHands } from './viewmodel.js';
 import { updateCharm } from './charms.js';
+import { turntable } from './turntable.js';
 import { CRATE_OPEN_TIME, buildCrate, poseCrate } from './cratebox.js';
 import { animateOperator, buildOperator, lookOf, styleOperator } from './characters.js';
 import { skinArt } from './weaponart.js';
@@ -265,40 +266,18 @@ function makeThumbs() {
 }
 const thumb = (name) => { try { makeThumbs(); } catch { /* no WebGL to spare: the CSS icons stay */ } return thumbs.get(name) || ''; };
 
-// Dragging the gun on the gunsmith turns it: all the way round, and a little over the top or under.
-// It stays where it is let go, with a little carry from a flick, and goes back to side on when you
-// pick another gun. Window listeners rather than pointer capture: the menu redraws while you drag,
-// and moving the canvas into the new page releases a capture.
-const turn = { yaw: 0, pitch: 0, carry: 0, dragging: false, x: 0, y: 0, movedAt: 0, gun: null };
-const TURN_RATE = 0.0105, TILT_RATE = 0.006, TILT_MAX = 0.35;
-addEventListener('pointermove', (event) => {
-  if (!turn.dragging) return;
-  const dx = event.clientX - turn.x, dy = event.clientY - turn.y;
-  turn.x = event.clientX; turn.y = event.clientY;
-  turn.yaw += dx * TURN_RATE;
-  turn.pitch = Math.max(-TILT_MAX, Math.min(TILT_MAX, turn.pitch - dy * TILT_RATE));
-  turn.carry = dx * TURN_RATE;
-  turn.movedAt = performance.now();
+// Every preview on these pages can be dragged round, except a crate: it has its own opening to play.
+// Guns also tilt a little over the top or under; the pilot only turns, since tipping a person reads as
+// falling over.
+const turn = turntable({
+  tiltMax: 0.35,
+  current: () => ({ yaw: stage?.pivot.rotation.y || 0, pitch: stage?.operator ? 0 : stage?.pivot.rotation.z || 0 }),
+  canTurn: () => Boolean(stage && !stage.crate),
 });
-const endTurn = () => {
-  if (!turn.dragging) return;
-  turn.dragging = false;
-  stage?.canvas.classList.remove('grabbing');
-  // Held still before letting go is a placement, not a flick.
-  if (performance.now() - turn.movedAt > 70) turn.carry = 0;
-};
-addEventListener('pointerup', endTurn);
-addEventListener('pointercancel', endTurn);
 function ensureStage() {
   if (stage) return stage;
   const canvas = document.createElement('canvas');
   canvas.className = 'skin-canvas';
-  canvas.addEventListener('pointerdown', (event) => {
-    if (tab !== 'gunsmith' || event.button !== 0) return;
-    event.preventDefault();
-    Object.assign(turn, { dragging: true, x: event.clientX, y: event.clientY, carry: 0, movedAt: performance.now() });
-    canvas.classList.add('grabbing');
-  });
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   const scene = new THREE.Scene();
@@ -307,7 +286,8 @@ function ensureStage() {
   const rim = new THREE.DirectionalLight('#ffb547', 1.4); rim.position.set(-3, 1, -4); scene.add(rim);
   const camera = new THREE.PerspectiveCamera(22, 2.4, 0.05, 50);
   const pivot = new THREE.Group(); scene.add(pivot);
-  stage = { canvas, renderer, scene, camera, pivot, rim, key: '', running: false };
+  stage = { canvas, renderer, scene, camera, pivot, rim, key: '', turnKey: '', running: false };
+  turn.attach(canvas);
   return stage;
 }
 function sizeStage(s) {
@@ -321,6 +301,11 @@ function showOnStage(subject) {
   const s = ensureStage(), key = JSON.stringify(subject);
   if (s.key === key) return;
   s.key = key;
+  // A new gun or a different kind of thing starts from its own idle swing. A new finish, charm or piece
+  // of kit on the same one keeps the angle you left it at, so the two can be compared.
+  const turnKey = `${tab}:${subject.kind}:${subject.weapon || subject.id || ''}`;
+  if (turnKey !== s.turnKey) { s.turnKey = turnKey; turn.reset(); }
+  turn.allow(subject.kind !== 'crate');
   for (const child of [...s.pivot.children]) { s.pivot.remove(child); child.traverse((mesh) => mesh.geometry?.dispose()); }
   s.charm = null; s.operator = null; s.crate = null; s.fit = null;
   if (subject.kind === 'crate') {
@@ -393,13 +378,16 @@ function spin() {
   const s = stage;
   if (!s.canvas.isConnected) { s.running = false; return; }
   const t = performance.now() / 1000;
+  turn.coast();
   if (s.operator) {
-    s.pivot.rotation.set(0, Math.PI + Math.sin(t * 0.4) * 0.9, 0);
+    s.pivot.rotation.order = 'XYZ';
+    s.pivot.rotation.set(0, turn.touched ? turn.yaw : Math.PI + Math.sin(t * 0.4) * 0.9, 0);
     animateOperator(s.operator, { speed: 0, crouch: false, pitch: Math.sin(t / 1.7) * 0.08, weapon: 'm44', dt: 1 / 60 });
   } else if (s.crate) {
     // Waiting: a slow turn. Opening: it swings round to face you and goes off.
     const open = crate && !reveal?.landed ? now() - crate.at : null;
     const facing = open === null ? Math.sin(t * 0.5) * 0.5 - 0.35 : -0.35 * Math.max(0, 1 - open / 0.3);
+    s.pivot.rotation.order = 'XYZ';
     s.pivot.rotation.set(0.12, s.pivot.rotation.y + (facing - s.pivot.rotation.y) * 0.12, 0);
     poseCrate(s.crate, open, t);
   } else {
@@ -409,17 +397,10 @@ function spin() {
     // by hand. Tilt is about the screen's horizontal axis, applied after the turn, so dragging down
     // always brings the top of the gun towards you whichever way round it is.
     const bench = tab === 'gunsmith';
-    if (bench) {
-      if (turn.gun !== weaponId) Object.assign(turn, { gun: weaponId, yaw: 0, pitch: 0, carry: 0 });
-      if (!turn.dragging && Math.abs(turn.carry) > 0.0005) { turn.yaw += turn.carry; turn.carry *= 0.86; }
-      s.pivot.rotation.order = 'ZYX';
-      s.pivot.rotation.set(Math.sin(t * 0.27) * 0.02, Math.sin(t * 0.35) * 0.08 - 0.06 + turn.yaw, turn.pitch);
-    } else {
-      s.pivot.rotation.order = 'XYZ';
-      s.pivot.rotation.z = 0;
-    }
-    if (!bench) s.pivot.rotation.y = Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
-    if (!bench) s.pivot.rotation.x = Math.sin(t * 0.3) * 0.06 + shake * 0.6;
+    s.pivot.rotation.order = 'ZYX';
+    if (turn.touched) s.pivot.rotation.set(shake * 0.6, turn.yaw + shake, turn.pitch);
+    else if (bench) s.pivot.rotation.set(Math.sin(t * 0.27) * 0.02, Math.sin(t * 0.35) * 0.08 - 0.06, 0);
+    else s.pivot.rotation.set(Math.sin(t * 0.3) * 0.06 + shake * 0.6, Math.sin(t * 0.45) * 0.65 - 0.15 + shake, 0);
     s.rim.color.set(bench ? '#5aa9ff' : '#ffb547');
   }
   if (s.charm) updateCharm(s.charm, Math.min(0.05, t - (s.lastT || t)) || 1 / 60);

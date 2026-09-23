@@ -11,6 +11,7 @@ import { ACTIONS, PAD_ACTIONS, PAD_LAYOUTS, PAD_LAYOUT_IDS, RESERVED, bindLabel,
 import { CROSSHAIR_COLORS, CROSSHAIR_PRESETS, cleanCrosshair, crosshairCode, crosshairFromCode, crosshairHtml, currentCrosshair } from './crosshair.js';
 import { play, setVolume, unlockAudio } from './audio.js';
 import { buildOperator, styleOperator, animateOperator, lookOf } from './characters.js';
+import { turntable } from './turntable.js';
 import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopHover, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
 import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
@@ -173,7 +174,11 @@ function ensurePreview(placeholder) {
   disc.position.y = -0.03;
   scene.add(model, disc);
   preview = { canvas, renderer, scene, camera, model, last: performance.now() };
+  previewTurn.attach(canvas);
 }
+// The pilot on the Play page can be dragged round, the same as the Locker's. It only turns: tipping a
+// person reads as falling over.
+const previewTurn = turntable({ current: () => ({ yaw: preview?.model.rotation.y || 0 }) });
 // Fills the panel with the pilot, measured off the model rather than a fixed distance: the stage is
 // much taller than it is wide, and the name card sits over the bottom of it, so the fit is to the band
 // above the card. Without this the pilot floated in the top corner with dead space under them.
@@ -208,7 +213,8 @@ export function renderPreview() {
   }
   const dt = Math.min(0.05, (now - preview.last) / 1000);
   preview.last = now;
-  preview.model.rotation.y = Math.PI + Math.sin(now / 2600) * 0.9;
+  previewTurn.coast();
+  preview.model.rotation.y = previewTurn.touched ? previewTurn.yaw : Math.PI + Math.sin(now / 2600) * 0.9;
   animateOperator(preview.model, { speed: 0, crouch: false, pitch: Math.sin(now / 1700) * 0.08, weapon: 'm44', dt });
   preview.renderer.render(preview.scene, preview.camera);
 }

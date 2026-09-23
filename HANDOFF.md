@@ -149,7 +149,8 @@ At 1920x1080 the slots sit around the gun. Below 1800 wide or 1000 tall they go 
 and a row below, with the numbers in a column of their own; below 1020 wide it all stacks. The gun's box
 is kept clear of the side slots by `--callout-w`, the slots' own width, and the camera fits the gun to
 that box whatever its shape (the `tab === 'gunsmith'` branch in the stage's `fit`). Dragging the gun
-turns it (`turn` in `shop.js`): all the way round, a little tilt, and back to side on for a new gun.
+turns it: all the way round, a little tilt, and back to side on for a new gun. Every other preview turns
+the same way (skins, charms, the Locker and Play page pilot), all through `client/turntable.js`.
 
 ## Traps that have already cost a day
 

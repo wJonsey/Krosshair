@@ -794,15 +794,28 @@ test('the gunsmith turntable can be dragged without taking clicks from anything 
   assert.match(css, /\.smith-callouts \{[^}]*pointer-events: none/, 'the slot layer only takes clicks on the slots themselves');
 });
 
-test('dragging turns the gun and nothing else', () => {
+// Every preview can be dragged round: the gunsmith, skins, charms and the pilot in the Locker all share
+// the shop's stage, and the Play page has its own pilot. One module does the dragging for both.
+test('every preview turns by hand, through the one turntable', () => {
   const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
-  const down = shop.slice(shop.indexOf("canvas.addEventListener('pointerdown'"), shop.indexOf("canvas.addEventListener('pointerdown'") + 400);
-  assert.match(down, /if \(tab !== 'gunsmith' \|\| event\.button !== 0\) return;/, 'only the gunsmith turns the gun, and only with the main button');
-  const drag = shop.slice(shop.indexOf('const turn = {'), shop.indexOf('function ensureStage'));
-  assert.ok(!/smithDrafts|keepBuilds|net\.send/.test(drag), 'turning the gun is presentation only');
-  assert.match(drag, /Math\.max\(-TILT_MAX, Math\.min\(TILT_MAX/, 'the tilt is clamped, so it never goes end over end');
-  assert.match(shop, /if \(turn\.gun !== weaponId\) Object\.assign\(turn, \{ gun: weaponId, yaw: 0, pitch: 0, carry: 0 \}\)/, 'a new gun starts side on');
-  assert.match(shop, /\['Drag', 'Rotate'\]/, 'and the footer says it can be done');
+  const menu = readFileSync(new URL('../client/menu.js', import.meta.url), 'utf8');
+  const table = readFileSync(new URL('../client/turntable.js', import.meta.url), 'utf8');
+  assert.match(shop, /turn\.attach\(canvas\)/, 'the shop stage takes drags');
+  assert.match(menu, /previewTurn\.attach\(canvas\)/, 'and so does the pilot on the Play page');
+  assert.match(shop, /canTurn: \(\) => Boolean\(stage && !stage\.crate\)/, 'a crate being opened is left alone');
+  assert.match(shop, /turn\.touched \? turn\.yaw : Math\.PI/, 'the Locker pilot turns');
+  assert.match(shop, /if \(turn\.touched\) s\.pivot\.rotation\.set\(shake \* 0\.6, turn\.yaw \+ shake, turn\.pitch\)/, 'every gun turns, and a charm still shakes');
+  assert.match(menu, /previewTurn\.touched \? previewTurn\.yaw/, 'the Play page pilot turns');
+  assert.ok(!/smithDrafts|keepBuilds|net\.send|saveLook/.test(table), 'turning something is presentation only');
+  assert.match(table, /Math\.max\(-tiltMax, Math\.min\(tiltMax/, 'the tilt is clamped, so nothing goes end over end');
+  assert.ok(!/tiltMax/.test(menu.slice(menu.indexOf('const previewTurn'), menu.indexOf('const previewTurn') + 200)), 'and a pilot does not tilt at all');
+});
+
+test('a new thing on the stage starts from its own swing, a new skin keeps the angle', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /const turnKey = `\$\{tab\}:\$\{subject\.kind\}:\$\{subject\.weapon \|\| subject\.id \|\| ''\}`/, 'the angle belongs to the gun or pilot, not its finish');
+  assert.match(shop, /if \(turnKey !== s\.turnKey\) \{ s\.turnKey = turnKey; turn\.reset\(\); \}/, 'and resets when that changes');
+  assert.match(shop, /\['Drag', 'Rotate'\]/, 'the gunsmith footer says it can be done');
 });
 
 // .skin-stage is width: 100% for every other stage, and an explicit width beats left and right insets,
