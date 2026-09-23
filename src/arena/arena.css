@@ -1729,72 +1729,8 @@ button.cash-out .coins { color: var(--void); }
 .finish-card.away:hover { opacity: .75; }
 .state.item-only { color: var(--haze); font-size: 9px; letter-spacing: .08em; }
 
-/* ---- Gunsmith: the gun on the left, what the parts did to it on the right.
-   Green is better, red is worse. That pair is the only colour in here that means anything, so nothing
-   else in the tab is allowed to use it. */
-.shop-gunsmith { --better: #57d98a; --worse: var(--rival); display: grid; gap: 18px; align-items: start; }
-.smith-side { display: grid; gap: 14px; align-content: start; min-width: 0; }
-.smith-main { display: grid; gap: 12px; min-width: 0; }
-.smith-preview { margin: 0; grid-template-columns: minmax(0, 1fr) 240px; }
-.smith-cost { margin: 12px 0 2px; }
-.smith-cost .coins { font: 400 26px var(--display); }
-.smith-price-note { display: block; color: var(--graphite); font: 500 10px var(--mono); letter-spacing: .06em; }
-.smith-actions { margin-top: 14px; }
-.smith-state { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; letter-spacing: .12em; text-transform: uppercase; }
-.smith-state.off { color: var(--signal); }
-.smith-locked { display: grid; gap: 4px; margin: 0; border-left: 2px solid var(--signal); }
-.smith-locked b { color: var(--signal); font: 400 15px var(--display); text-transform: uppercase; }
-.smith-locked span { color: var(--haze); font-size: 13px; }
-/* The headline three: what the gun hits for, how fast it shoots, what you look through. */
-.smith-head { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
-.smith-head > span { display: grid; gap: 2px; padding: 10px 12px; background: rgba(230, 237, 241, .04); border-top: 2px solid var(--hairline-strong); }
-.smith-head small { color: var(--haze); font: 500 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.smith-head b { font: 400 19px var(--display); }
-.smith-head b.lit { color: var(--signal); }
-.smith-head i { color: var(--graphite); font: 400 11px var(--body); font-style: normal; }
-.smith-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr)); gap: 2px 18px; }
-.smith-group .eyebrow.sub { margin: 8px 0 4px; }
-.smith-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--hairline); }
-.smith-row > span { color: var(--haze); font-size: 12px; }
-.smith-row i { color: var(--graphite); font: 500 11px var(--mono); font-style: normal; text-decoration: line-through; }
-.smith-row b { color: var(--frost); font: 500 12px var(--mono); }
-.smith-row em { color: var(--graphite); font: 500 10px var(--mono); font-style: normal; }
-/* A stat nothing touched has no old value, so its number sits in the same column as the new ones. */
-.smith-row > b:nth-child(2) { grid-column: 3; }
-.smith-row.up b, .smith-row.up em { color: var(--better); }
-.smith-row.down b, .smith-row.down em { color: var(--worse); }
-/* A part is one button: click to fit it, click the fitted one to take it off. */
-.smith-grid { grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
-.smith-part { display: grid !important; gap: 6px; align-content: start; padding: 11px 12px !important; text-align: left; background: rgba(230, 237, 241, .04) !important; color: var(--frost) !important; border: 0 !important; border-top: 2px solid var(--hairline-strong) !important; font: 400 13px var(--body) !important; letter-spacing: 0 !important; text-transform: none !important; transition: background .2s, border-color .2s; }
-.smith-part:hover:not(:disabled) { background: rgba(20, 27, 34, .85) !important; border-top-color: var(--signal) !important; }
-.smith-part.on { border-top-color: var(--ally) !important; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ally) 40%, transparent); }
-.smith-part.locked { opacity: .45; }
-.smith-part-head { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; }
-.smith-part-head b { margin-right: auto; font: 400 13px var(--body); }
-.smith-part-cost { font-style: normal; }
-.smith-part-cost .coins { font-size: 10px; }
-.smith-fitted { color: var(--ally); font: 500 9px var(--mono); font-style: normal; letter-spacing: .1em; text-transform: uppercase; }
-.smith-part small { color: var(--graphite); font-size: 11px; line-height: 1.45; }
-.smith-chips { display: flex !important; flex-wrap: wrap; gap: 4px; margin: 0 !important; }
-.smith-chips em { padding: 2px 5px; background: rgba(230, 237, 241, .05); color: var(--haze); font: 500 9px var(--mono); font-style: normal; letter-spacing: .04em; }
-.smith-chips em.up { color: var(--better); }
-.smith-chips em.down { color: var(--worse); }
-/* Which guns already carry a build. */
+/* Which guns already carry a build, in lists other than the gunsmith's own. */
 .shop-weapon.built { box-shadow: inset 0 -2px 0 var(--ally); }
-@media (min-width: 1021px) {
-  /* Measured rather than guessed, like the crate and skin columns: as a page of its own the gunsmith
-     sits under a taller header than it did as a tab, and the old fixed numbers put the bottom of this
-     column off the screen. */
-  /* Three panes: the guns to pick from, the gun itself with its bench, the numbers. The gun stays put
-     while you work on it, which is the whole point of a bench. */
-  .shop-gunsmith { grid-template-columns: minmax(180px, .6fr) minmax(0, 1.9fr) minmax(280px, .95fr); }
-  .smith-guns, .smith-main { position: sticky; top: var(--shop-top, 84px); max-height: calc(100vh - var(--shop-head, 110px)); overflow-y: auto; scrollbar-width: thin; padding-right: 4px; }
-  .smith-stage-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
-  .smith-preview { grid-template-columns: 1fr; gap: 14px; }
-  .smith-preview .skin-stage { height: clamp(220px, 32vh, 380px); }
-}
-@media (max-width: 560px) { .smith-grid { grid-template-columns: 1fr; } .smith-row { grid-template-columns: 1fr auto auto; } .smith-row i { display: none; } }
-
 /* ---------- social: the friends drawer off the menu bar ---------- */
 .social-chip { display: inline-flex; align-items: center; gap: 6px; position: relative; padding: 8px 10px !important; border: 1px solid var(--hairline-strong) !important; background: rgba(230, 237, 241, .04) !important; color: var(--haze) !important; }
 .social-chip:hover, .social-chip.active { color: var(--frost) !important; border-color: var(--ally) !important; }
@@ -1901,24 +1837,197 @@ button.cash-out .coins { color: var(--void); }
 .play-card.shut-down { opacity: .5; }
 .play-card.shut-down strong { color: #ff9d3d; }
 
-/* ---------- gunsmith bench: one slot at a time ---------- */
-.smith-rail { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
-.smith-tab { display: grid; gap: 1px; padding: 6px 11px; border: 1px solid var(--hairline); background: rgba(10, 14, 18, .45); text-align: left; min-width: 0; }
-.smith-tab small { color: var(--graphite); font: 500 9px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; }
-.smith-tab b { font: 500 11px/1.3 var(--body); color: var(--haze); max-width: 108px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.smith-tab:hover { border-color: var(--hairline-strong); }
-.smith-tab:hover b { color: var(--frost); }
-.smith-tab.filled b { color: var(--frost); }
-.smith-tab.filled small { color: var(--ally); }
-.smith-tab.active { border-color: var(--signal); background: rgba(255, 181, 71, .08); }
-.smith-tab.active small { color: var(--signal); }
-.smith-tab.active b { color: var(--frost); }
-.smith-id { min-width: 0; }
-/* While a part is being considered the numbers are a what-if, so the panel says so rather than
-   pretending the gun already changed. */
-.smith-stats.peeking { border-color: rgba(255, 181, 71, .45); }
-.smith-stats.peeking .block-head b { color: var(--signal); }
+/* ---------- gunsmith: the gun in the middle, its slots around it ----------
+   Charcoal and one cool accent, which only ever means "this is the one you are on". Green and red are
+   kept for better and worse, and nothing else here is allowed to use them. */
+.shop-gunsmith-page { padding-top: 6px; }
+.smith-screen {
+  --sm-bg: #090909; --sm-panel: rgba(17, 17, 17, .84); --sm-panel-2: rgba(23, 23, 23, .9); --sm-line: rgba(232, 232, 232, .1); --sm-line-2: rgba(232, 232, 232, .2);
+  --sm-text: #e8e8e8; --sm-dim: #7a7a7a; --sm-accent: #5aa9ff; --list-w: 360px; --callout-w: clamp(140px, 12vw, 200px); --beside: calc(3% + var(--callout-w) + 16px); --better: #57d98a; --worse: var(--rival);
+  position: relative; height: var(--smith-h, calc(100vh - 170px)); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 10px;
+  padding: 16px 20px 10px; color: var(--sm-text); border: 1px solid var(--sm-line);
+  background: radial-gradient(ellipse 70% 60% at 50% 46%, #1b1d20 0%, #101113 46%, var(--sm-bg) 100%);
+}
+.smith-screen button { color: inherit; background: none; border: 0; padding: 0; text-align: left; font: inherit; }
+.smith-screen small { font: 500 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--sm-dim); }
+.smith-screen kbd { margin: 0 7px 0 0; border-color: var(--sm-line-2); color: var(--sm-text); }
+
+/* top bar */
+.smith-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 20px; }
+.smith-title h2 { margin: 3px 0 0; font: 400 clamp(30px, 3.4vw, 46px)/.95 var(--display); letter-spacing: .02em; text-transform: uppercase; }
+.smith-tabs { display: flex; gap: 26px; align-self: center; }
+.smith-tabs button { position: relative; padding: 6px 2px 8px; color: var(--sm-dim); font: 500 12px var(--mono); letter-spacing: .2em; text-transform: uppercase; transition: color .12s; }
+.smith-tabs button:hover { color: var(--sm-text); }
+.smith-tabs button.on { color: var(--sm-text); }
+.smith-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--sm-accent); }
+.smith-level { justify-self: end; display: grid; gap: 4px; min-width: 210px; text-align: right; }
+.smith-level b { font: 400 20px var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.smith-level span { color: var(--sm-dim); font: 400 11px var(--body); }
+.smith-xp { display: block; height: 3px; background: var(--sm-line); }
+.smith-xp s { display: block; height: 100%; background: var(--sm-accent); text-decoration: none; }
+.smith-next { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+.smith-next em { display: grid; place-items: center; width: 26px; height: 22px; border: 1px solid var(--sm-line-2); background: var(--sm-panel); }
+.smith-glyph { width: 20px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; flex: none; }
+.smith-next .smith-glyph { width: 17px; height: 14px; color: var(--sm-dim); }
+
+/* the gun picker: small, out of the way, one line */
+.smith-guns { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 8px 0 6px; border-top: 1px solid var(--sm-line); border-bottom: 1px solid var(--sm-line); }
+.smith-class { display: flex; align-items: center; gap: 2px; }
+.smith-class small { margin-right: 6px; }
+.smith-gun { position: relative; padding: 4px 8px !important; color: var(--sm-dim) !important; font: 500 11px var(--mono) !important; letter-spacing: .08em; text-transform: uppercase; transition: color .12s, background .12s; }
+.smith-gun:hover { color: var(--sm-text) !important; background: rgba(232, 232, 232, .05) !important; }
+.smith-gun.on { color: var(--sm-text) !important; background: rgba(90, 169, 255, .14) !important; box-shadow: inset 0 -2px 0 var(--sm-accent); }
+/* a gun that already carries parts */
+.smith-gun.built::after { content: ''; position: absolute; right: 2px; top: 3px; width: 4px; height: 4px; background: var(--sm-accent); }
+
+/* the floor: gun, slots, list and numbers all share it */
+.smith-floor { position: relative; min-height: 0; }
+/* The gun gets a box of its own in the middle of the floor, and the slots sit outside it: above, below
+   and either side. Fixed spots over the gun cannot work for every gun, since a sniper is twice the
+   length of a pistol, so nothing is drawn over it at all. It takes no input, and must not: anything it
+   overlapped would stop being clickable. */
+/* Clear of the side slots by their own width, so the two can never disagree. */
+.smith-stage { position: absolute; inset: 13% var(--beside) 17% var(--beside); pointer-events: none; width: auto; height: auto !important; margin: 0; background: none !important; border: 0 !important; transition: right .22s cubic-bezier(.2, .7, .2, 1), left .22s cubic-bezier(.2, .7, .2, 1); }
+.smith-screen.picking .smith-stage { right: calc(var(--list-w) + 20px + var(--callout-w) + 16px); }
+.smith-stage canvas { display: block; width: 100%; height: 100%; }
+
+/* the slots, placed where the parts are on a gun held side on with the muzzle right */
+.smith-callouts { position: absolute; inset: 4% 3% 4% 3%; pointer-events: none; transition: right .22s cubic-bezier(.2, .7, .2, 1); }
+.smith-screen.picking .smith-callouts { right: calc(var(--list-w) + 20px); }
+.smith-callout { position: absolute; width: var(--callout-w); display: grid; gap: 5px; padding: 8px 11px 9px !important; pointer-events: auto;
+  background: rgba(14, 15, 17, .72) !important; border: 1px solid var(--sm-line) !important; border-left: 2px solid var(--sm-line-2) !important; backdrop-filter: blur(6px);
+  transition: border-color .12s, background .12s, transform .12s; }
+.smith-callout:hover { border-color: var(--sm-line-2) !important; background: rgba(24, 26, 29, .86) !important; transform: translateY(-1px); }
+.smith-callout-top { display: flex; align-items: center; gap: 7px; color: var(--sm-dim); }
+.smith-callout-top small { flex: 1; }
+.smith-callout-top em { font: 500 9px var(--mono); font-style: normal; letter-spacing: .08em; color: var(--sm-dim); }
+.smith-callout b { font: 500 12px var(--body); color: var(--sm-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.smith-callout.filled b { color: var(--sm-text); }
+.smith-callout.filled { border-left-color: rgba(90, 169, 255, .6) !important; }
+.smith-callout.active { border-color: rgba(90, 169, 255, .55) !important; border-left-color: var(--sm-accent) !important; background: rgba(90, 169, 255, .12) !important; }
+.smith-callout.active .smith-callout-top, .smith-callout.active small { color: var(--sm-accent); }
+.at-stock { left: 0; top: 40%; }
+.at-muzzle { right: 0; top: 40%; }
+.at-optic { left: 30%; top: 0; }
+.at-barrel { left: 56%; top: 0; }
+.at-mag { left: 30%; bottom: 0; }
+.at-grip { left: 56%; bottom: 0; }
+.smith-screen.picking .at-optic, .smith-screen.picking .at-mag { left: 22%; }
+.smith-screen.picking .at-barrel, .smith-screen.picking .at-grip { left: 52%; }
+
+/* the list for the open slot, slid in from the right */
+.smith-list { position: absolute; top: 0; right: 0; bottom: 0; width: var(--list-w); display: none; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 12px 12px 12px 14px;
+  background: linear-gradient(90deg, rgba(12, 13, 15, .9), rgba(17, 17, 17, .96)); border-left: 1px solid var(--sm-line-2); }
+.smith-screen.picking .smith-list { display: grid; animation: smith-list-in .2s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(-1 * var(--since, 1s)); }
+@keyframes smith-list-in { from { opacity: 0; transform: translateX(22px); } }
+.smith-list > header { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--sm-line); }
+.smith-list > header span { display: grid; gap: 3px; }
+.smith-list > header b { font: 400 22px var(--display); letter-spacing: .05em; text-transform: uppercase; }
+.smith-back { width: 30px; height: 30px; display: grid !important; place-items: center; border: 1px solid var(--sm-line-2) !important; font: 400 20px/1 var(--body) !important; color: var(--sm-dim) !important; }
+.smith-back:hover { color: var(--sm-text) !important; border-color: var(--sm-accent) !important; }
+.smith-locked-note { margin: 0; padding: 8px 10px; border-left: 2px solid var(--signal); background: rgba(255, 181, 71, .06); color: var(--haze); font: 400 12px var(--body); }
+.smith-grid { display: grid; gap: 4px; align-content: start; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; }
+.smith-none { color: var(--sm-dim); font: 400 13px var(--body); }
+.smith-part { position: relative; display: grid !important; gap: 5px; padding: 10px 12px 10px 14px !important; background: rgba(232, 232, 232, .03) !important; border: 1px solid transparent !important; transition: background .12s, border-color .12s; }
+.smith-part::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .12s; }
+.smith-part:hover:not(:disabled), .smith-part.peek { background: rgba(232, 232, 232, .07) !important; border-color: var(--sm-line-2) !important; }
+.smith-part:hover:not(:disabled)::before, .smith-part.peek::before { background: var(--sm-text); }
+.smith-part.on { background: rgba(90, 169, 255, .11) !important; border-color: rgba(90, 169, 255, .35) !important; }
+.smith-part.on::before { background: var(--sm-accent); }
+.smith-part.locked { opacity: .5; cursor: not-allowed; }
+.smith-part-head { display: flex; align-items: baseline; gap: 8px; }
+.smith-part-head b { margin-right: auto; font: 500 13px var(--body); letter-spacing: .02em; text-transform: uppercase; }
+.smith-part-head em { font: 500 10px var(--mono); font-style: normal; letter-spacing: .1em; color: var(--sm-dim); }
+.smith-part-head .smith-fitted { color: var(--sm-accent); text-transform: uppercase; }
+.smith-part-head .smith-lock { color: var(--signal); text-transform: uppercase; }
+.smith-part small { font: 400 11px/1.4 var(--body); letter-spacing: 0; text-transform: none; color: var(--sm-dim); }
+.smith-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.smith-chips em { padding: 2px 5px; background: rgba(232, 232, 232, .05); color: var(--haze); font: 500 9px var(--mono); font-style: normal; letter-spacing: .06em; }
+.smith-chips em.up { color: var(--better); }
+.smith-chips em.down { color: var(--worse); }
+
+/* the numbers, bottom left */
+.smith-stats { position: absolute; left: 0; bottom: 0; width: min(330px, 34%); display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 12px; background: var(--sm-panel); border: 1px solid var(--sm-line); backdrop-filter: blur(8px); max-height: 100%; overflow-y: auto; scrollbar-width: thin; }
+.smith-screen.peeking .smith-stats { border-color: rgba(90, 169, 255, .4); }
+.smith-screen.peeking .smith-stats > header small { color: var(--sm-accent); }
+.smith-stats > header { display: flex; align-items: center; justify-content: space-between; }
+.smith-detail-toggle { color: var(--sm-dim) !important; font: 500 9px var(--mono) !important; letter-spacing: .16em; text-transform: uppercase; border-bottom: 1px solid var(--sm-line-2) !important; padding-bottom: 1px !important; }
+.smith-detail-toggle:hover { color: var(--sm-text) !important; }
+.smith-bars { display: grid; gap: 7px; }
+.smith-bar { display: grid; grid-template-columns: 74px minmax(0, 1fr) 54px; align-items: center; gap: 10px; }
+.smith-bar > span { font: 500 9px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--sm-dim); }
+.smith-bar > b { justify-self: end; font: 500 11px var(--mono); color: var(--sm-text); }
+.smith-bar > b em { font-style: normal; }
+.smith-bar > b em.up { color: var(--better); }
+.smith-bar > b em.down { color: var(--worse); }
+/* The track: what it is, and the change drawn over it. It slides from what it showed last time. */
+.smith-bar i { position: relative; display: block; height: 4px; background: rgba(232, 232, 232, .08); font-style: normal; }
+.smith-bar i::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--now); background: var(--sm-text); animation: smith-bar .2s ease-out both; }
+@keyframes smith-bar { from { width: var(--from); } }
+.smith-bar.up i::before { width: var(--lo); animation: none; }
+.smith-bar.down i::before { width: var(--now); animation: none; }
+.smith-bar.up i::after, .smith-bar.down i::after { content: ''; position: absolute; top: 0; bottom: 0; left: var(--lo); width: calc(var(--hi) - var(--lo)); }
+.smith-bar.up i::after { background: var(--better); }
+.smith-bar.down i::after { background: var(--worse); opacity: .75; }
+.smith-groups { display: grid; gap: 2px; }
+.smith-eyebrow { margin: 8px 0 3px; color: var(--sm-dim); font: 500 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
+.smith-row { display: grid; grid-template-columns: 1fr auto auto auto; align-items: baseline; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--sm-line); }
+.smith-row > span { color: var(--haze); font-size: 12px; }
+.smith-row i { color: var(--sm-dim); font: 500 11px var(--mono); font-style: normal; text-decoration: line-through; }
+.smith-row b { color: var(--sm-text); font: 500 12px var(--mono); }
+.smith-row em { color: var(--sm-dim); font: 500 10px var(--mono); font-style: normal; }
+.smith-row > b:nth-child(2) { grid-column: 3; }
+.smith-row.up b, .smith-row.up em { color: var(--better); }
+.smith-row.down b, .smith-row.down em { color: var(--worse); }
+.smith-stats > footer { margin-top: auto; display: flex; align-items: end; justify-content: space-between; gap: 10px; padding-top: 9px; border-top: 1px solid var(--sm-line); }
+.smith-stats > footer span { display: grid; gap: 2px; }
+.smith-stats > footer b { font: 400 22px var(--display); letter-spacing: .04em; }
+.smith-stats > footer i { color: var(--sm-dim); font: 400 10px var(--mono); font-style: normal; letter-spacing: .04em; }
+.smith-strip { padding: 6px 10px !important; border: 1px solid var(--sm-line-2) !important; color: var(--sm-dim) !important; font: 500 9px var(--mono) !important; letter-spacing: .16em; text-transform: uppercase; }
+.smith-strip:hover { color: var(--worse) !important; border-color: var(--worse) !important; }
+
+/* the controls that work, and nothing else */
+.smith-keys { display: flex; align-items: center; gap: 22px; padding-top: 8px; border-top: 1px solid var(--sm-line); color: var(--sm-dim); font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
+.smith-keys span { display: flex; align-items: center; }
+.smith-keys .smith-kept { margin-left: auto; color: var(--sm-dim); }
+
+/* A laptop: tighter, the same shape. */
+@media (max-width: 1360px) {
+  .smith-screen { padding: 12px 14px 8px; }
+  .smith-screen { --list-w: 320px; }
+  .smith-stats { width: min(300px, 36%); }
+  .smith-bar { grid-template-columns: 66px minmax(0, 1fr) 48px; }
+}
+@media (max-height: 820px) {
+  .smith-stats { gap: 6px; padding: 10px 12px; }
+  .smith-bars { gap: 5px; }
+}
+/* Short of a full 1080p screen there is not room for the slots to sit around the gun without landing on
+   it or on the numbers, so they go in a row above it and a row below, and the numbers get a column of
+   their own. Same pieces, same order of importance: nothing is just scaled down. */
+@media (max-width: 1800px), (max-height: 1000px) {
+  .smith-stats { top: 0; bottom: 0; width: 272px; }
+  .smith-callouts, .smith-screen.picking .smith-callouts { inset: 0 0 0 288px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: auto minmax(0, 1fr) auto; column-gap: 8px; }
+  .smith-screen.picking .smith-callouts { right: calc(var(--list-w) + 14px); }
+  .smith-callout { position: static; width: auto; grid-column: var(--col) / span 2; }
+  .at-stock, .at-optic, .at-barrel { grid-row: 1; }
+  .at-mag, .at-grip, .at-muzzle { grid-row: 3; }
+  .smith-stage, .smith-screen.picking .smith-stage { inset: 68px 12px 68px 300px; }
+  .smith-screen.picking .smith-stage { right: calc(var(--list-w) + 20px); }
+}
+/* Too narrow for things to sit around the gun: stack it. Gun on top, slots under it, then the list or
+   the numbers. Still one screen's worth of hierarchy, just in a column. */
 @media (max-width: 1020px) {
-  .smith-tab b { max-width: 84px; }
-  .smith-preview .skin-stage { height: clamp(190px, 28vh, 280px); }
+  .smith-screen { height: auto; grid-template-rows: auto auto auto auto; }
+  .smith-top { grid-template-columns: 1fr; align-items: start; gap: 10px; }
+  .smith-tabs, .smith-level { justify-self: start; text-align: left; }
+  .smith-next { justify-content: flex-start; }
+  .smith-floor { display: grid; gap: 10px; }
+  .smith-stage, .smith-screen.picking .smith-stage { position: relative; inset: auto; right: auto; width: 100%; height: clamp(200px, 36vh, 320px) !important; }
+  .smith-callouts, .smith-screen.picking .smith-callouts { position: static; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+  .smith-callout { position: static; width: auto; grid-column: auto; grid-row: auto; }
+  .smith-list, .smith-screen.picking .smith-list { position: static; width: auto; }
+  .smith-screen.picking .smith-list { max-height: none; }
+  .smith-stats { position: static; width: auto; }
+  .smith-keys { flex-wrap: wrap; gap: 10px 18px; }
 }

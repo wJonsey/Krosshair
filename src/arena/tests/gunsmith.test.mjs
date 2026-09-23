@@ -739,3 +739,69 @@ test('a refill respects the rules about when builds apply', async () => {
   assert.equal(player.ammo.primary.mag, WEAPONS.talon.mag, 'with no builds it is the stock gun');
   room.close();
 });
+
+// The gunsmith screen was redrawn as slots around the gun. None of that is allowed to own the build: it
+// opens and closes a list and shows numbers, and every change still goes through the one fit handler.
+test('the redrawn gunsmith changes the build only through the fit handler it always had', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const render = shop.slice(shop.indexOf('function partCard'), shop.indexOf('// ------------------------------------------------------------------ games'));
+  assert.ok(!/smithDrafts\[/.test(render), 'drawing the screen must never write a build');
+  assert.ok(!/keepBuilds\(/.test(render), 'nor save one');
+  const ui = shop.slice(shop.indexOf('if (d.smithSlot) {'), shop.indexOf('// Gunsmith. Fitting a part'));
+  assert.ok(!/smithDrafts|keepBuilds|net\.send/.test(ui), 'opening a slot, going back and the stats toggle are presentation only');
+});
+
+test('the gunsmith keys do what a click does, and only what the footer offers', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const keys = shop.slice(shop.indexOf("// Keys on the gunsmith"), shop.indexOf('let lookupTimer'));
+  assert.match(keys, /onShopClick\(\{ dataset: \{ smithBack: '1' \} \}\)/, 'Escape goes through the back button');
+  assert.match(keys, /onShopClick\(\{ dataset: \{ smithPart: `\$\{smithSlot_\}:\$\{fitted\}` \} \}\)/, 'R is a click on the fitted part, which takes it off');
+  assert.match(keys, /if \(!fitted \|\| !attachmentsUnlocked/, 'R does nothing on an empty or locked slot');
+  const footer = shop.slice(shop.indexOf('const keys = ['), shop.indexOf('return `<div class="smith-screen'));
+  assert.match(footer, /smithPicking && part && unlocked \? \[\[codeLabel\('KeyR'\), 'Remove'\]\]/, 'Remove is only offered when R would work');
+  assert.match(footer, /codeLabel\('Escape'\)/, 'key names come from input.js');
+});
+
+test('the summary bars read the resolved gun, never numbers of their own', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /smithBars\(peeking \? built : base, shown\)/, 'the bars compare the same guns the rows do');
+  assert.match(shop, /const shown = peekBuild \? \(resolveWeapon\(weaponId, peekBuild\)/, 'and shown is the server’s own resolve');
+  const bars = shop.slice(shop.indexOf('const SMITH_BARS = ['), shop.indexOf('let barRange'));
+  for (const field of ['damage', 'cooldown', 'falloff', 'spread', 'recoil', 'scopeTime', 'speed', 'mag']) assert.ok(bars.includes(`w.${field}`), `${field} is read off the weapon`);
+});
+
+test('every slot glyph and callout is a slot that exists', async () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const { SLOTS } = await import('../shared/attachments.js');
+  for (const table of ['SLOT_GLYPHS', 'CALLOUT_AT']) {
+    const body = shop.slice(shop.indexOf(`const ${table} = {`), shop.indexOf('};', shop.indexOf(`const ${table} = {`)));
+    const keys = [...body.matchAll(/^\s*(\w+):|[{,]\s*(\w+):/gm)].map((m) => m[1] || m[2]).filter((k) => !['M', 'at'].includes(k));
+    for (const slot of SLOTS) assert.ok(keys.includes(slot), `${table} has nothing for ${slot}`);
+  }
+});
+
+// The turntable fills the floor under the slot callouts and the gun picker. A canvas takes the click
+// wherever it overlaps, which is exactly how a nudge to its position made a gun unpickable.
+test('the gunsmith turntable never takes a click from what it sits under', () => {
+  const css = readFileSync(new URL('../arena.css', import.meta.url), 'utf8');
+  assert.match(css, /\.smith-stage \{[^}]*pointer-events: none/, 'the stage has to let clicks through');
+  assert.ok(!/\.smith-stage \{[^}]*inset: -/.test(css), 'and must not reach up over the gun picker');
+});
+
+// .skin-stage is width: 100% for every other stage, and an explicit width beats left and right insets,
+// so the gunsmith's box silently ran the full width of the floor and the gun sat off to one side.
+test('the gunsmith stage box is sized by its insets, not the shared full width', () => {
+  const css = readFileSync(new URL('../arena.css', import.meta.url), 'utf8');
+  assert.match(css, /\.skin-stage \{[^}]*width: 100%/, 'the shared rule this has to undo');
+  assert.match(css, /\.smith-stage \{[^}]*inset: [^;]+;[^}]*width: auto/, 'without width: auto the insets do nothing');
+});
+
+// The side slots are a fixed width and the gun's box used to be a percentage, so at some sizes the two
+// crossed and a slot sat on the stock. Both now come from the one width.
+test('the gun box keeps clear of the side slots by their own width', () => {
+  const css = readFileSync(new URL('../arena.css', import.meta.url), 'utf8');
+  assert.match(css, /--beside: calc\(3% \+ var\(--callout-w\) \+ 16px\)/, 'the margin is worked out from the slot width');
+  assert.match(css, /\.smith-stage \{[^}]*inset: 13% var\(--beside\) 17% var\(--beside\)/, 'and the box uses it on both sides');
+  assert.match(css, /\.smith-screen\.picking \.smith-stage \{ right: calc\(var\(--list-w\) \+ 20px \+ var\(--callout-w\)/, 'and clears the list and the muzzle slot when it is open');
+  assert.match(css, /\.smith-callout \{ position: absolute; width: var\(--callout-w\)/, 'with the slots drawn at that same width');
+});

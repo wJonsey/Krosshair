@@ -137,7 +137,25 @@ with `up`, `down`, `left`, `right`, `confirm`, `back`, `tabPrev`, `tabNext`, and
 layer reads **raw** button codes, not the bind table: a menu button has to sit where every pad puts it,
 whatever the pilot rebound for the game.
 
+## Gunsmith screen
+
+`gunsmithHtml()` in `client/shop.js` draws the gun in the middle with its slots around it, a parts list
+that slides in from the right for the open slot, and the numbers bottom left. It is presentation only:
+every change to a build still goes through the `d.smithPart` click handler and `keepBuilds()`, and the
+Escape and R keys on that screen are synthetic clicks on the same buttons. The summary bars read the
+same `resolveWeapon` output as the detailed rows and only place each number against the rest of the guns.
+
+At 1920x1080 the slots sit around the gun. Below 1800 wide or 1000 tall they go in a row above the gun
+and a row below, with the numbers in a column of their own; below 1020 wide it all stacks. The gun's box
+is kept clear of the side slots by `--callout-w`, the slots' own width, and the camera fits the gun to
+that box whatever its shape (the `tab === 'gunsmith'` branch in the stage's `fit`).
+
 ## Traps that have already cost a day
+
+- **The gunsmith stage must stay `pointer-events: none` and `width: auto`.** The canvas takes the click
+  anywhere it overlaps, which once made a gun unpickable. `.skin-stage` is `width: 100%` for every other
+  stage, and an explicit width beats `left`/`right`, so without `width: auto` the box silently ran the
+  full width and the gun sat off to one side.
 
 - **`net.on` used to keep one handler per type.** It holds arrays now. If you register a second handler
   for a type, check it still holds arrays before assuming both run.

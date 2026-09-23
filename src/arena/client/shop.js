@@ -2,13 +2,14 @@
 // The menu redraws often, so every animation runs off a start time: a redraw mid-spin picks up where
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
-import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass } from '../shared/constants.js';
+import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass, xpForLevel } from '../shared/constants.js';
 // SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
 import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachmentsUnlocked, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
 import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, PUBLIC_FINISHES, PUBLIC_RARITIES } from '../shared/economy.js';
 import { bus, game } from './state.js';
+import { codeLabel } from './input.js';
 import { net } from './net.js';
 import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
@@ -67,6 +68,10 @@ let charmWeapon = 'talon';
 let smithDrafts = {};        // builds being worked on, by weapon. Nothing here is on the profile yet.
 let smithSlot_ = 'optic';    // the slot the bench is showing. One at a time beats six stacked.
 let smithHover = null;       // { slot, id } being considered, for the what-would-this-do preview
+let smithPicking = false;    // the parts list for the open slot is out. Presentation only: the build is untouched
+let smithListAt = 0;         // when it came out, so a redraw mid-slide carries on rather than starting again
+let smithDetail = false;     // every stat in rows, rather than the summary bars
+let smithLastGun = null;     // closing the list when the gun changes, since the slot may not exist on it
 let friends = null;          // [{ name, avatar, level, title, online }] once fetched
 let friendName = '';
 let stake = 10, target = 50, pick = 'heads';
@@ -272,7 +277,7 @@ function ensureStage() {
   const rim = new THREE.DirectionalLight('#ffb547', 1.4); rim.position.set(-3, 1, -4); scene.add(rim);
   const camera = new THREE.PerspectiveCamera(22, 2.4, 0.05, 50);
   const pivot = new THREE.Group(); scene.add(pivot);
-  stage = { canvas, renderer, scene, camera, pivot, key: '', running: false };
+  stage = { canvas, renderer, scene, camera, pivot, rim, key: '', running: false };
   return stage;
 }
 function sizeStage(s) {
@@ -323,9 +328,20 @@ function showOnStage(subject) {
   const length = Math.max(size.z, size.y * 2.4, 0.35);
   // A narrow stage pulls the camera back so the whole gun stays in frame.
   s.fit = () => {
+    if (tab === 'gunsmith') {
+      // The gunsmith gives the gun a box of its own, and the box is a different shape at every screen
+      // size, so fit to it: the length to its width, the height to its height, whichever is tighter.
+      // Fitting by length alone clipped a pistol's slide and a rifle's stock in a narrow box.
+      const t = Math.tan((s.camera.fov * Math.PI / 180) / 2);
+      const far = Math.max(size.z / (2 * 0.88 * t * s.camera.aspect), size.y / (2 * 0.8 * t), 0.3);
+      s.camera.position.set(far, far * 0.16, 0);
+      s.camera.lookAt(0, 0, 0);
+      return;
+    }
     const pull = Math.max(1, 1.9 / s.camera.aspect);
     s.camera.position.set(length * (subject.charm ? 1.2 : 1.45) * pull, length * 0.28 * pull, 0);
-    s.camera.lookAt(0, subject.charm ? -0.04 : 0, 0);
+    // On the bench the gun sits a little high, clear of the numbers in the corner below it.
+    s.camera.lookAt(0, subject.charm ? -0.04 : tab === 'gunsmith' ? -length * 0.06 : 0, 0);
   };
   s.fit();
 }
@@ -359,8 +375,12 @@ function spin() {
   } else {
     // On the Charms tab the gun is given a shake every few seconds so you see the charm move.
     const shake = s.charm ? Math.max(0, Math.sin(t * 1.1)) ** 6 * Math.sin(t * 17) * 0.09 : 0;
-    s.pivot.rotation.y = Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
-    s.pivot.rotation.x = Math.sin(t * 0.3) * 0.06 + shake * 0.6;
+    // On the gunsmith the gun holds side on, muzzle to the right, and only breathes: the slot callouts
+    // are placed where the parts are, and a gun swinging half a turn would leave them pointing at air.
+    const bench = tab === 'gunsmith';
+    s.pivot.rotation.y = bench ? Math.sin(t * 0.35) * 0.1 - 0.06 : Math.sin(t * 0.45) * 0.65 - 0.15 + shake;
+    s.pivot.rotation.x = bench ? Math.sin(t * 0.27) * 0.025 : Math.sin(t * 0.3) * 0.06 + shake * 0.6;
+    s.rim.color.set(bench ? '#5aa9ff' : '#ffb547');
   }
   if (s.charm) updateCharm(s.charm, Math.min(0.05, t - (s.lastT || t)) || 1 / 60);
   s.lastT = t;
@@ -387,6 +407,16 @@ function stageSubject() {
 // the column became taller than the room left for it and its bottom, with the last row of skins in it,
 // sat below the fold. Measure the header rather than guess at it.
 function sizeShopHead() {
+  // The gunsmith has no shop header: it fills what the menu leaves between its nav and its footer. A
+  // floor under which the screen scrolls rather than squashing the gun to nothing.
+  const bench = document.querySelector('.smith-screen');
+  if (bench) {
+    const top = Math.max(0, bench.getBoundingClientRect().top);
+    const foot = document.querySelector('.menu-foot');
+    const height = Math.max(560, Math.round(innerHeight - top - (foot ? foot.getBoundingClientRect().height : 0) - 14));
+    if (bench.style.getPropertyValue('--smith-h') !== `${height}px`) bench.style.setProperty('--smith-h', `${height}px`);
+    return;
+  }
   const page = document.querySelector('.shop-page');
   const head = page?.querySelector('.shop-head');
   if (!page || !head) return;
@@ -748,32 +778,112 @@ function partChips(part, base) {
   if (part.set?.suppressed) chips.push('<em class="flat">Off the minimap</em>');
   return chips.join('');
 }
+// A part in the open slot's list: a compact row, its price in match credits, what it trades.
 function partCard(base, slot, part, fitted, unlocked) {
   const on = fitted === part.id;
-  return `<button type="button" class="smith-part${on ? ' on' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
-    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Fitted</em>' : `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>`}</span>
+  // Marked from state, not :hover: the list is redrawn under a still cursor, which drops the hover.
+  const peek = smithHover?.slot === slot && smithHover.id === part.id;
+  return `<button type="button" class="smith-part${on ? ' on' : ''}${peek ? ' peek' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
+    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Equipped</em>' : unlocked ? `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>` : `<em class="smith-lock">Locked · level ${ATTACHMENT_LEVEL}</em>`}</span>
     <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
 }
-// The rail across the top: every slot this gun takes, what is in it, and which one the bench is open
-// on. Six stacked sections meant scrolling past five of them to reach the one you wanted.
-function smithRail(base, build) {
+// Small line drawings for the slots, so the unlock preview and the callouts have something to show
+// that is not a word. Drawn, not images: the game ships no attachment art.
+const SLOT_GLYPHS = {
+  optic: '<path d="M3 9h3M18 9h3M7 6h10v6H7zM10 12v3h4v-3"/>',
+  muzzle: '<path d="M3 9h10M13 6h6v6h-6zM15 6v6M17 6v6"/>',
+  barrel: '<path d="M2 9h20M2 7h14v4H2z"/>',
+  mag: '<path d="M9 4h6l1 14h-6zM10 8h5"/>',
+  stock: '<path d="M22 7H10l-7 4v3h5l4-3h10z"/>',
+  grip: '<path d="M4 6h16M10 6l-1 12h4l1-12"/>',
+};
+const glyph = (slot) => `<svg class="smith-glyph" viewBox="0 0 24 20" aria-hidden="true">${SLOT_GLYPHS[slot] || ''}</svg>`;
+// Where each slot sits around the gun. The turntable holds the gun side on with the muzzle to the
+// right, so the callouts are placed where the part is on it rather than in a list.
+const CALLOUT_AT = { stock: 'at-stock', optic: 'at-optic', barrel: 'at-barrel', muzzle: 'at-muzzle', mag: 'at-mag', grip: 'at-grip' };
+// On a smaller screen the slots go in a row above the gun and a row below. Each row is centred on the
+// slots this gun actually takes, so a pistol's four do not bunch up at one end.
+const CALLOUT_ROWS = [['stock', 'optic', 'barrel'], ['mag', 'grip', 'muzzle']];
+function calloutColumn(slot, slots) {
+  const row = CALLOUT_ROWS.find((list) => list.includes(slot)).filter((entry) => slots.includes(entry));
+  return 1 + (3 - row.length) + row.indexOf(slot) * 2;
+}
+// The callouts around the gun: every slot this gun takes, what is in it, and which one is open.
+function smithRail(base, build, unlocked) {
   const slots = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
   if (!slots.includes(smithSlot_)) smithSlot_ = slots[0] || 'optic';
-  return `<div class="smith-rail" role="tablist">${slots.map((slot) => {
+  return `<div class="smith-callouts" role="tablist">${slots.map((slot) => {
     const part = ATTACHMENTS[build[slot]];
-    return `<button type="button" role="tab" aria-selected="${slot === smithSlot_}" class="smith-tab${slot === smithSlot_ ? ' active' : ''}${part ? ' filled' : ''}" data-smith-slot="${slot}">
-      <small>${SLOT_NAMES[slot]}</small><b>${part ? part.name : 'Empty'}</b></button>`;
+    const open = smithPicking && slot === smithSlot_;
+    const count = partsFor(base, slot).length;
+    // An empty optic is still a sight: say which one the gun came with.
+    const name = part ? part.name : slot === 'optic' ? `${SIGHT_NAMES[base.sight] || 'Stock'}` : 'None';
+    return `<button type="button" role="tab" aria-selected="${open}" class="smith-callout ${CALLOUT_AT[slot]}${open ? ' active' : ''}${part ? ' filled' : ''}" style="--col:${calloutColumn(slot, slots)}" data-smith-slot="${slot}">
+      <span class="smith-callout-top">${glyph(slot)}<small>${SLOT_NAMES[slot]}</small><em>${unlocked ? count : 0}/${count}</em></span><b>${name}</b></button>`;
   }).join('')}</div>`;
 }
 // Only the open slot draws its parts.
 function smithSlotBody(base, build, unlocked) {
   const parts = partsFor(base, smithSlot_);
-  if (!parts.length) return '<p class="muted">Nothing fits this slot on this gun.</p>';
-  return `<div class="gear-grid smith-grid">${parts.map((entry) => partCard(base, smithSlot_, entry, build[smithSlot_], unlocked)).join('')}</div>`;
+  if (!parts.length) return '<p class="smith-none">Nothing fits this slot on this gun.</p>';
+  return `<div class="smith-grid">${parts.map((entry) => partCard(base, smithSlot_, entry, build[smithSlot_], unlocked)).join('')}</div>`;
+}
+// The summary bars. Every one is a number the gun already has, read off the same resolved weapon the
+// server fires; the bar only places it against the rest of the guns so its length means something.
+// `up` is which way is better, so a longer bar is always the better gun.
+const SMITH_BARS = [
+  ['damage', 'Damage', (w) => w.damage * w.pellets, true, (v, w) => `${Math.round(w.damage)}${w.pellets > 1 ? `×${w.pellets}` : ''}`],
+  ['rate', 'Fire rate', (w) => 60 / w.cooldown, true, (v) => `${Math.round(v)}`],
+  ['range', 'Range', (w) => (w.falloff ? w.falloff[1] : null), true, (v) => (v == null ? 'Full' : `${Math.round(v)} m`)],
+  ['accuracy', 'Accuracy', (w) => w.spread?.ads, false, null],
+  ['control', 'Control', (w) => w.recoil?.kick, false, null],
+  ['aim', 'Aim speed', (w) => w.scopeTime, false, (v) => `${v.toFixed(2)}s`],
+  ['mobility', 'Mobility', (w) => w.speed, true, (v) => `${Math.round(v * 100)}%`],
+  ['mag', 'Magazine', (w) => w.mag, true, (v) => `${Math.round(v)}`],
+];
+let barRange = null;
+function barSpan() {
+  if (barRange) return barRange;
+  barRange = {};
+  for (const [id, , read] of SMITH_BARS) {
+    const values = smithGuns.map(read).filter((v) => typeof v === 'number');
+    barRange[id] = [Math.min(...values), Math.max(...values)];
+  }
+  return barRange;
+}
+// 0..1 along the bar. Stock guns fill the middle of it so a part that stretches a number has room.
+function barAt(id, read, up, weapon) {
+  const value = read(weapon);
+  if (value == null) return 1;   // no falloff: full damage at any range
+  const [lo, hi] = barSpan()[id];
+  if (hi === lo) return 0.6;
+  const t = up ? (value - lo) / (hi - lo) : (hi - value) / (hi - lo);
+  return Math.max(0.04, Math.min(1, 0.14 + t * 0.78));
+}
+// What each bar showed last time, so a change slides from there rather than jumping. The page is
+// redrawn wholesale, so a transition would never see the old width: the keyframe is told it instead.
+const lastBars = {};
+function smithBars(from, to) {
+  return SMITH_BARS.map(([id, label, read, up, show]) => {
+    const was = barAt(id, read, up, from), now = barAt(id, read, up, to);
+    const key = `${weaponId}:${id}`;
+    const prior = lastBars[key] ?? now;
+    lastBars[key] = now;
+    const valueNow = read(to), valueWas = read(from);
+    const moved = Math.abs(now - was) > 0.002;
+    // How far the number moved, signed by whether that is better: spread down 20% is "+20%" on an
+    // Accuracy bar, because the bar got longer. Signing it by the raw number read backwards.
+    const change = moved && typeof valueWas === 'number' && valueWas ? Math.round(Math.abs((valueNow / valueWas) - 1) * 100) : 0;
+    const text = moved && change ? `<em class="${now > was ? 'up' : 'down'}">${now > was ? '+' : '-'}${change}%</em>` : show ? show(valueNow, to) : '';
+    const pct = (n) => `${(n * 100).toFixed(1)}%`;
+    return `<div class="smith-bar${moved ? (now > was ? ' up' : ' down') : ''}"><span>${label}</span>
+      <i style="--from:${pct(prior)};--now:${pct(now)};--lo:${pct(Math.min(was, now))};--hi:${pct(Math.max(was, now))}"></i><b>${text}</b></div>`;
+  }).join('');
 }
 function gunsmithHtml() {
   // The Skins tab shares this gun and lets you pick the knife, which takes no parts.
   if (!moddable(WEAPONS[weaponId])) weaponId = smithGuns[0].id;
+  if (smithLastGun !== weaponId) { smithLastGun = weaponId; smithPicking = false; }
   const base = WEAPONS[weaponId];
   const build = workingBuild(weaponId);
   const built = resolveWeapon(weaponId, build) || base;
@@ -783,60 +893,70 @@ function gunsmithHtml() {
   const peekBuild = smithHover && smithHover.slot ? { ...build, [smithHover.slot]: build[smithHover.slot] === smithHover.id ? null : smithHover.id } : null;
   const shown = peekBuild ? (resolveWeapon(weaponId, peekBuild) || built) : built;
   const peeking = Boolean(peekBuild);
+  const peekOff = peeking && build[smithHover.slot] === smithHover.id;
   const level = game.profile.level || 1;
+  const xp = game.profile.xp || 0;
   const unlocked = attachmentsUnlocked(level);
   const partsCost = buildCost(build);
   const fitted = GUN_SLOTS.filter((slot) => build[slot]).length;
+  const slotsWith = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
+  const kills = game.profile.weapons?.[weaponId]?.kills || 0;
+
+  // Top right: the real progression. Parts all unlock together at one pilot level, so until then the
+  // bar is the road to it and the icons are what it opens; after that it is the pilot's own level.
+  const progress = unlocked
+    ? Math.max(0, Math.min(1, (xp - xpForLevel(level)) / Math.max(1, xpForLevel(level + 1) - xpForLevel(level))))
+    : Math.max(0, Math.min(1, xp / Math.max(1, xpForLevel(ATTACHMENT_LEVEL))));
+  const levelBlock = unlocked
+    ? `<small>Pilot level</small><b>Level ${level}</b><i class="smith-xp"><s style="width:${(progress * 100).toFixed(1)}%"></s></i><span>${plural(kills, 'kill')} with this gun</span>`
+    : `<small>Attachments unlock</small><b>Level ${ATTACHMENT_LEVEL}</b><i class="smith-xp"><s style="width:${(progress * 100).toFixed(1)}%"></s></i><span class="smith-next">Next unlock ${slotsWith.map((slot) => `<em title="${SLOT_NAMES[slot]}">${glyph(slot)}</em>`).join('')}</span>`;
+
   const guns = WEAPON_CLASSES.map((c) => {
     const list = smithGuns.filter((weapon) => weaponClass(weapon) === c.id);
-    return list.length ? `<p class="shop-class">${c.name}</p>${list.map((weapon) => weaponButton(weapon, smithMark(weapon.id))).join('')}` : '';
+    return list.length ? `<span class="smith-class"><small>${c.name}</small>${list.map((weapon) => `<button type="button" class="smith-gun${weapon.id === weaponId ? ' on' : ''}${smithMark(weapon.id)}" data-weapon="${weapon.id}">${weapon.short || weapon.name}</button>`).join('')}</span>` : '';
   }).join('');
-  const shots = Math.ceil(100 / (shown.damage * shown.pellets));
-  const head = `<div class="smith-head">
-    <span><small>Damage</small><b>${Math.round(shown.damage)}${shown.pellets > 1 ? ` × ${shown.pellets}` : ''}</b><i>${shots === 1 ? 'one-shot body kill' : `${shots} body shots`}</i></span>
-    <span><small>Fire rate</small><b>${Math.round(60 / shown.cooldown)}</b><i>rpm${shown.auto ? ' · auto' : ''}</i></span>
-    <span><small>Sight</small><b class="${shown.sight === base.sight ? '' : 'lit'}">${SIGHT_NAMES[shown.sight] || shown.sight}</b><i>${[shown.sight === base.sight ? 'stock' : `was ${SIGHT_NAMES[base.sight] || base.sight}`, shown.suppressed ? 'suppressed' : ''].filter(Boolean).join(' · ')}</i></span></div>`;
+
   const stats = SMITH_STATS.map(([group, rows]) => {
     const body = rows.map((row) => smithRow(peeking ? built : base, shown, row)).join('');
-    return body ? `<div class="smith-group"><p class="eyebrow sub">${group}</p>${body}</div>` : '';
+    return body ? `<div class="smith-group"><p class="smith-eyebrow">${group}</p>${body}</div>` : '';
   }).join('');
-  const save = `<div class="button-row smith-actions">
-    ${fitted && unlocked ? '<button type="button" class="ghost-button" data-smith-clear="1">Strip it</button>' : ''}
-    <em class="smith-state on">${fitted ? `${plural(fitted, 'part')} fitted · kept` : 'Stock'}</em></div>`;
-  const slotsWith = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
-  return `<div class="shop-gunsmith">
-    <div class="smith-guns">
-      <section class="mode-block gun-block">
-        <header class="block-head"><small>01 // WORKBENCH</small><b>Pick a gun</b><span>Every gun keeps its own build.</span></header>
-        <nav class="gun-grid" aria-label="Weapons">${guns}</nav>
+  const since = Math.min(1, now() - smithListAt).toFixed(3);
+  const part = ATTACHMENTS[build[smithSlot_]];
+  const keys = [
+    // Locked, a click on a part does nothing, so the footer does not offer one.
+    ...(smithPicking && !unlocked ? [] : [['Click', smithPicking ? 'Equip' : 'Select slot']]),
+    ['Hover', 'Preview'],
+    ...(smithPicking ? [[codeLabel('Escape'), 'Back']] : []),
+    ...(smithPicking && part && unlocked ? [[codeLabel('KeyR'), 'Remove']] : []),
+  ];
+
+  return `<div class="smith-screen${smithPicking ? ' picking' : ''}${peeking ? ' peeking' : ''}">
+    <header class="smith-top">
+      <div class="smith-title"><small>Gunsmith · ${base.tag}</small><h2>${base.name}</h2></div>
+      <nav class="smith-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" class="on">Attachments</button>
+        <button type="button" role="tab" aria-selected="false" data-page="locker" data-smith-skins="1">Customise</button>
+      </nav>
+      <div class="smith-level">${levelBlock}</div>
+    </header>
+    <nav class="smith-guns" aria-label="Weapons">${guns}</nav>
+    <div class="smith-floor">
+      <div id="skin-stage" class="skin-stage smith-stage"></div>
+      ${smithRail(base, build, unlocked)}
+      <aside class="smith-list" style="--since:${since}s" aria-hidden="${!smithPicking}">
+        <header><button type="button" class="smith-back" data-smith-back="1" aria-label="Back">‹</button><span><small>${fitted}/${slotsWith.length} equipped</small><b>${SLOT_NAMES[smithSlot_] || 'Parts'}</b></span></header>
+        ${unlocked ? '' : `<p class="smith-locked-note">Locked. Attachments unlock at level ${ATTACHMENT_LEVEL}. You’re level ${level}.</p>`}
+        ${smithPicking ? smithSlotBody(base, build, unlocked) : ''}
+      </aside>
+      <section class="smith-stats">
+        <header><small>${peekOff ? 'If you take that off' : peeking ? 'If you equip that' : fitted ? 'As built' : 'Stock'}</small><button type="button" class="smith-detail-toggle" data-smith-detail="1">${smithDetail ? 'Summary' : 'All stats'}</button></header>
+        ${smithDetail ? `<div class="smith-groups">${stats}</div>` : `<div class="smith-bars">${smithBars(peeking ? built : base, shown)}</div>`}
+        <footer><span><small>Armoury price</small><b>$${base.cost + partsCost}</b>${partsCost ? `<i>gun $${base.cost} + parts $${partsCost}</i>` : '<i>match credits, not coins</i>'}</span>
+          ${fitted && unlocked ? '<button type="button" class="smith-strip" data-smith-clear="1">Remove all</button>' : ''}</footer>
       </section>
     </div>
-
-    <div class="smith-stage-col">
-      <div class="panel skin-preview smith-preview">
-        <div id="skin-stage" class="skin-stage"></div>
-        <div class="smith-id">
-          <small>${base.tag}</small><h3>${base.name}</h3>
-          <span>${fitted ? `${fitted} of ${slotsWith.length} slots filled` : 'Stock. Nothing bolted on.'}</span>
-          <p class="smith-cost">$${base.cost + partsCost}</p>
-          <small class="smith-price-note">Buying it in a match${partsCost ? ` · gun $${base.cost} + parts $${partsCost}` : ''}. Parts cost no coins.</small>
-          ${save}
-        </div>
-      </div>
-      <section class="mode-block smith-bench">
-        <header class="block-head"><small>02 // BENCH</small><b>${SLOT_NAMES[smithSlot_] || 'Parts'}</b><span>${fitted}/${slotsWith.length} fitted. Hover a part to see what it would do.</span></header>
-        ${smithRail(base, build)}
-        ${unlocked ? '' : `<div class="panel smith-locked"><b>Locked</b><span>Attachments unlock at level ${ATTACHMENT_LEVEL}. You\u2019re level ${level}.</span></div>`}
-        ${smithSlotBody(base, build, unlocked)}
-      </section>
-    </div>
-
-    <div class="smith-main">
-      <section class="mode-block smith-stats${peeking ? ' peeking' : ''}">
-        <header class="block-head"><small>03 // THE GUN</small><b>${peeking ? 'If you fitted that' : fitted ? 'As you built it' : 'Stock'}</b><span>${peeking ? 'Against the gun as it is now.' : 'Green is better, red is worse. Every part gives something up.'}</span></header>
-        ${head}<div class="smith-groups">${stats}</div>
-      </section>
-    </div></div>`;
+    <footer class="smith-keys">${keys.map(([key, label]) => `<span><kbd>${key}</kbd>${label}</span>`).join('')}<span class="smith-kept">${fitted ? `${plural(fitted, 'part')} equipped · saved` : 'Stock · nothing equipped'}</span></footer>
+  </div>`;
 }
 
 // ------------------------------------------------------------------ games
@@ -1111,6 +1231,7 @@ export function shopPageHtml(page = 'shop', lead = '') {
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
   if ((tab === 'crates' || tab === 'market') && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
   const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
+  if (page === 'gunsmith') return `<section class="page-wide shop-page shop-gunsmith-page">${lead}${body}</section>`;
   const tabsHtml = tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : '';
   return `<section class="page-wide shop-page shop-${page}${tab === 'market' ? ' shop-market' : ''}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
       ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
@@ -1155,7 +1276,17 @@ export function onShopClick(button) {
     request({ type: 'shop', action: 'gear', kind, id });
     return true;
   }
-  if (d.smithSlot) { smithSlot_ = d.smithSlot; smithHover = null; play('ui'); return true; }
+  if (d.smithSlot) {
+    // Clicking the slot that is already open closes it again, the way a second press backs out.
+    if (smithPicking && smithSlot_ === d.smithSlot) { smithPicking = false; play('uiBack'); return true; }
+    if (!smithPicking) smithListAt = now();
+    smithSlot_ = d.smithSlot; smithPicking = true; smithHover = null; play('ui'); return true;
+  }
+  if (d.smithBack) { smithPicking = false; smithHover = null; play('uiBack'); return true; }
+  if (d.smithDetail) { smithDetail = !smithDetail; play('ui'); return true; }
+  // Customise is the Locker's skins, which already exist. Point the Locker at that tab and let the
+  // page button do the navigating.
+  if (d.smithSkins) { lastTab.locker = 'inventory'; return false; }
 
   // Gunsmith. Fitting a part is local; the server only hears about it on Save.
   if (d.smithPart) {
@@ -1264,6 +1395,19 @@ export function onShopClick(button) {
   }
   return false;
 }
+// Keys on the gunsmith: back out of a slot's list, or take off what is in it. Both go through the same
+// click handling the mouse uses, so a key can do nothing a click could not, and only the ones shown in
+// the footer do anything.
+addEventListener('keydown', (event) => {
+  if (tab !== 'gunsmith' || !smithPicking || event.repeat || !ctx?.onShop()) return;
+  if (event.target?.closest?.('input, textarea, select')) return;
+  if (event.code === 'Escape') { event.preventDefault(); if (onShopClick({ dataset: { smithBack: '1' } })) ctx.rerender(); return; }
+  if (event.code !== 'KeyR') return;
+  const fitted = workingBuild(weaponId)[smithSlot_];
+  if (!fitted || !attachmentsUnlocked(game.profile?.level || 1)) return;
+  event.preventDefault();
+  if (onShopClick({ dataset: { smithPart: `${smithSlot_}:${fitted}` } })) ctx.rerender();
+});
 let lookupTimer = null;
 // Considering a part: the stats show what the gun would become. Only the numbers are redrawn, so
 // moving the mouse along a row of parts does not rebuild the bench under the cursor.
