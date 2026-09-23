@@ -205,11 +205,23 @@ test('a bot with nowhere to walk still heads for the circle', () => {
   // be fleeing: one boxed in by scenery has every hop blocked, which is correct and made this flaky.
   const bot = [...room.players.values()].find((p) => p.bot && p.alive);
   assert.ok(bot, 'no bots alive to test with');
-  const open = room.nav.nodes.filter((node) => node.y < 0.2 && room.world.bodyFree(node.x, node.y, node.z));
+  // A spot far out with a clear run towards the circle, which is the case being tested. One boxed in by
+  // scenery has every hop blocked, and holding there is right, so it is not what this is about.
   const to = room.storm.to;
-  const far = open.map((node) => ({ node, gap: Math.hypot(node.x - to.x, node.z - to.z) })).sort((a, b) => b.gap - a.gap)[0];
+  const clearTowards = (node) => {
+    const dx = to.x - node.x, dz = to.z - node.z, far = Math.hypot(dx, dz) || 1;
+    for (let k = 1; k <= 12; k += 1) {
+      const x = node.x + (dx / far) * k * 2, z = node.z + (dz / far) * k * 2;
+      if (!room.world.bodyFree(x, node.y, z) || room.world.groundBelow(x, node.y + 0.05, z) < node.y - 0.3) return false;
+    }
+    return true;
+  };
+  const open = room.nav.nodes.filter((node) => node.y < 0.2 && room.world.bodyFree(node.x, node.y, node.z));
+  const far = open.map((node) => ({ node, gap: Math.hypot(node.x - to.x, node.z - to.z) })).sort((a, b) => b.gap - a.gap).find(({ node }) => clearTowards(node));
+  assert.ok(far, 'nowhere on the island has a clear run towards the circle');
   Object.assign(bot, { x: far.node.x, y: far.node.y, z: far.node.z });
   bot.ai.path = null; bot.ai.repathAt = 0; bot.ai.holdUntil = 0;
+  bot.hp = 1e9;   // another bot's lucky shot in the next two seconds is not what this is about either
   assert.ok(room.botMustMove(bot, performance.now() / 1000), 'the bot should be out in the storm where it was put');
   step(room, 2);
   assert.ok(bot.ai.path, 'a fleeing bot with no route got no path at all, so it will stand still');
