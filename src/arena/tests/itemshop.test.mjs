@@ -11,7 +11,7 @@ import { buyItemShop, buySkin, scrapSkin, tradeUp } from '../server/economy.js';
 import { CRATES, FINISHES, crateFinishes, finishInfo } from '../shared/economy.js';
 import { COSMETICS, cosmeticUnlocked } from '../shared/constants.js';
 import { ALL_SETS as ITEM_SETS, EXCLUSIVE_COSMETICS, EXCLUSIVE_FINISHES, installCatalogue, publicCatalogue } from '../server/itemsets.js';
-import { SHOP_SETS_PER_DAY, bundleOn, bundlePrice, bundleSet, inShop, itemPrice, lastSeen, released, runway, seenLine, setValue, shopFor } from '../shared/itemshop.js';
+import { SHOP_SETS_PER_DAY, knownSets, bundleOn, bundlePrice, bundleSet, inShop, itemPrice, lastSeen, released, runway, seenLine, setValue, shopFor } from '../shared/itemshop.js';
 
 // The catalogue lives server side now, so a test installs it the way the server does at boot.
 installCatalogue();
@@ -175,4 +175,63 @@ test('every exclusive has its art, and none of them animate', () => {
       else if (kind === 'pattern') assert.ok(read('skins.js').includes(`${item.id}:`), `pattern ${item.id} has no painter`);
     }
   }
+});
+
+// The shop turns over at midnight, but the page only ever worked out what to show when it was drawn and
+// the countdown was written once and then left. Left open, it sat on yesterday's four sets with a frozen
+// clock; the only way to a new day's shop was a reload.
+test('the shop deals a different hand once there is more than one set to deal', () => {
+  // Far enough in that plenty have landed. Early on there is only one set out and the shop shows it
+  // every day: that is the release schedule doing its job, not the rotation failing.
+  const from = '2027-03-01';
+  assert.ok(knownSets(from).length > SHOP_SETS_PER_DAY, `only ${knownSets(from).length} sets out by ${from}, so nothing could rotate`);
+  const first = shopFor(from).map((set) => set.id).join(',');
+  let moved = false;
+  for (let i = 1; i <= 14 && !moved; i += 1) moved = shopFor(dayAfter(from, i)).map((set) => set.id).join(',') !== first;
+  assert.ok(moved, 'a fortnight of days all dealt the same sets');
+});
+
+// Worth stating outright, because it reads as a broken shop: with one set released the shop shows that
+// one set every day, and there is nothing the page can do about it.
+test('one set released means one set in the shop, every day', () => {
+  const only = ITEM_SETS.map((set) => set.debut).sort()[0];
+  assert.equal(knownSets(only).length, 1, 'the first day should have exactly the first set');
+  assert.equal(shopFor(only).length, 1, 'and the shop can only show what exists');
+  assert.equal(shopFor(dayAfter(only, 30)).map((s) => s.id).join(), shopFor(only).map((s) => s.id).join(),
+    'until another lands, the hand cannot change');
+});
+
+test('the page notices midnight instead of waiting to be reloaded', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const ticker = shop.slice(shop.indexOf('let shopDay = dateKey();'), shop.indexOf("bus.on('itemshop'"));
+  assert.match(ticker, /setInterval/, 'nothing runs, so the clock cannot tick');
+  assert.match(ticker, /#item-clock[\s\S]*textContent = clock\(untilRotation\(\)\)/, 'the countdown is never rewritten');
+  assert.match(ticker, /const today = dateKey\(\);[\s\S]*if \(today === shopDay\) return;/, 'the day is never compared, so the turnover is missed');
+  assert.match(ticker, /net\.send\(\{ type: 'itemshop' \}\)/, 'a set debuting today is only in the catalogue the server has');
+  assert.match(ticker, /redraw\(\)/, 'nothing redraws, so the new hand is never shown');
+});
+
+// The reply has to be its own message: config carries the login and would re-run it.
+test('asking for the new shop does not re-run the login', () => {
+  const server = readFileSync(new URL('../multiplayer-server.mjs', import.meta.url), 'utf8');
+  const route = server.slice(server.indexOf("message.type === 'itemshop'"), server.indexOf("message.type === 'dev-online'"));
+  assert.match(route, /type: 'itemshop', itemShop: publicCatalogue\(dateKey\(\)\)/, 'it must answer with today, on its own message');
+  assert.ok(!/type: 'config'/.test(route), 'a config reply would reset loginRequired and resume the session again');
+});
+
+// The lesson from the party invite that sent perfectly and was dropped on arrival.
+test('the client actually handles the reply', () => {
+  const net = readFileSync(new URL('../client/net.js', import.meta.url), 'utf8');
+  assert.match(net, /message\.type === 'itemshop'/, 'the server would answer into a void');
+  assert.match(net, /installShopCatalogue\(message\.itemShop\)/, 'the new catalogue is never installed');
+  assert.match(net, /bus\.emit\('itemshop'\)/, 'and nothing tells the page to draw it');
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.match(shop, /bus\.on\('itemshop', redraw\)/, 'the page never listens for it');
+});
+
+test('the server only ever hands over sets that have already landed', () => {
+  const today = publicCatalogue('2026-08-10');
+  for (const set of today.sets) assert.ok(set.debut <= '2026-08-10', `${set.name} is not out yet`);
+  const later = publicCatalogue('2027-08-10');
+  assert.ok(later.sets.length >= today.sets.length, 'the catalogue only ever grows');
 });

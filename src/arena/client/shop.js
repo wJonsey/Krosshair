@@ -8,7 +8,7 @@ import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachme
 import { bundleOn, bundlePrice, itemName, itemPrice, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
 import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, PUBLIC_FINISHES, PUBLIC_RARITIES } from '../shared/economy.js';
-import { game } from './state.js';
+import { bus, game } from './state.js';
 import { net } from './net.js';
 import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
@@ -1011,6 +1011,21 @@ function openTab(id) {
 // so this only draws what the day deals. Dev only while it is being built: the server refuses everyone else,
 // and this hides the tab, so nobody spends coins on a shop that is not finished.
 const clock = (ms) => { const s = Math.floor(ms / 1000); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+// The countdown was written once and then left, so it sat at whatever it said when the page opened and
+// the shop never noticed midnight going past: the same four sets until you reloaded. It ticks now, and
+// when the day turns it asks the server for the new catalogue, because a set debuting today is not in
+// the one handed over at connect. The reply redraws the page.
+let shopDay = dateKey();
+setInterval(() => {
+  const face = document.querySelector('#item-clock');
+  if (face) face.textContent = clock(untilRotation());
+  const today = dateKey();
+  if (today === shopDay) return;
+  shopDay = today;
+  net.send({ type: 'itemshop' });
+  redraw();
+}, 1000);
+bus.on('itemshop', redraw);
 const ITEM_DAY = { weekday: 'long', day: 'numeric', month: 'short' };
 
 let itemPick = null;                 // { set, kind, id } being looked at on the turntable

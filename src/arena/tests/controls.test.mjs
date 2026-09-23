@@ -61,3 +61,23 @@ test('the server keeps controller binds and the aim assist switch, and drops any
   profiles.savePrefs(token, { settings: { aimAssist: 'yes please' } });
   assert.equal(profiles.get(token).settings.aimAssist, undefined);
 });
+
+// Tab is the scoreboard and is wanted for the royale inventory, so the island map moved off it onto a
+// key of its own rather than the two sharing one: that is how walking and sprinting went wrong before.
+test('the royale map has its own key, and it is not the scoreboard', () => {
+  const binds = Object.fromEntries([...block('DEFAULT_BINDS').matchAll(/(\w+): \['([^']*)'(?:, '([^']*)')?/g)].map((m) => [m[1], [m[2], m[3] || null]]));
+  assert.deepEqual(binds.map, ['KeyM', null], 'the map must be on M');
+  assert.equal(binds.scoreboard[0], 'Tab', 'and the scoreboard stays on Tab');
+  assert.ok(!Object.entries(binds).some(([id, keys]) => id !== 'map' && keys.includes('KeyM')), 'M is doing something else as well');
+  const royale = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
+  assert.match(royale, /const showMap = held\(player\.keys \|\| new Set\(\), 'map'\)/, 'the island still opens on the scoreboard key');
+  assert.ok(!/'scoreboard'/.test(royale), 'nothing in royale should be reading the scoreboard key any more');
+});
+
+test('the map is listed so it can be rebound, and needs no controller button', () => {
+  const actions = source.slice(source.indexOf('export const ACTIONS'), source.indexOf('export const DEFAULT_BINDS'));
+  assert.match(actions, /\['map', 'Map \(royale\)', 'Team'\]/, 'an action nobody can see in Controls cannot be rebound');
+  // The island map was never reachable on a controller: only interact and armoury press a key for the
+  // pad, so this is not a thing to find a spare button for.
+  assert.ok(!padActions.includes('map'), 'every pad button is already taken, so adding one would fail its own test');
+});

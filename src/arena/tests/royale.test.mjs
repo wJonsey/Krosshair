@@ -201,8 +201,17 @@ test('a bot with nowhere to walk still heads for the circle', () => {
   // Every route request fails, which is the case that used to leave them standing.
   room.nav.path = () => null;
   step(room, 120);
-  const bot = [...room.players.values()].find((p) => p.bot && p.alive && room.botMustMove(p, performance.now() / 1000));
-  if (!bot) { room.close(); return; }  // nobody out in it yet: nothing to assert on
+  // Pick a bot and stand it in the open well outside the circle, rather than taking whichever happens to
+  // be fleeing: one boxed in by scenery has every hop blocked, which is correct and made this flaky.
+  const bot = [...room.players.values()].find((p) => p.bot && p.alive);
+  assert.ok(bot, 'no bots alive to test with');
+  const open = room.nav.nodes.filter((node) => node.y < 0.2 && room.world.bodyFree(node.x, node.y, node.z));
+  const to = room.storm.to;
+  const far = open.map((node) => ({ node, gap: Math.hypot(node.x - to.x, node.z - to.z) })).sort((a, b) => b.gap - a.gap)[0];
+  Object.assign(bot, { x: far.node.x, y: far.node.y, z: far.node.z });
+  bot.ai.path = null; bot.ai.repathAt = 0; bot.ai.holdUntil = 0;
+  assert.ok(room.botMustMove(bot, performance.now() / 1000), 'the bot should be out in the storm where it was put');
+  step(room, 2);
   assert.ok(bot.ai.path, 'a fleeing bot with no route got no path at all, so it will stand still');
   assert.equal(bot.ai.path.length, 2, 'the fallback is a short hop, re-asked for a real route each time');
   const goal = bot.ai.goal;
@@ -218,4 +227,55 @@ test('the fallback only applies to bots running from the storm', () => {
   assert.match(repath, /else if \(fleeing && ai\.goal\)/, 'walking at a goal with no route must be for the storm only');
   assert.match(repath, /Math\.min\(25, far\)/, 'and in short hops, so a real path is picked up as soon as there is one');
   assert.match(repath, /else \{ ai\.lastKnown = null; ai\.holdUntil = t \+ 1; \}/, 'everything else still holds and re-asks');
+});
+
+// Dropping a gun and picking it straight back up used to hand it over full, magazine and reserve, as
+// many times as you liked: a free reload and an endless resupply for nothing. A gun now comes as it
+// lies, and the one you put down keeps what was in it.
+test('a gun you put down keeps its ammo, and picking it back up is not a reload', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000030', session: 's30', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+
+  room.take(me, { kind: 'weapon', id: 'talon' }, true);
+  const full = { ...me.ammo.primary };
+  assert.ok(full.mag > 0 && full.reserve > 0, 'a gun off the floor comes loaded');
+
+  // Fire it most of the way down.
+  me.ammo.primary.mag = 2; me.ammo.primary.reserve = 5;
+  const spent = { ...me.ammo.primary };
+
+  // Swap to something else: the talon goes on the floor with what was in it.
+  room.take(me, { kind: 'weapon', id: 'wasp' }, true);
+  // The island is already strewn with loot, so find the one this pilot put down, not a floor talon.
+  const onFloor = [...room.loot.values()].find((entry) => entry.dropper === me.id && entry.item.id === 'talon');
+  assert.ok(onFloor, 'the gun was not dropped');
+  assert.equal(onFloor.item.mag, spent.mag, 'the dropped gun forgot what was in its magazine');
+  assert.equal(onFloor.item.reserve, spent.reserve, 'and forgot its reserve');
+
+  // Take it back: exactly what it had, not a fresh one.
+  room.take(me, onFloor.item, true);
+  assert.equal(me.ammo.primary.mag, spent.mag, 'picking it back up reloaded it');
+  assert.equal(me.ammo.primary.reserve, spent.reserve, 'picking it back up refilled the reserve');
+  assert.ok(me.ammo.primary.reserve < full.reserve, 'and it must be short of a fresh one, or nothing was proved');
+  room.close();
+});
+
+test('an empty gun of the kind you hold is not worth walking over', () => {
+  const room = makeRoom();
+  const me = room.join(fakeSocket(), { token: 'tok-royale-000000031', session: 's31', name: 'Solo' }, look);
+  room.startMatch(); room.deploy();
+  me.alive = true;
+  room.take(me, { kind: 'weapon', id: 'talon' }, true);
+  me.ammo.primary.reserve = 10;
+  // An empty one somebody dropped adds nothing, so it must not read as ammo.
+  assert.equal(room.take(me, { kind: 'weapon', id: 'talon', mag: 0, reserve: 0 }, true), null, 'an empty gun topped the reserve up');
+  assert.equal(me.ammo.primary.reserve, 10, 'and it must not have moved');
+  // One off the floor still resupplies, up to the brim and no further.
+  const before = me.ammo.primary.reserve;
+  assert.ok(room.take(me, { kind: 'weapon', id: 'talon' }, true), 'a loaded one off the floor is worth taking');
+  assert.ok(me.ammo.primary.reserve > before, 'it should have given something');
+  assert.ok(me.ammo.primary.reserve <= WEAPONS.talon.reserve, 'and never more than the gun can hold');
+  room.close();
 });

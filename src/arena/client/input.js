@@ -11,7 +11,7 @@ export const ACTIONS = [
   ['fire', 'Fire', 'Weapons'], ['scope', 'Aim / scope', 'Weapons'], ['reload', 'Reload', 'Weapons'],
   ['primary', 'Primary weapon', 'Weapons'], ['sidearm', 'Sidearm', 'Weapons'], ['melee', 'Blade', 'Weapons'],
   ['gadget1', 'Gadget 1', 'Weapons'], ['gadget2', 'Gadget 2', 'Weapons'], ['armoury', 'Armoury', 'Weapons'], ['interact', 'Pick up (royale)', 'Weapons'], ['inspect', 'Inspect weapon', 'Weapons'],
-  ['ping', 'Ping location', 'Team'], ['radio', 'Radio commands', 'Team'], ['chat', 'Chat to all', 'Team'], ['teamChat', 'Chat to team', 'Team'], ['scoreboard', 'Scoreboard', 'Team'],
+  ['ping', 'Ping location', 'Team'], ['radio', 'Radio commands', 'Team'], ['chat', 'Chat to all', 'Team'], ['teamChat', 'Chat to team', 'Team'], ['scoreboard', 'Scoreboard', 'Team'], ['map', 'Map (royale)', 'Team'],
 ].map(([id, label, group]) => ({ id, label, group }));
 
 export const DEFAULT_BINDS = {
@@ -20,7 +20,7 @@ export const DEFAULT_BINDS = {
   fire: ['Mouse0', null], scope: ['Mouse2', null], reload: ['KeyR', null],
   primary: ['Digit1', null], sidearm: ['Digit2', null], melee: ['Digit3', null],
   gadget1: ['KeyQ', null], gadget2: ['KeyE', null], armoury: ['KeyB', null], interact: ['KeyF', null], inspect: ['KeyV', null],
-  ping: ['KeyZ', 'Mouse1'], radio: ['KeyX', null], chat: ['Enter', null], teamChat: ['KeyY', null], scoreboard: ['Tab', null],
+  ping: ['KeyZ', 'Mouse1'], radio: ['KeyX', null], chat: ['Enter', null], teamChat: ['KeyY', null], scoreboard: ['Tab', null], map: ['KeyM', null],
 };
 // Keys the game keeps for itself.
 export const RESERVED = ['Escape', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight'];

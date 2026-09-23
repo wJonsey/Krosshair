@@ -107,6 +107,9 @@ function connect() {
       if (message.outages) { game.outages = message.outages; bus.emit('outages'); }
       bus.emit('config');
     }
+    // Asked for when the day turns over: a new catalogue on its own, without the rest of config, which
+    // would re-run the login and reset flags that have nothing to do with the shop.
+    if (message.type === 'itemshop') { if (message.itemShop) installShopCatalogue(message.itemShop); bus.emit('itemshop'); }
     if (message.type === 'auth-required' || message.type === 'logged-out') {
       game.authSession = null; store('authSession', null);
       game.username = null; game.avatar = null; game.profile = null; net.identified = false;

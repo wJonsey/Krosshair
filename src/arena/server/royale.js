@@ -232,17 +232,31 @@ export class RoyaleRoom extends Room {
       const held = player.weapons[slot];
       if (held === item.id) {
         const ammo = player.ammo[slot];
-        if (!ammo || ammo.reserve >= weapon.reserve) return null;
-        ammo.reserve = weapon.reserve;
+        if (!ammo) return null;
+        // What the gun on the floor is actually carrying. One off the floor comes loaded; one somebody
+        // put down has only what was left in it, so taking your own gun back is not a resupply.
+        const spare = Number.isFinite(item.reserve) ? item.reserve : weapon.reserve;
+        const after = Math.min(weapon.reserve, ammo.reserve + spare);
+        if (after <= ammo.reserve) return null;
+        ammo.reserve = after;
         return `${weapon.short} ammo`;
       }
       if (held && !swap) return null;
       // The gun you put down ignores you for a moment, or crouching would swap them back and forth.
-      if (held) Object.assign(this.addLoot(player.x, player.y, player.z, { kind: 'weapon', id: held, rarity: player.rarity?.[slot] }), { dropper: player.id, dropUntil: now() + 2.5 });
+      if (held) {
+        const carried = player.ammo[slot];
+        const dropped = { kind: 'weapon', id: held, rarity: player.rarity?.[slot], mag: carried?.mag ?? 0, reserve: carried?.reserve ?? 0 };
+        Object.assign(this.addLoot(player.x, player.y, player.z, dropped), { dropper: player.id, dropUntil: now() + 2.5 });
+      }
       player.weapons[slot] = item.id;
       (player.rarity = player.rarity || {})[slot] = item.rarity || weaponRarity(item.id);
       player.kit = null; player.kitFor = null;
-      player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
+      // A gun comes as it lies. Handing over a full one either way made dropping a gun and picking it
+      // straight back up a free reload and a free resupply, over and over, for nothing.
+      player.ammo[slot] = {
+        mag: Number.isFinite(item.mag) ? Math.min(weapon.mag, item.mag) : weapon.mag,
+        reserve: Number.isFinite(item.reserve) ? Math.min(weapon.reserve, item.reserve) : weapon.reserve,
+      };
       if (player.active !== slot && (slot === 'primary' || player.active === 'melee')) this.switchWeapon(player, slot);
       else if (player.active === slot) { player.reloadEnd = 0; player.equipUntil = now() + weapon.equip - 0.08; }
       return weapon.name;

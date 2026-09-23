@@ -1,5 +1,5 @@
 // Battle royale on the client: floor loot in the world, the storm wall, and the royale HUD (pilots
-// left, the storm clock, a radar with the safe circle, the whole island on the scoreboard key).
+// left, the storm clock, a radar with the safe circle, the whole island on the map key).
 // Also the drop map before the match, airdrops, the way back to the safe zone, and the cards you get
 // when you are knocked out or win. It brings its own styles and HUD elements.
 import * as THREE from 'three';
@@ -312,7 +312,7 @@ export function initRoyale({ arena, hud, player }) {
   const rejoining = (() => { try { return Boolean(sessionStorage.getItem('krosshair:room')); } catch { return false; } })();
   bus.on('signed-in', () => { if (wanted && !requested && !rejoining && !game.room) { requested = true; setTimeout(() => net.enter({ action: 'royale' }), 300); } });
 
-  // ---- maps: the radar (around you) and the full island (scoreboard key)
+  // ---- maps: the radar (around you) and the full island (map key)
   // The island itself never changes, so it is painted once: coast, roads, woods, buildings, place names.
   function islandLayer() {
     if (state.layer && state.layerMap === arena.map) return state.layer;
@@ -491,7 +491,7 @@ export function initRoyale({ arena, hud, player }) {
       stormLabel.classList.toggle('closing', Boolean(closing));
       // The radar is cheap, but no need to redraw it 144 times a second.
       if (performance.now() - lastRadar > 60) { lastRadar = performance.now(); drawMap(radar, false); }
-      const showMap = held(player.keys || new Set(), 'scoreboard');
+      const showMap = held(player.keys || new Set(), 'map');
       bigMap.classList.toggle('on', showMap);
       if (showMap) drawMap(bigMap, true);
     },

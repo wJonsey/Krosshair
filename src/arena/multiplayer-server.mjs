@@ -810,6 +810,9 @@ wss.on('connection', (socket) => {
       if (message.type === 'party') { if (!socket.account) return send(socket, { type: 'party-result', error: 'Log in to use parties.' }); return handleParty(socket, message); }
       if (message.type === 'social' && socket.account) return void pushSocial(socket);
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
+      // The shop turns over at midnight. A page left open since yesterday asks for the new one rather
+      // than reconnecting, which is also the only way it learns about a set debuting today.
+      if (message.type === 'itemshop') return send(socket, { type: 'itemshop', itemShop: publicCatalogue(dateKey()) });
       if (message.type === 'dev-online') return sendOnline(socket);
       if (message.type === 'dev-watch') return watchRoom(socket, message);
       if (message.type === 'enter') return enter(socket, message);
