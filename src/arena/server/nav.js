@@ -62,6 +62,81 @@ export class NavGrid {
         }
       }
     }
+    this.label();
+  }
+
+  // Which connected patch of ground each node is on, ignoring which way the edges run. Two nodes on
+  // different patches can never reach each other, and without this a search for a route between them
+  // flooded the whole graph before giving up: on the royale island, 96,000 nodes in about a thousand
+  // patches, those searches were a fifth of the calls and 97% of the time, 75 ms each on average.
+  label() {
+    const count = this.nodes.length;
+    const links = this.nodes.map(() => []);
+    for (const node of this.nodes) for (const edge of node.edges) { links[node.id].push(edge.to); links[edge.to].push(node.id); }
+    this.patch = new Int32Array(count).fill(-1);
+    let patches = 0;
+    for (let id = 0; id < count; id += 1) {
+      if (this.patch[id] >= 0) continue;
+      const stack = [id];
+      this.patch[id] = patches;
+      while (stack.length) for (const next of links[stack.pop()]) if (this.patch[next] < 0) { this.patch[next] = patches; stack.push(next); }
+      patches += 1;
+    }
+    this.oneWay();
+  }
+
+  // Some ground is joined to the rest only by drops, so it is on the same patch and still unreachable:
+  // a search for it flooded the patch before giving up, and on the island one such spot was asked for
+  // about once a second, at 75 ms each. Group nodes that can all reach each other (strongly connected,
+  // Tarjan's method, without recursion so a big map cannot overflow the stack), and keep which group
+  // leads to which. Whether a route exists is then a walk over a few thousand groups, not the map.
+  oneWay() {
+    const count = this.nodes.length;
+    const order = new Int32Array(count).fill(-1), low = new Int32Array(count), onStack = new Uint8Array(count);
+    const group = new Int32Array(count).fill(-1), stack = [], work = [];
+    let time = 0, groups = 0;
+    for (let root = 0; root < count; root += 1) {
+      if (order[root] >= 0) continue;
+      work.push([root, 0]);
+      while (work.length) {
+        const frame = work[work.length - 1], [v] = frame;
+        if (frame[1] === 0) { order[v] = low[v] = time; time += 1; stack.push(v); onStack[v] = 1; }
+        const edges = this.nodes[v].edges;
+        let descended = false;
+        while (frame[1] < edges.length) {
+          const w = edges[frame[1]].to;
+          frame[1] += 1;
+          if (order[w] < 0) { work.push([w, 0]); descended = true; break; }
+          if (onStack[w]) low[v] = Math.min(low[v], order[w]);
+        }
+        if (descended) continue;
+        if (low[v] === order[v]) {
+          for (;;) { const w = stack.pop(); onStack[w] = 0; group[w] = groups; if (w === v) break; }
+          groups += 1;
+        }
+        work.pop();
+        if (work.length) { const parent = work[work.length - 1][0]; low[parent] = Math.min(low[parent], low[v]); }
+      }
+    }
+    const leads = Array.from({ length: groups }, () => new Set());
+    for (const node of this.nodes) for (const edge of node.edges) if (group[node.id] !== group[edge.to]) leads[group[node.id]].add(group[edge.to]);
+    this.group = group;
+    this.leads = leads.map((set) => [...set]);
+    this.groupSeen = new Uint32Array(groups);
+    this.groupRun = 0;
+  }
+
+  // Can anything on from's group walk to to's group at all?
+  reaches(from, to) {
+    const a = this.group[from], b = this.group[to];
+    if (a === b) return true;
+    const run = (this.groupRun += 1), seen = this.groupSeen, todo = [a];
+    seen[a] = run;
+    while (todo.length) for (const next of this.leads[todo.pop()]) {
+      if (next === b) return true;
+      if (seen[next] !== run) { seen[next] = run; todo.push(next); }
+    }
+    return false;
   }
 
   // Simulate the walk with the real movement code. Slow but exact, and only run once at boot.
@@ -116,30 +191,33 @@ export class NavGrid {
   path(from, to, scale = null) {
     const start = this.nearest(from.x, from.y, from.z), goal = this.nearest(to.x, to.y, to.z);
     if (!start || !goal) return null;
+    if (this.patch[start.id] !== this.patch[goal.id] || !this.reaches(start.id, goal.id)) return null;
+    // The working arrays are kept between searches and stamped with a search number rather than cleared:
+    // allocating and filling three arrays the size of the map on every call was most of a short search.
     const count = this.nodes.length;
-    const g = new Float32Array(count).fill(Infinity);
-    const came = new Int32Array(count).fill(-1);
-    const closed = new Uint8Array(count);
+    if (!this.work || this.work.size !== count) this.work = { size: count, g: new Float32Array(count), came: new Int32Array(count), seen: new Uint32Array(count), shut: new Uint32Array(count), run: 0 };
+    const { g, came, seen, shut } = this.work;
+    const run = (this.work.run += 1);
+    const cost = (id) => (seen[id] === run ? g[id] : Infinity);
     const heap = new MinHeap();
-    g[start.id] = 0;
+    seen[start.id] = run; g[start.id] = 0; came[start.id] = -1;
     heap.push(start.id, 0);
     while (heap.size) {
       const current = heap.pop();
       if (current === goal.id) break;
-      if (closed[current]) continue;
-      closed[current] = 1;
+      if (shut[current] === run) continue;
+      shut[current] = run;
       const node = this.nodes[current];
       for (const edge of node.edges) {
         const next = g[current] + edge.cost * (scale ? scale(this.nodes[edge.to]) : 1);
-        if (next < g[edge.to]) {
-          g[edge.to] = next;
-          came[edge.to] = current;
+        if (next < cost(edge.to)) {
+          seen[edge.to] = run; g[edge.to] = next; came[edge.to] = current;
           const target = this.nodes[edge.to];
           heap.push(edge.to, next + Math.hypot(target.x - goal.x, target.z - goal.z) + Math.abs(target.y - goal.y));
         }
       }
     }
-    if (came[goal.id] === -1 && goal.id !== start.id) return null;
+    if (seen[goal.id] !== run) return null;
     const points = [];
     for (let id = goal.id; id !== -1; id = came[id]) points.push({ x: this.nodes[id].x, y: this.nodes[id].y, z: this.nodes[id].z });
     return points.reverse();

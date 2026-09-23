@@ -20,6 +20,7 @@ export class World {
   addStatic(box) {
     if (box.deco) return;
     box._stamp = 0;
+    box._index = this.boxes.length;
     this.boxes.push(box);
     if (box.id) this.byId.set(box.id, box);
     const x0 = Math.floor(box.min[0] / CELL), x1 = Math.floor(box.max[0] / CELL);
@@ -141,6 +142,33 @@ export class World {
     return body;
   }
 
+  // Calls visit(box) once for every static box in a grid cell the ray's footprint crosses, nearest cell
+  // first, out to maxDist; stops early if visit returns true. A box the ray meets has its footprint
+  // under the meeting point, and every box is filed in every cell its footprint covers, so nothing the
+  // ray can hit is skipped. Rays used to be tested against every box in the world: 7,475 of them on the
+  // royale island, for every bullet leg and every bot's look.
+  alongRay(origin, dir, maxDist, visit) {
+    this.stamp += 1;
+    const stamp = this.stamp;
+    let cx = Math.floor(origin[0] / CELL), cz = Math.floor(origin[2] / CELL);
+    const stepX = dir[0] > 0 ? 1 : dir[0] < 0 ? -1 : 0, stepZ = dir[2] > 0 ? 1 : dir[2] < 0 ? -1 : 0;
+    const deltaX = stepX ? Math.abs(CELL / dir[0]) : Infinity, deltaZ = stepZ ? Math.abs(CELL / dir[2]) : Infinity;
+    let nextX = stepX ? ((stepX > 0 ? cx + 1 : cx) * CELL - origin[0]) / dir[0] : Infinity;
+    let nextZ = stepZ ? ((stepZ > 0 ? cz + 1 : cz) * CELL - origin[2]) / dir[2] : Infinity;
+    for (let guard = 0; guard < 100000; guard += 1) {
+      const cell = this.grid.get(`${cx},${cz}`);
+      if (cell) for (const box of cell) {
+        if (box._stamp === stamp) continue;
+        box._stamp = stamp;
+        if (visit(box) === true) return true;
+      }
+      const t = Math.min(nextX, nextZ);
+      if (t > maxDist || t === Infinity) return false;
+      if (nextX < nextZ) { cx += stepX; nextX += deltaX; } else { cz += stepZ; nextZ += deltaZ; }
+    }
+    return false;
+  }
+
   // Returns every box crossed by the ray, sorted by entry distance.
   raycast(origin, dir, maxDist = 400, filter = null) {
     const hits = [];
@@ -149,9 +177,11 @@ export class World {
       const hit = rayBox(origin, dir, box, maxDist);
       if (hit) hits.push(hit);
     };
-    this.boxes.forEach(test);
+    this.alongRay(origin, dir, maxDist, test);
     this.dynamic.forEach(test);
-    hits.sort((a, b) => a.t0 - b.t0);
+    // Two boxes met at the same distance keep the order the world lists them in, which is the order a
+    // test of every box used to give: glass before a wall or after it decides whether a round gets through.
+    hits.sort((a, b) => a.t0 - b.t0 || (a.box._index ?? Infinity) - (b.box._index ?? Infinity));
     return hits;
   }
 
@@ -162,10 +192,8 @@ export class World {
     if (dist < 1e-6) return true;
     const origin = [ax, ay, az];
     const dir = [dx / dist, dy / dist, dz / dist];
-    for (const box of this.boxes) {
-      if (!this.active(box) || MATERIALS[box.mat]?.seeThrough) continue;
-      if (rayBox(origin, dir, box, dist)) return false;
-    }
+    const blocked = this.alongRay(origin, dir, dist, (box) => this.active(box) && !MATERIALS[box.mat]?.seeThrough && Boolean(rayBox(origin, dir, box, dist)));
+    if (blocked) return false;
     for (const box of this.dynamic.values()) {
       if (MATERIALS[box.mat]?.seeThrough) continue;
       if (rayBox(origin, dir, box, dist)) return false;
