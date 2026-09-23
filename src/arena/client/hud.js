@@ -628,24 +628,24 @@ export class Hud {
     if (sightView) {
       const kind = `sight sight-${sight}`;
       if (dom.sight.className !== kind) dom.sight.className = kind;
-      dom.sight.style.opacity = String(Math.min(1, (aim - 0.55) / 0.3));
+      setOpacity(dom.sight, String(Math.min(1, (aim - 0.55) / 0.3)));
       const label = sight === 'prism' ? `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / weapon.scope[0] * 10) / 10}X` : '';
       if (dom.sightLabel.textContent !== label) dom.sightLabel.textContent = label;
     }
     if (pov && !dom.pov.classList.contains('hidden')) {
       const melee = Boolean(weapon.melee);
-      dom.povWeapon.textContent = weapon.name; dom.povTag.textContent = weapon.tag;
+      setText(dom.povWeapon, weapon.name); setText(dom.povTag, weapon.tag);
       if (dom.povArt.dataset.weapon !== weapon.id) { dom.povArt.dataset.weapon = weapon.id; dom.povArt.src = weaponArt(weapon.id); }
-      dom.povAmmo.textContent = melee ? '' : String(pov.mag ?? weapon.mag).padStart(2, '0');
-      dom.povMag.textContent = melee ? '' : `/ ${weapon.mag}`;
+      setText(dom.povAmmo, melee ? '' : String(pov.mag ?? weapon.mag).padStart(2, '0'));
+      setText(dom.povMag, melee ? '' : `/ ${weapon.mag}`);
     }
     if (pov && player.mode === 'spectate') { const text = weapon.name.toUpperCase(); if (dom.spectateWeapon.textContent !== text) dom.spectateWeapon.textContent = text; }
     dom.scope.classList.toggle('hidden', !scopedView);
     dom.scope.classList.add('glass');
     if (scopedView) {
       const zoom = weapon.scope[pov ? 0 : Math.min(player.zoomIndex, weapon.scope.length - 1)];
-      dom.scopeZoom.textContent = `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !pov ? ' · WHEEL TO ZOOM' : ''}`;
-      dom.breath.style.width = `${player.breath * 100}%`;
+      setText(dom.scopeZoom, `${WEAPON_SHORT[weapon.id]} // ${Math.round(game.settings.fov / zoom * 10) / 10}X${weapon.scope.length > 1 && !pov ? ' · WHEEL TO ZOOM' : ''}`);
+      setWidth(dom.breath, player.breath * 100);
       dom.breath.classList.toggle('winded', player.winded);
     }
     // Aiming down any sight replaces the crosshair with the sight itself. A scope takes over the screen
@@ -659,8 +659,8 @@ export class Hud {
       dom.crosshair.style.setProperty('--spread', this.crosshairDynamic ? `${Math.round(spread * 5)}px` : '0px');
       dom.crosshair.classList.toggle('dot', Boolean(weapon.melee));
     }
-    dom.fxSuppress.style.opacity = String(player.suppression * 0.9);
-    dom.droneTime.textContent = player.drone ? Math.max(0, player.drone.until - net.time()).toFixed(1) : '';
+    setOpacity(dom.fxSuppress, String(player.suppression * 0.9));
+    setText(dom.droneTime, player.drone ? Math.max(0, player.drone.until - net.time()).toFixed(1) : '');
 
     // Damage direction arcs rotate with the view.
     for (const arc of dom.arcs.children) {

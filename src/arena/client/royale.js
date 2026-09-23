@@ -531,10 +531,14 @@ export function initRoyale({ arena, hud, player }) {
   note.querySelector('button').addEventListener('click', () => { note.classList.remove('on'); clearTimeout(noteTimer); });
   function showNote() { note.classList.add('on'); clearTimeout(noteTimer); noteTimer = setTimeout(() => note.classList.remove('on'), 12000); }
 
-  let lastRadar = 0, lastPhase = null;
+  let lastRadar = 0, lastBigMap = 0, lastPhase = null;
   return {
     update(dt) {
       const on = active();
+      // Text and markup written only when it changes: this runs every frame, and writing the same words
+      // again still makes the browser re-check the page. The main HUD does the same with setText.
+      const put = (node, value) => { if (node.__text !== value) { node.__text = value; node.textContent = value; } };
+      const putHtml = (node, value) => { if (node.__html !== value) { node.__html = value; node.innerHTML = value; } };
       const roomName = game.room?.royale ? game.room.name || 'royale' : null;
       if (roomName !== noteRoom) { noteRoom = roomName; if (roomName) showNote(); else note.classList.remove('on'); }
       document.body.classList.toggle('royale-mode', on);
@@ -551,9 +555,9 @@ export function initRoyale({ arena, hud, player }) {
       dropScreen.classList.toggle('on', dropping);
       if (dropping) {
         if (document.pointerLockElement) document.exitPointerLock?.();
-        dropClock.textContent = `${Math.max(0, Math.ceil(game.room.phaseEnds - net.time()))}s`;
+        put(dropClock, `${Math.max(0, Math.ceil(game.room.phaseEnds - net.time()))}s`);
         const place = state.drop && [...(arena.map.places || [])].sort((m, n) => Math.hypot(m.x - state.drop.x, m.z - state.drop.z) - Math.hypot(n.x - state.drop.x, n.z - state.drop.z))[0];
-        dropFoot.innerHTML = state.drop ? `Landing near <b>${place.name}</b>. Click again to change.` : 'Click the map. No pick, random drop.';
+        putHtml(dropFoot, state.drop ? `Landing near <b>${place.name}</b>. Click again to change.` : 'Click the map. No pick, random drop.');
         if (performance.now() - lastRadar > 80) { lastRadar = performance.now(); drawMap(dropMap, true); }
         if (state.wall) state.wall.visible = false;
         return;
@@ -610,11 +614,11 @@ export function initRoyale({ arena, hud, player }) {
       state.fWas = fDown;
       // Coming down: how high, and what to do about it.
       alt.classList.toggle('on', Boolean(player.drop && player.alive));
-      if (player.drop) { alt.firstChild.textContent = `${Math.max(0, Math.round(me.y - 1.6))} M`; alt.lastChild.textContent = player.drop.chute ? 'Parachute open · steer with the move keys' : `${bindLabel('jump')} opens the parachute · opens itself at ${DROP.chuteAt} m`; }
+      if (player.drop) { put(alt.firstChild, `${Math.max(0, Math.round(me.y - 1.6))} M`); put(alt.lastChild, player.drop.chute ? 'Parachute open · steer with the move keys' : `${bindLabel('jump')} opens the parachute · opens itself at ${DROP.chuteAt} m`); }
       // Boosts that are still running.
       const clock = performance.now();
       for (const [id, until] of state.powers) if (clock > until) state.powers.delete(id);
-      powersBox.innerHTML = [...state.powers].map(([id, until]) => `<div>${POWERS[id].name} · ${Math.ceil((until - clock) / 1000)}s</div>`).join('');
+      putHtml(powersBox, [...state.powers].map(([id, until]) => `<div>${POWERS[id].name} · ${Math.ceil((until - clock) / 1000)}s</div>`).join(''));
       // Storm wall and whether you're in it.
       const circle = circleAt(t);
       if (circle) {
@@ -628,19 +632,20 @@ export function initRoyale({ arena, hud, player }) {
         const to = state.storm.to, dx = to.x - me.x, dz = to.z - me.z, gap = Math.hypot(dx, dz) - to.r;
         const show = player.alive && gap > 0 && (outside || t > state.storm.shrinkStart - 30);
         way.classList.toggle('on', show);
-        if (show) { way.style.setProperty('--turn', `${Math.atan2(dx, -dz) + (player.yaw ?? 0)}rad`); way.lastChild.textContent = `Safe zone ${Math.ceil(gap)} m`; }
+        if (show) { way.style.setProperty('--turn', `${Math.atan2(dx, -dz) + (player.yaw ?? 0)}rad`); put(way.lastChild, `Safe zone ${Math.ceil(gap)} m`); }
       }
-      alive.textContent = state.alive;
-      kills.textContent = game.roster.get(game.id)?.kills ?? 0;
+      put(alive, String(state.alive));
+      put(kills, String(game.roster.get(game.id)?.kills ?? 0));
       const [text, closing] = stormText(t) || [];
-      stormLabel.textContent = text || '';
+      put(stormLabel, text || '');
       stormLabel.classList.toggle('closing', Boolean(closing));
       // The radar is cheap, but no need to redraw it 144 times a second.
       if (performance.now() - lastRadar > 60) { lastRadar = performance.now(); drawMap(radar, false); }
       // Not through the inventory: one screen at a time.
       const showMap = !kitOpen && held(player.keys || new Set(), 'map');
       bigMap.classList.toggle('on', showMap);
-      if (showMap) drawMap(bigMap, true);
+      // The whole island at 1280 px is four full passes over the canvas: plenty at 30 a second.
+      if (showMap && performance.now() - lastBigMap > 33) { lastBigMap = performance.now(); drawMap(bigMap, true); }
     },
   };
 }
