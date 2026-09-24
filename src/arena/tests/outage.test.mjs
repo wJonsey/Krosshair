@@ -177,3 +177,44 @@ test('with the Gunsmith pulled, everyone is on stock guns', async () => {
     assert.ok(room.currentWeapon(player).mag > WEAPONS.talon.mag, 'builds did not come back');
   } finally { Room.useOutages(null); room.close(); }
 });
+
+// Pulling an arena used to stop only the match already on it: the next random pick, the vote ballot, a
+// vote already cast and a host's pinned map could all still put people on it.
+test('a pulled arena is never picked, voted for, pinned or played', async () => {
+  const { MAP_IDS } = await import('../shared/map.js');
+  const { beginMatch, tickMapVote, castMapVote } = await import('../server/mapflow.js');
+  const out = await book();
+  const room = await makeRoom();
+  Room.useOutages(out);
+  try {
+    const pulled = MAP_IDS[1];
+    out.set('map', pulled, true, 'Broken stairs', 'dev');
+    const a = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 'a', name: 'A' }, look);
+    room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 'b', name: 'B' }, look);
+    a.host = true;
+    // A host cannot pin it.
+    room.handle(a, { type: 'rules', rules: { map: pulled } });
+    assert.notEqual(room.rules.map, pulled, 'a host pinned a pulled arena');
+    // It is not on the ballot, and a vote for it counts for nothing.
+    room.rules.map = 'vote';
+    beginMatch(room);
+    assert.equal(room.phase, 'mapvote');
+    assert.ok(!room.mapChoices.includes(pulled), 'the ballot offered a pulled arena');
+    castMapVote(room, a, pulled);
+    assert.ok(!room.mapVotes.has(a.id), 'a vote for a pulled arena was taken');
+    // Pulled mid-vote: off the ballot, and the votes for it go.
+    const second = room.mapChoices[0];
+    for (const p of room.humans()) castMapVote(room, p, second);
+    out.set('map', second, true, '', 'dev');
+    room.applyOutages();
+    assert.ok(!room.mapChoices.includes(second) && !room.mapVotes.size, 'an arena pulled mid-vote stayed on the ballot');
+    tickMapVote(room, Infinity);
+    assert.ok(![pulled, second].includes(room.map.id), `the vote put the match on pulled ${room.map.id}`);
+    room.toLobby();
+    // Random, over and over, and a pin set before the pull.
+    for (let i = 0; i < 60; i += 1) { room.rules.map = 'random'; room.phase = 'lobby'; beginMatch(room); assert.ok(![pulled, second].includes(room.map.id), `random dealt pulled ${room.map.id}`); room.toLobby(); }
+    room.rules.map = pulled; room.phase = 'lobby';
+    beginMatch(room);
+    assert.notEqual(room.map.id, pulled, 'a pin set before the pull still played it');
+  } finally { Room.useOutages(null); room.close(); }
+});

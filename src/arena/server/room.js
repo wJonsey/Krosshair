@@ -759,14 +759,21 @@ export class Room {
         this.pushYou(player);
       }
     }
+    // A vote in progress loses it from the ballot, and any votes for it go back to random.
+    if (this.phase === 'mapvote' && this.mapChoices) {
+      this.mapChoices = this.mapChoices.filter((id) => !Room.out('map', id));
+      for (const [voter, choice] of this.mapVotes) if (Room.out('map', choice)) this.mapVotes.delete(voter);
+      this.pushRoom();
+    }
     // A map that is gone takes the round with it: nobody keeps playing on something known to be broken.
     if (Room.out('map', this.map.id)) {
       const entry = Room.outages.get('map', this.map.id);
       this.broadcast({ type: 'feed', text: outageLine(entry, this.map.name || this.map.id), tone: 'warn' });
       this.broadcast({ type: 'notice', tone: 'warn', text: `${this.map.name || this.map.id} was pulled. ${outageReason(entry)}` });
-      if (this.phase !== 'lobby') this.toLobby();
+      if (this.phase !== 'lobby' && this.phase !== 'mapvote') this.toLobby();
       const next = Room.outages.playableMaps(MAP_IDS.filter((id) => id !== this.map.id));
-      if (next.length && this.rules.map && this.rules.map !== 'random') this.rules.map = next[0];
+      // Only a room pinned to the pulled map changes pin; a vote or random room already avoids it.
+      if (next.length && this.rules.map === this.map.id) this.rules.map = next[0];
       this.pushRoom();
     }
   }
@@ -1065,7 +1072,7 @@ export class Room {
     if ([60, 100, 140].includes(rules.roundTime)) next.roundTime = rules.roundTime;
     if ([400, 800, 2000, 9000].includes(rules.startCredits)) next.startCredits = rules.startCredits;
     if (rules.variant === 'auto' || own(VARIANT_NAMES, rules.variant)) next.variant = rules.variant;
-    if (validMapRule(rules.map)) next.map = rules.map;
+    if (validMapRule(rules.map) && !Room.out('map', rules.map)) next.map = rules.map;
     if (own(MODIFIERS, rules.modifier)) next.modifier = rules.modifier;
     if (own(BOT_DIFFICULTY, rules.botDifficulty)) next.botDifficulty = rules.botDifficulty;
     if (typeof rules.friendlyFire === 'boolean') next.friendlyFire = rules.friendlyFire;

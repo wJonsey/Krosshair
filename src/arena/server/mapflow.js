@@ -34,6 +34,12 @@ export function warmNavigation() {
   setTimeout(next, 400).unref?.();
 }
 
+// Arenas a room may play right now. A pulled map was still dealt at random, put on the ballot and played
+// when pinned, so pulling one only ever stopped the match already on it. The outage book is set on Room
+// at boot; with none (tests), everything is playable.
+export const playable = (room, ids = MAP_IDS) => ids.filter((id) => !room.constructor.out?.('map', id));
+export const mapOut = (room, id) => Boolean(room.constructor.out?.('map', id));
+
 export function validMapRule(value) { return value === 'vote' || value === 'random' || MAP_IDS.includes(value); }
 
 export function initMapFlow(room) {
@@ -63,7 +69,9 @@ export function setRoomMap(room, id) {
 
 function randomMap(room) {
   // Never the same arena twice in a row once a room has played a match.
-  const pool = room.mapPlayed ? MAP_IDS.filter((id) => id !== room.map.id) : MAP_IDS;
+  const open = playable(room).length ? playable(room) : MAP_IDS;
+  const others = open.filter((id) => id !== room.map.id);
+  const pool = room.mapPlayed && others.length ? others : open;
   // Small lobbies lean toward the smaller arenas, full ones toward the big ones.
   const seats = room.team('A').length + room.team('B').length;
   const weight = (id) => {
@@ -81,10 +89,10 @@ function randomMap(room) {
 export function beginMatch(room) {
   if (room.mode !== 'match') return;
   // The royale room has one map and no vote.
-  if (room.royale) { room.startMatch(); return; }
+  if (room.royale) { if (!mapOut(room, room.map.id)) room.startMatch(); return; }
   const rule = room.rules.map;
   if (rule === 'vote' && room.connectedHumans().length) return startVote(room);
-  setRoomMap(room, MAP_IDS.includes(rule) ? rule : randomMap(room));
+  setRoomMap(room, MAP_IDS.includes(rule) && !mapOut(room, rule) ? rule : randomMap(room));
   room.mapPlayed = true;
   room.startMatch();
 }
@@ -96,7 +104,7 @@ function startVote(room) {
   room.mapVotes.clear();
   room.rematch.clear();
   room.autoStartAt = 0;
-  room.mapChoices = [...MAP_IDS];
+  room.mapChoices = playable(room).length ? playable(room) : [...MAP_IDS];
   room.broadcast({ type: 'phase', phase: 'mapvote', phaseEnds: room.phaseEnds });
   room.pushRoom();
 }
@@ -121,8 +129,10 @@ export function tickMapVote(room, t) {
     const tied = [...tally.keys()].filter((choice) => tally.get(choice) === best);
     winner = tied[Math.floor(Math.random() * tied.length)];
   }
-  const pool = room.mapChoices.length ? room.mapChoices : MAP_IDS;
-  const id = winner === 'random' ? pool[Math.floor(Math.random() * pool.length)] : winner;
+  // Pulled while the vote ran: it cannot win, and random only draws from what is still up.
+  if (winner !== 'random' && mapOut(room, winner)) winner = 'random';
+  const pool = playable(room, room.mapChoices.length ? room.mapChoices : MAP_IDS);
+  const id = winner === 'random' ? (pool.length ? pool[Math.floor(Math.random() * pool.length)] : randomMap(room)) : winner;
   setRoomMap(room, id);
   room.mapPlayed = true;
   room.broadcast({ type: 'map-chosen', map: id, title: room.map.title, votes: tally.get(winner) || 0, random: winner === 'random' });

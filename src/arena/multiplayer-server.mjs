@@ -14,7 +14,7 @@ import { Room, now } from './server/room.js';
 import { RoyaleRoom } from './server/royale.js';
 import { ROYALE } from './shared/royale.js';
 import { installCatalogue, publicCatalogue } from './server/itemsets.js';
-import { getMap } from './shared/map.js';
+import { ROYALE_MAP, getMap } from './shared/map.js';
 import { OutageBook } from './server/outage.js';
 import { cleanReason, featureName, outageLine, OUTAGE_KINDS } from './shared/outage.js';
 import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
@@ -757,6 +757,7 @@ function enter(socket, message) {
   else if (action === 'bots') room = createRoom(`bots-${roomCounter++}`, { queue: 'bots' });
   else if (action === 'royale') {
     if (outages.featureOut('royale')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'royale'), 'Battle royale') });
+    if (outages.isOut('map', ROYALE_MAP)) return send(socket, { type: 'error', message: outageLine(outages.get('map', ROYALE_MAP), 'Kestrel Island') });
     // One open royale lobby at a time; a new one once it has started or filled.
     room = [...rooms.values()].find((r) => r.royale && r.phase === 'lobby' && r.connectedHumans().length < ROYALE.max);
     if (!room) { const name = `royale-${roomCounter++}`; room = new RoyaleRoom({ name, profiles, onEmpty: (empty) => { empty.close(); rooms.delete(empty.name); } }); rooms.set(name, room); }
