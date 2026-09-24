@@ -88,6 +88,44 @@ test('an honest pilot flat out on every arena is never refused, hitches and all'
   }
 });
 
+// The walk graph's routes cross every staircase, ramp and ledge the bots use, and a player cuts the
+// corners, so half the time the feet are on a tread with the middle of the body over the floor. The
+// climb check used to read that as climbing in mid-air and snap them back down: 1,438 refusals on
+// Foundry's stairs alone.
+test('a pilot sprinting the routes between points of interest, stairs and all, is never refused', async () => {
+  const { navFor } = await import('../server/mapflow.js');
+  for (const map of MAP_IDS) {
+    const { room, player } = await arena(map);
+    const world = new World(room.map.boxes), nav = navFor(room.map), random = mulberry32(map.length);
+    const points = room.map.interest.map(([x, y, z]) => ({ x, y, z }));
+    let refused = 0, sent = 0, example = '';
+    for (let route = 0; route < 12; route += 1) {
+      const trail = nav.path(points[Math.floor(random() * points.length)], points[Math.floor(random() * points.length)]);
+      if (!trail || trail.length < 2) continue;
+      room.spawn(player, 0, trail[0]);
+      tick(0.2);
+      const body = makeBody(trail[0].x, trail[0].y, trail[0].z);
+      body.onGround = true;
+      for (let next = 1, frame = 0; next < trail.length && frame < 60 * 60; frame += 1) {
+        const node = trail[next], dx = node.x - body.x, dz = node.z - body.z, far = Math.hypot(dx, dz);
+        if (far < 0.35 && Math.abs(node.y - body.y) < 1.2) { next += 1; continue; }
+        const dt = 1 / 60;
+        tick(dt);
+        if (body.onGround && node.y - body.y > 0.5) body.vy = BODY.jumpVelocity;
+        body.vy -= BODY.gravity * dt;
+        world.moveBody(body, dx / far * BODY.sprintSpeed * dt, body.vy * dt, dz / far * BODY.sprintSpeed * dt);
+        if (frame % 2) continue;
+        const [x, y, z] = [round(body.x), round(body.y), round(body.z)];
+        sent += 1;
+        state(room, player, x, y, z, { f: body.onGround ? FLAG.ground : 0 });
+        if (!at(player, x, y, z)) { refused += 1; example ||= `${x}, ${y}, ${z}`; }
+      }
+    }
+    assert.equal(refused, 0, `${map}: ${refused} of ${sent} updates refused, first at ${example}`);
+    room.close();
+  }
+});
+
 // A straight run of open, level floor from where the pilot stands, so what stops a move is the check
 // under test and not a crate in the way.
 const probe = (room) => (x, y, z) => room.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9);

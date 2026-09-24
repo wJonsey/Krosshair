@@ -39,7 +39,7 @@ export function buildRavelin() {
   add(-16, 20, -8, 21.2, 0, 2.4, 'adobe', SYM);           // broken walls
   add(8, 27, 16, 28.2, 0, 2.4, 'adobe', SYM);
   add(-2, 15, 2, 17, 0, 1.1, 'stone', SYM);               // well
-  add(-1.2, 15.6, 1.2, 16.4, 1.1, 3.2, 'wood', { ...DECO, sym: true });
+  add(-1.2, 15.6, 1.2, 16.4, 1.1, 3.2, 'wood', SYM);         // solid: shots went through it
   add(-23, 26, -19, 29, 0, 2.6, 'cloth', SYM);            // tents: cloth, stops nothing
   add(19, 33, 23, 36, 0, 2.6, 'clothAlt', SYM);
   add(14, 14, 17, 16, 0, 1.3, 'sandbag', SYM);

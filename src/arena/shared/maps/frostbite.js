@@ -95,8 +95,8 @@ export function buildFrostbite() {
   add(35.7, 20.3, 36, 30, 3.6, 4.1, 'hull', SYM);
   add(19, 23, 22, 25.4, 3.6, 4.75, 'darkMetal', SYM);
   add(29, 21.4, 31.4, 23, 3.6, 4.8, 'hull', SYM);
-  add(24.8, 26, 25.2, 26.4, 3.6, 6, 'darkMetal', { deco: true, sym: true });
-  add(24, 25.4, 26, 27, 6, 6.2, 'hull', { deco: true, sym: true });
+  add(24.8, 26, 25.2, 26.4, 3.6, 6, 'darkMetal', SYM); // solid: the post stands on the walkable deck
+  add(24, 25.4, 26, 27, 6, 6.2, 'hull', SYM);
   lights.push({ pos: [21, 2.7, 25], color: '#d6ecff', intensity: 12, distance: 14 }, { pos: [21, 2.7, -25], color: '#d6ecff', intensity: 12, distance: 14 });
   lights.push({ pos: [31, 2.7, 25], color: '#d6ecff', intensity: 12, distance: 14 }, { pos: [31, 2.7, -25], color: '#d6ecff', intensity: 12, distance: 14 });
 
@@ -114,13 +114,13 @@ export function buildFrostbite() {
   // --- Fuel farm and pipe rack (east) ---------------------------------------------------------
   add(40, 5, 46, 11, 0, 4.2, 'hazard', SYM);
   add(40, 13, 46, 19, 0, 4.2, 'hull', SYM);
-  add(39, 4, 47, 20, 0, 0.3, 'concrete', { deco: true, sym: true });
-  for (const x of [38, 42.5, 47]) add(x - 0.2, -4, x + 0.2, 4, 2.4, 2.8, 'darkMetal', { deco: true });
+  add(39, 4, 47, 20, 0, 0.3, 'concrete', SYM); // a step up, not a floor to sink through
+  for (const x of [38, 42.5, 47]) add(x - 0.2, -4, x + 0.2, 4, 2.4, 2.8, 'darkMetal'); // solid: low enough to jump into
   add(37.5, 3.6, 47.5, 4, 0, 2.8, 'darkMetal', SYM);
 
   // --- Open ground: drifts, berms, sleds. Tall drifts stop a rifle round, thin berms do not. ---------
   add(1, 24, 4.6, 29, 0, 2.4, 'hazard', SYM);
-  add(1.2, 24.4, 4.4, 28.6, 2.4, 2.7, 'snow', { deco: true, sym: true });
+  add(1.2, 24.4, 4.4, 28.6, 2.4, 2.7, 'snow', SYM); // the drift's crest, so it stops a round like the rest of it
   add(-5, 36, -1.5, 39, 0, 2.5, 'snowBerm', SYM);
   add(6, 40, 12, 41.2, 0, 1.25, 'snowBerm', SYM);
   add(-12, 14, -8, 17, 0, 1.3, 'snowBerm', SYM);

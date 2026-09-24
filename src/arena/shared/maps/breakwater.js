@@ -20,7 +20,9 @@ export function buildBreakwater() {
   add(-15, -1.5, 15, 1.5, 5.6, 6, 'metal');
   for (const z of [-1.45, 1.45]) for (const [x1, x2] of [[-14, -9], [-5, 5], [9, 14]]) add(x1, z - 0.05, x2, z + 0.05, 6, 7.1, 'hazard');
   add(-16, -0.6, 16, 0.6, 9, 10.2, 'hazard', { deco: true });
-  add(-1.5, -1.5, 1.5, 1.5, 7.2, 9, 'darkMetal', { deco: true });
+  // The trolley is solid and hangs clear of a head on the walkway: it used to reach down to chest height
+  // with no collision, so everyone crossing the gantry walked through it.
+  add(-1.5, -1.5, 1.5, 1.5, 7.95, 9, 'darkMetal');
 
   // --- Container stacks (south half, mirrored) -------------------------------------
   box(23, 12, 'x', 'rust', 1);        // closes the east flank lane

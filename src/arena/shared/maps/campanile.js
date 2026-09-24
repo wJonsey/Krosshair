@@ -99,7 +99,8 @@ export function buildCampanile() {
   add(-23, -4, -15, 4, 12.5, 13, 'terracotta');
   add(-22, -3, -16, 3, 13, 13.8, 'terracotta', { deco: true });
   add(-20.8, -1.8, -17.2, 1.8, 13.8, 14.6, 'terracotta', { deco: true });
-  add(-19.5, -0.5, -18.5, 0.5, 11, 12.2, 'bronze', { deco: true });
+  add(-19.5, -0.5, -18.5, 0.5, 11, 12.2, 'bronze'); // solid, so a jump in the belfry stops at it instead of putting the camera inside
+  add(-19.05, -0.05, -18.95, 0.05, 12.2, 12.5, 'darkMetal', DECO);
   lights.push({ pos: [-19, 11.6, 0], color: '#ffd59a', intensity: 10, distance: 14 });
 
   // --- Fountain and piazza furniture ------------------------------------------------
@@ -110,7 +111,7 @@ export function buildCampanile() {
   add(-1.2, -1.2, 1.2, 1.2, 0, 4.5, 'stone');
   add(-0.6, -0.6, 0.6, 0.6, 4.5, 5.6, 'bronze', { deco: true });
   add(1, 9, 3.6, 10.2, 0, 2.3, 'wood', SYM);
-  add(0.6, 9.2, 1, 10, 0.2, 0.9, 'darkMetal', { ...DECO, sym: true });
+  add(0.6, 9.2, 1, 10, 0.2, 0.9, 'darkMetal', { noShadow: true, sym: true }); // solid: it sits in the walkway beside the stall
   add(-3.8, 12, -1, 13.2, 0, 2.6, 'wood', SYM);
   add(-4.1, 11.7, -0.7, 13.5, 2.6, 2.72, 'clothAlt', SYM);
   add(-12, 8, -8, 9.2, 0, 0.7, 'stone', SYM);

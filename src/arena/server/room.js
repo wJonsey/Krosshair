@@ -1100,10 +1100,19 @@ export class Room {
   // message put you on top of a 10 m wall.
   climbOk(player, x, y, z) {
     if (y > player.footing + this.hopHeight()) return false;
-    const footed = y - this.world.groundBelow(x, y + 0.2, z) < 0.4;
+    const footed = y - this.groundUnder(x, y, z) < 0.4;
     if (footed || !(y > player.footing)) player.footing = y;
     if (footed && player.inDrop) { player.inDrop = false; player.chuteSince = 0; player.lowSince = 0; player.flags &= ~FLAG.chute; }
     return true;
+  }
+  // The highest ground under the body, not only under its centre: a pilot running up the side of a
+  // staircase stands on the treads with the middle of them over the floor, and a centre-only check read
+  // that as a pilot in mid-air climbing, and snapped them back down the stairs.
+  groundUnder(x, y, z) {
+    const r = BODY.radius * 0.9;
+    let best = this.world.groundBelow(x, y + 0.2, z);
+    for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]]) best = Math.max(best, this.world.groundBelow(x + dx, y + 0.2, z + dz));
+    return best;
   }
   // How fast this pilot may come down. The royale drop has its own, slower, rule.
   fallLimit() { return FALL_LIMIT; }

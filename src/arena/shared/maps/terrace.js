@@ -19,7 +19,7 @@ export function buildTerrace() {
   add(-5.5, 2.4, -2.5, 3.6, 0, 1, 'wood', SYM);
   add(2.5, 2.4, 5.5, 3.6, 0, 1.6, 'hedge', SYM);
   // Chiller banks close the diagonals either side of it.
-  for (const side of [-1, 1]) { add(Math.min(side * 9.5, side * 14.5), -2.2, Math.max(side * 9.5, side * 14.5), 2.2, 0, 3, 'metal'); add(Math.min(side * 10, side * 14), -1.6, Math.max(side * 10, side * 14), 1.6, 3, 3.5, 'darkMetal', { deco: true }); }
+  for (const side of [-1, 1]) { add(Math.min(side * 9.5, side * 14.5), -2.2, Math.max(side * 9.5, side * 14.5), 2.2, 0, 3, 'metal'); add(Math.min(side * 10, side * 14), -1.6, Math.max(side * 10, side * 14), 1.6, 3, 3.5, 'darkMetal'); }
 
   for (const side of [-1, 1]) {
     const lo = (a, c) => Math.min(side * a, side * c), hi = (a, c) => Math.max(side * a, side * c);

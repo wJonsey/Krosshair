@@ -124,10 +124,10 @@ export function buildDustline() {
   add(-31.6, 38, -28.4, 38.1, 5, 6, 'wood', SYM);
   add(-31.6, 41.9, -28.4, 42, 5, 6, 'wood', SYM);
   add(-28.1, 38.4, -28, 41.6, 5, 6, 'wood', SYM);
-  add(-32.4, 37.6, -27.6, 42.4, 7.2, 7.4, 'wood', { deco: true, sym: true });
+  add(-32.4, 37.6, -27.6, 42.4, 7.2, 7.4, 'wood', SYM); // solid: a jump on the platform put the camera above it
   lights.push({ pos: [-30, 6.6, 40], color: '#ffc98a', intensity: 10, distance: 14 }, { pos: [-30, 6.6, -40], color: '#ffc98a', intensity: 10, distance: 14 });
   add(-43, 19, -33.5, 26, 0, 4, 'rock', SYM);
-  add(-41, 20.5, -36, 24.5, 4, 5.2, 'rock', { deco: true, sym: true });
+  add(-41, 20.5, -36, 24.5, 4, 5.2, 'rock', SYM);
   add(-52, 44, -47, 48, 0, 2.6, 'rock', SYM);
   add(-56, 28, -52, 33, 0, 3, 'rock', SYM);
   add(-47, 14, -44, 15.2, 0, 1.15, 'sandbag', SYM);

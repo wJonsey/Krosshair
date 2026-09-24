@@ -76,8 +76,9 @@ export function buildAtrium() {
     add(-4, z - 0.05, 4, z + 0.05, 4, 5.1, 'bronze');
     glassRun('x', z, 4, 12.7, 4, 5.1);
   }
-  // Hanging sculpture (decoration only).
-  [[-1.4, 6.4, 0.5], [0.3, 7.2, -0.4], [1.2, 6.8, 0.9], [-0.4, 8, 0.2]].forEach(([x, y, z]) => add(x - 0.35, z - 0.35, x + 0.35, z + 0.35, y, y + 0.7, 'bronze', SHADOW_DECO));
+  // Hanging sculpture (decoration only). Every piece hangs above a jump from the bridge: the lowest two
+  // were within reach and a head went into them.
+  [[-1.4, 6.95, 0.5], [0.3, 7.2, -0.4], [1.2, 7.0, 0.9], [-0.4, 8, 0.2]].forEach(([x, y, z]) => add(x - 0.35, z - 0.35, x + 0.35, z + 0.35, y, y + 0.7, 'bronze', SHADOW_DECO));
 
   // --- Reflecting pool around the plinth --------------------------------------
   add(-7, 4.6, 7, 5, 0, 0.5, 'marbleDark', SYM);

@@ -170,6 +170,42 @@ for (const id of only) {
     assert.ok(Math.abs(a.length - b.length) <= 3, `uneven routes to centre: ${a.length} vs ${b.length}`);
   });
 
+  // Anything that looks solid and stands where a pilot can walk has to be solid: a crane trolley over
+  // Breakwater's gantry and a post on Frostbite's deck were decoration, and people walked through them.
+  // Foliage, cloth and water are meant to be walked through; flat trims and paint are too thin to notice.
+  test(`${id}: nothing solid-looking can be walked through`, () => {
+    const soft = new Set(['hedge', 'cloth', 'clothAlt', 'water', 'grass']);
+    const nav = new NavGrid(world, map);
+    const home = nav.nearest(map.spawns.A[0].x, map.spawns.A[0].y, map.spawns.A[0].z);
+    const reached = new Set([home.id]);
+    for (const stack = [home.id]; stack.length;) for (const edge of nav.nodes[stack.pop()].edges) if (!reached.has(edge.to)) { reached.add(edge.to); stack.push(edge.to); }
+    const standing = (x, y, z) => nav.nodes.some((node) => reached.has(node.id) && Math.abs(node.y - y) < 0.35 && Math.hypot(node.x - x, node.z - z) < 1.2);
+    const ghosts = [];
+    for (const box of map.boxes) {
+      const w = box.max[0] - box.min[0], h = box.max[1] - box.min[1], d = box.max[2] - box.min[2];
+      if (!box.deco || soft.has(box.mat) || Math.min(w, d) < 0.3 || h < 0.3) continue;
+      let open = false;
+      for (let i = 0.5; i < 6 && !open; i += 1) for (let j = 0.5; j < 6 && !open; j += 1) {
+        const x = box.min[0] + w * i / 6, z = box.min[2] + d * j / 6;
+        const ground = world.groundBelow(x, box.min[1] + BODY.height, z);
+        open = ground < box.max[1] - 0.1 && ground + BODY.height > box.min[1] + 0.1 && world.bodyFree(x, ground + 0.02, z, 0.15, BODY.height - 0.1) && standing(x, ground, z);
+      }
+      if (open) ghosts.push(`${box.id} ${box.mat} at ${box.min.join(',')}`);
+    }
+    assert.deepEqual(ghosts, [], 'decoration a pilot walks through');
+    // Overhead too: a jump must not carry the head (and the camera) into it. Kestrel Yard's paving was laid
+    // across a stairwell, a lid over the stairs that nothing held up.
+    const peak = BODY.jumpVelocity ** 2 / (2 * BODY.gravity);
+    const lids = [];
+    for (const box of map.boxes) {
+      if (!box.deco || soft.has(box.mat) || Math.max(box.max[0] - box.min[0], box.max[2] - box.min[2]) < 0.3) continue;
+      const under = nav.nodes.find((node) => reached.has(node.id) && node.x > box.min[0] && node.x < box.max[0] && node.z > box.min[2] && node.z < box.max[2]
+        && box.min[1] >= node.y + BODY.height - 0.1 && box.min[1] < node.y + BODY.height + peak - 0.1 && world.bodyFree(node.x, node.y + 0.02, node.z, BODY.radius * 0.9, box.min[1] - node.y - 0.03));
+      if (under) lids.push(`${box.id} ${box.mat} over ${under.x},${under.y},${under.z}`);
+    }
+    assert.deepEqual(lids, [], 'decoration a jump puts a head through');
+  });
+
   test(`${id}: every zone name resolves somewhere and spawns are named`, () => {
     assert.match(zoneAt(map, map.spawns.A[0].x, 0.5, map.spawns.A[0].z), /^A /);
     assert.match(zoneAt(map, map.spawns.B[0].x, 0.5, map.spawns.B[0].z), /^B /);

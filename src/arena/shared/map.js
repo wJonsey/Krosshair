@@ -26,8 +26,10 @@ function buildYard() {
   // --- Ground, with openings above the four underpass stairwells -------
   const stairHoles = [[-2, 36, 2, 44], [-2, -44, 2, -36], [-30, -2, -22, 2], [24, -2, 32, 2]];
   slabs(-45, -61, 45, 61, -0.5, 0, 'asphalt', stairHoles);
-  add(-28, -20, 24, 20, 0, 0.02, 'paving', DECO);
-  add(-43.5, -59.5, -29, 59.5, 0, 0.02, 'gravel', DECO);
+  // The surface layers keep the stairwell open too: laid across it, they drew a floor over the west stairs
+  // that pilots sank through going down and put their heads through coming up.
+  slabs(-28, -20, 24, 20, 0, 0.02, 'paving', stairHoles, DECO);
+  slabs(-43.5, -59.5, -29, 59.5, 0, 0.02, 'gravel', stairHoles, DECO);
   add(28.2, 9.2, 43.8, 45.8, 0, 0.025, 'paving', { ...DECO, sym: true });
   add(-43.8, 48, 43.8, 59.8, 0, 0.02, 'concrete', { ...DECO, sym: true });
 
@@ -182,7 +184,7 @@ function buildYard() {
   add(33.5, 43, 36, 44.5, 0, 1.1, 'concrete', SYM);
   // String lights over the market and work lamps in the rail yard keep night rounds readable.
   add(28.3, 28.4, 43.7, 28.5, 3.3, 3.36, 'lamp', { ...DECO, sym: true });
-  add(-43.7, 22, -43.6, 23.2, 3.6, 3.9, 'lamp', { ...DECO, sym: true });
+  add(-44, 22, -43.9, 23.2, 3.6, 3.9, 'lamp', { ...DECO, sym: true }); // on the wall, not beside it
   lights.push({ pos: [36, 3.1, 28.4], color: '#ffcf8a', intensity: 26, distance: 24 }, { pos: [36, 3.1, -28.4], color: '#ffcf8a', intensity: 26, distance: 24 });
   lights.push({ pos: [-42.6, 3.7, 22.6], color: '#cfe4ff', intensity: 30, distance: 26 }, { pos: [-42.6, 3.7, -22.6], color: '#cfe4ff', intensity: 30, distance: 26 });
   lights.push({ pos: [0, 4.6, 45], color: '#6ce6d1', intensity: 18, distance: 20 }, { pos: [0, 4.6, -45], color: '#ff7148', intensity: 18, distance: 20 });
