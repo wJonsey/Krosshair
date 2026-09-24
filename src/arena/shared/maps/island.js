@@ -374,7 +374,7 @@ export function buildIsland(seed = 7) {
 
   return {
     id: 'island', title: 'Kestrel Island', royale: true,
-    bounds: { minX: -R, maxX: R, minZ: -R, maxZ: R, minY: -1, maxY: 30, ceiling: 260 },
+    bounds: { minX: -R, maxX: R, minZ: -R, maxZ: R, minY: -1, maxY: 30, ceiling: 480 },
     navCell: 2,
     boxes: b.boxes, barriers: [], lights, signs: [], zones, interest, lanes: [], loot, pads, places: placed.map(({ name, x, z }) => ({ name, x, z })),
     env: { backdrop: 'sea', variants: ['noon', 'dusk'] },

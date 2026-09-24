@@ -194,7 +194,7 @@ function flyDown(room, player, { pitch = -0.2, forward = 0, openAt = null } = {}
   const world = new World(room.map.boxes);
   const body = makeBody(player.x, player.y, player.z);
   let stage = 'freefall', vy = 0, since = 0, refused = 0, yaw = player.yaw;
-  for (let frame = 0; frame < 60 * 60 && !body.onGround; frame += 1) {
+  for (let frame = 0; frame < 60 * 150 && !body.onGround; frame += 1) {
     const dt = 1 / 60;
     tick(dt); since += dt;
     const above = body.y - world.groundBelow(body.x, body.y + 0.2, body.z);

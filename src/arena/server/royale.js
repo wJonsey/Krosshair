@@ -99,17 +99,18 @@ export class RoyaleRoom extends Room {
     const half = this.map.bounds.maxX;
     this.flight = flightPlan(flightRoute(half, random), now(), half);
     const plane = aircraftAt(this.flight, now());
+    // Bots each take a spot of their own, spread over the whole island rather than piling into the
+    // named places, and go off the ramp somewhere near where the line passes it.
+    const bots = [...this.players.values()].filter((p) => p.bot && !p.watching);
+    const spots = this.startPoints(bots.length);
     for (const player of this.players.values()) {
       if (player.watching) continue;
       if (!(player.bot || player.connected)) { player.alive = false; continue; }
       this.board(player, plane);
-      // Bots: most head for a named place, the rest land out in the countryside, and each goes off the
-      // ramp near where the line passes closest to it.
       if (player.bot) {
-        const place = pick(this.map.places), wild = random() < 0.4;
-        const target = wild ? { x: (random() - 0.5) * 520, z: (random() - 0.5) * 520 } : { x: place.x + (random() - 0.5) * 90, z: place.z + (random() - 0.5) * 90 };
+        const target = spots[bots.indexOf(player)];
         this.drops.set(player.id, target);
-        player.jumpAt = this.nearestPass(target) + random() * 1.5;
+        player.jumpAt = Math.min(this.flight.ejectAt, this.nearestPass(target) + (random() - 0.5) * 6);
       }
     }
     this.phase = 'drop';
@@ -142,9 +143,10 @@ export class RoyaleRoom extends Room {
     player.jumpedAt = t;
     player.match.roundsPlayed = 1;
     if (player.bot) {
-      // A bot glides for its spot, so the spot has to be within a glide of the line it left from.
+      // Its spot, or as near it as a glide from here reaches: the aircraft is high enough that it nearly
+      // always does.
       const aim = this.drops.get(player.id) || { x: ramp.x, z: ramp.z };
-      const gap = Math.hypot(aim.x - ramp.x, aim.z - ramp.z), k = gap > DEPLOY.bot.reach ? DEPLOY.bot.reach / gap : 1;
+      const gap = Math.hypot(aim.x - ramp.x, aim.z - ramp.z), reach = (ramp.y / DEPLOY.bot.chuteFall) * DEPLOY.bot.glide * 0.9, k = gap > reach ? reach / gap : 1;
       player.dropping = true;
       player.landAt = this.landingPoint({ x: ramp.x + (aim.x - ramp.x) * k, z: ramp.z + (aim.z - ramp.z) * k }, []);
     } else player.inDrop = true;
@@ -557,10 +559,14 @@ export class RoyaleRoom extends Room {
     // Bots off the ramp: a straight dive, a late chute, a glide for their spot.
     for (const bot of this.players.values()) {
       if (!bot.dropping || !bot.alive || bot.inPlane || !bot.landAt) continue;
-      const dt = 1 / 30, above = bot.y - bot.landAt.y, chute = above < DEPLOY.bot.chuteAt;
-      bot.y -= (chute ? DEPLOY.bot.chuteFall : DEPLOY.freefall.fall) * dt;
-      if (chute) bot.flags |= FLAG.chute;
+      // Down as fast as it can while still reaching its spot: free fall when it has height to spare, the
+      // chute when the glide needs the time, and never faster than a pilot may fall.
+      const dt = 1 / 30, above = bot.y - bot.landAt.y;
       const dx = bot.landAt.x - bot.x, dz = bot.landAt.z - bot.z, gap = Math.hypot(dx, dz), step = Math.min(gap, DEPLOY.bot.glide * dt);
+      const rate = Math.max(DEPLOY.bot.chuteFall, Math.min(DEPLOY.freefall.fall, above / Math.max(0.5, gap / DEPLOY.bot.glide)));
+      const chute = rate < DEPLOY.freefall.fall * 0.6 || above < DEPLOY.bot.chuteAt;
+      bot.y -= (chute ? Math.min(rate, DEPLOY.parachute.fall * 1.5) : rate) * dt;
+      if (chute) bot.flags |= FLAG.chute;
       if (gap > 0.01) { bot.x += (dx / gap) * step; bot.z += (dz / gap) * step; bot.yaw = Math.atan2(-dx, -dz); }
       if (bot.y <= bot.landAt.y) { Object.assign(bot, { x: bot.landAt.x, y: bot.landAt.y, z: bot.landAt.z, dropping: false }); bot.flags = (bot.flags | FLAG.ground) & ~FLAG.chute; }
     }

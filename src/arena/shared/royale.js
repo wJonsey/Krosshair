@@ -72,13 +72,14 @@ export function royaleWeapon(weapon, rarity) {
 // aircraft from `aircraftAt` on its own clock, so nothing about it is sent frame by frame.
 export const DEPLOY = {
   countdown: 4,            // DEPLOYMENT_COUNTDOWN: seconds of 3, 2, 1 before the match goes live
-  altitude: 210,           // AIRCRAFT_ALTITUDE, metres
+  // AIRCRAFT_ALTITUDE, metres. High enough that a chute opened early reaches any corner from the line.
+  altitude: 420,
   speed: 24,               // AIRCRAFT_SPEED, metres a second
   // AIRCRAFT_ROUTE: give start and end as [x, z] to fly a fixed line. Left null, each match flies a
   // random line through the island, up to `offset` from its centre, timed so the ramp opens `lead`
   // metres in from the coast (the sea is outside the world), and flying on `overhang` metres past the
   // far coast before it leaves.
-  route: { start: null, end: null, lead: 22, overhang: 120, offset: 120 },
+  route: { start: null, end: null, lead: 22, overhang: 120, offset: 40 },
   doors: 2,                // JUMP_COOLDOWN: seconds after going live before the ramp opens
   maxTime: 45,             // MAX_DEPLOYMENT_TIME: nobody is aboard longer than this after going live
   coast: 25,               // and nobody is carried further than this inside the far coast
@@ -86,12 +87,14 @@ export const DEPLOY = {
   // FREEFALL_SPEED. Level, you drift further; nose down, you fall faster and travel less.
   freefall: { fall: 30, dive: 40, glide: 11, diveGlide: 6, accel: 1.6 },
   // PARACHUTE_SPEED. Forward dives, back brakes. `open` is how long the canopy takes to slow you.
-  parachute: { fall: 8, dive: 11, brake: 5, glide: 9, diveGlide: 12.5, brakeGlide: 4.5, open: 1.1, accel: 3.5, minFreefall: 0.8 },
+  // At 11 across for 7 down, a chute opened near the top carries you about 600 m: the far corners too.
+  parachute: { fall: 7, dive: 10, brake: 4.5, glide: 11, diveGlide: 14, brakeGlide: 4.5, open: 1.1, accel: 3.5, minFreefall: 0.8 },
   autoDeploy: 45,          // AUTO_DEPLOY_ALTITUDE: the chute opens itself this high above the ground
   landing: 0.55,           // LANDING_DURATION: touchdown and back on your feet, before control returns
   blend: 0.45,             // how long the camera takes to come back into your eyes after that
-  // Nobody is flying a bot, so it dives deep and pulls late, and glides straight for its spot.
-  bot: { chuteAt: 24, chuteFall: 10, glide: 12, reach: 90 },
+  // Nobody is flying a bot: it glides straight for its own spot, falling as fast as it can and still
+  // get there, so the chute only comes out when it needs it.
+  bot: { chuteAt: 24, chuteFall: 7, glide: 13 },
   // Third person, only for the deployment. Distances in metres, angles in radians, FOV in degrees added.
   camera: {
     ramp: { distance: 6.4, height: 0.6, arc: 1.2, pitchLow: -0.75, pitchHigh: 0.3, shake: 0.012 },

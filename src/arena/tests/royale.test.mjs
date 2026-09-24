@@ -444,3 +444,43 @@ test('a piece is put down by dragging it left, not by a button', () => {
   const blade = royale.match(/out\.push\(\{ key: 'melee'[^}]*\}\);/)[0];
   assert.ok(!/drop:/.test(blade), 'the blade must not be droppable');
 });
+
+// From 210 m a chute reached about 140 m either side of the line, so the corners of the island could not
+// be reached from the aircraft at all. Every corner has to be within a glide on every route.
+test('every corner of the island can be reached from the aircraft, whatever line it flies', async () => {
+  const { flightPlan, flightRoute, rampAt } = await import('../shared/royale.js');
+  const room = makeRoom();
+  const half = room.map.bounds.maxX, inset = half - 25;
+  const p = DEPLOY.parachute, reachFrom = (height) => ((height - DEPLOY.autoDeploy * 0) / p.fall) * p.glide * 0.9;
+  for (let i = 0; i < 200; i += 1) {
+    const flight = flightPlan(flightRoute(half), 0, half);
+    for (const [cx, cz] of [[-inset, -inset], [-inset, inset], [inset, -inset], [inset, inset]]) {
+      let best = Infinity;
+      for (let t = flight.doorsAt; t <= flight.ejectAt; t += 0.5) {
+        const ramp = rampAt(aircraftAt(flight, t));
+        best = Math.min(best, Math.hypot(cx - ramp.x, cz - ramp.z) - reachFrom(ramp.y - 10));
+      }
+      assert.ok(best <= 0, `corner ${cx},${cz} is ${Math.round(best)} m out of reach on a line through ${flight.from.map(Math.round)}`);
+    }
+  }
+  room.close();
+});
+
+test('bots scatter over the whole island instead of piling into the same places', () => {
+  const room = makeRoom();
+  room.join(fakeSocket(), { token: 'tok-royale-000000077', session: 's77', name: 'Watcher' }, look);
+  room.startMatch(); room.deploy();
+  step(room, room.flight.ejectAt - clock / 1000 + 60);
+  const bots = [...room.players.values()].filter((p) => p.bot && p.alive && !p.dropping);
+  assert.ok(bots.length >= 20, `only ${bots.length} bots landed`);
+  const half = room.map.bounds.maxX;
+  // All four quarters of the island, and nobody on top of anybody.
+  const quarters = new Set(bots.map((b) => `${b.x > 0 ? 'E' : 'W'}${b.z > 0 ? 'S' : 'N'}`));
+  assert.equal(quarters.size, 4, `bots only landed in ${[...quarters].join(', ')}`);
+  let close = 0;
+  for (const a of bots) for (const b of bots) if (a !== b && Math.hypot(a.x - b.x, a.z - b.z) < 12) close += 1;
+  assert.ok(close / 2 <= 3, `${close / 2} pairs of bots landed on top of each other`);
+  const far = bots.filter((b) => Math.max(Math.abs(b.x), Math.abs(b.z)) > half * 0.55).length;
+  assert.ok(far >= bots.length * 0.2, `only ${far} of ${bots.length} bots went out towards the edges`);
+  room.close();
+});

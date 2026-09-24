@@ -112,7 +112,20 @@ export function initDeploy({ arena, camera, player, viewmodel }) {
   const tpPos = new THREE.Vector3(), tpQuat = new THREE.Quaternion(), fpPos = new THREE.Vector3(), fpQuat = new THREE.Quaternion();
   // Scratch vectors, one job each: `follow` fills dirV/wantV while its target (chest) is still being read.
   const helper = new THREE.Object3D(), v = new THREE.Vector3(), w = new THREE.Vector3(), chest = new THREE.Vector3(), dirV = new THREE.Vector3(), wantV = new THREE.Vector3(), up = new THREE.Vector3();
-  let fov = null, lastYaw = null, bank = 0;
+  let fov = null, lastYaw = null, bank = 0, fogBase = null;
+  // From 420 m the ground is past every weather's fog, so while you are up there the fog is pushed back to
+  // show where you are going, and eases back to the weather's own as you come down. Put back on landing.
+  function liftFog() {
+    const fog = arena.scene.fog;
+    if (!fog) return;
+    if (!fogBase) fogBase = { near: fog.near, far: fog.far };
+    const far = Math.max(fogBase.far, camera.position.y * 2.4 + 150);
+    fog.far = far; fog.near = Math.max(fogBase.near, far * 0.35);
+  }
+  function dropFog() {
+    if (fogBase && arena.scene.fog) { arena.scene.fog.near = fogBase.near; arena.scene.fog.far = fogBase.far; }
+    fogBase = null;
+  }
 
   net.on('royale-flight', (message) => { flight = message.flight || null; });
   // Where the ground is where you look: that becomes your mark. It moves nobody; it is there to steer by.
@@ -149,6 +162,7 @@ export function initDeploy({ arena, camera, player, viewmodel }) {
   // Out of the deployment for whatever reason: first person, nothing of ours left in the world.
   function reset() {
     stage = null; since = 0; jumpAskedAt = -1; leapFrom = null;
+    dropFog();
     me.holder.visible = false; me.chute.visible = false;
     countBox.classList.remove('on'); put(prompt, '');
     hudRoot.classList.remove('on');
@@ -349,6 +363,8 @@ export function initDeploy({ arena, camera, player, viewmodel }) {
         me.holder.visible = k < 0.75;
         if (k > 0.9 && viewmodel.hidden) { viewmodel.hidden = false; viewmodel.equip = 0; }
       }
+
+      if (stage === 'landing') dropFog(); else liftFog();
 
       // ---- what to press
       countBox.classList.toggle('on', game.room.phase === 'drop' || (stage === 'plane' && t < flight.liveAt + 0.8));
