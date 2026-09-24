@@ -24,7 +24,9 @@ export function buildCampanile() {
   // Six steps, not seven, so every tread is a full metre. At seven they were 0.86 m and a body standing
   // on one clipped three millimetres into the next riser, which is under a pilot's notice but leaves the
   // bot grid with no foothold on the flight at all.
-  stairs('z', 34, 28, 29, 32.6, -2.4, 0, 6, 'stone', SYM);
+  // They climb away from the canal walk and come out at the canal's end. They used to rise the other way,
+  // so a pilot walking along the canal met the top step as a wall and had to go round to the far end.
+  stairs('z', 28, 34, 29, 32.6, -2.4, 0, 6, 'stone', SYM);
   add(32.6, 28, 33, 34, -2.4, 0, 'stone', SYM);
   // Centre stairs climb west out of the canal onto the piazza.
   stairs('x', 29, 23, -1.5, 1.5, -2.4, 0, 6, 'stone');
@@ -32,10 +34,8 @@ export function buildCampanile() {
   add(22.4, 1.5, 29, 2.1, -2.9, -0.5, 'stone');
   add(22.4, -1.5, 23, 1.5, -2.9, -0.5, 'stone');
   add(23, 1.5, 28.6, 1.9, 0, 1, 'stone', SYM);
-  // Parapet along the canal edge, open at the three stairheads. The gap at z 28 to 29 is the one the
-  // side stairs come up through: without it the flight climbs the full three metres and dead ends.
-  add(28.6, 1.9, 29, 28, 0, 1, 'stone', SYM);
-  add(28.6, 29, 29, 34, 0, 1, 'stone', SYM);
+  // Parapet along the canal edge, open only at the centre stairhead: the side stairs come out at the end.
+  add(28.6, 1.9, 29, 34, 0, 1, 'stone', SYM);
 
   // --- Perimeter ------------------------------------------------------------
   add(-38, -48, -36, 48, 0, 9, 'ochre');

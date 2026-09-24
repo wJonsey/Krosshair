@@ -4,7 +4,7 @@
 // animation lands so the coin counter never gives the answer away.
 import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, cosmeticUnlocked, dateKey, weaponClass } from '../shared/constants.js';
 // SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
-import { ATTACHMENTS, SLOTS as GUN_SLOTS, SLOT_NAMES, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
+import { ATTACHMENTS, SLOTS as GUN_SLOTS, SLOT_NAMES, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
 import { nextUnlock, partUnlocked, unlockLevel, weaponProgress } from '../shared/gunlevels.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, itemSet, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
@@ -832,7 +832,7 @@ function partCard(base, slot, part, fitted, level) {
   // Marked from state, not :hover: the list is redrawn under a still cursor, which drops the hover.
   const peek = smithHover?.slot === slot && smithHover.id === part.id;
   return `<button type="button" class="smith-part${on ? ' on' : ''}${peek ? ' peek' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
-    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Equipped</em>' : unlocked ? `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>` : `<em class="smith-lock">🔒 Level ${unlockLevel(weaponId, part.id)}</em>`}</span>
+    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Equipped</em>' : unlocked ? '' : `<em class="smith-lock">🔒 Level ${unlockLevel(weaponId, part.id)}</em>`}</span>
     <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
 }
 // Small line drawings for the slots, so the unlock preview and the callouts have something to show
@@ -943,11 +943,10 @@ function gunsmithHtml() {
   const shown = peekBuild ? (resolveWeapon(weaponId, peekBuild) || built) : built;
   const peeking = Boolean(peekBuild);
   const peekOff = peeking && build[smithHover.slot] === smithHover.id;
-  const partsCost = buildCost(build);
   const fitted = GUN_SLOTS.filter((slot) => build[slot]).length;
   const slotsWith = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
 
-  // Top right: this gun's own level. It starts at 0 on every server start, earns XP from kills and
+  // Top right: this gun's own level. It starts at 0, earns XP from kills and
   // assists with it, and every level it gains can open a part. The server decides all of that; this
   // only draws what the profile says.
   const gun = weaponProgress(game.profile.gunXp?.[weaponId] || 0);
@@ -997,7 +996,7 @@ function gunsmithHtml() {
       <section class="smith-stats">
         <header><small>${peekOff ? 'If you take that off' : peeking ? 'If you equip that' : fitted ? 'As built' : 'Stock'}</small><button type="button" class="smith-detail-toggle" data-smith-detail="1">${smithDetail ? 'Summary' : 'All stats'}</button></header>
         ${smithDetail ? `<div class="smith-groups">${stats}</div>` : `<div class="smith-bars">${smithBars(peeking ? built : base, shown)}</div>`}
-        <footer><span><small>Armoury price</small><b>$${base.cost + partsCost}</b>${partsCost ? `<i>gun $${base.cost} + parts $${partsCost}</i>` : '<i>match credits, not coins</i>'}</span>
+        <footer><span><small>Armoury price</small><b>$${base.cost}</b><i>match credits, not coins</i></span>
           ${fitted ? '<button type="button" class="smith-strip" data-smith-clear="1">Remove all</button>' : ''}</footer>
       </section>
     </div>

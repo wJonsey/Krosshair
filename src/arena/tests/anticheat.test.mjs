@@ -506,13 +506,13 @@ test('parts saved after buying a gun do not go on the gun already in your hands'
   room.takeBuilds(player, profiles.get(player.token).builds);
   assert.equal(room.currentWeapon(player).mag, bare, 'the gun in hand took parts nobody paid for');
   assert.equal(9000 - player.credits, paid);
-  // Bought again next time, it comes with them, and is charged for them.
+  // Bought again next time, it comes with them, at the same price: parts are free.
   room.phase = 'buy';
   player.weapons.primary = 'm44'; player.bought = {}; // a new round
   player.credits = 9000;
   room.handle(player, { type: 'buy', item: 'talon' });
   assert.ok(room.currentWeapon(player).mag > bare, 'a gun bought with the build did not get it');
-  assert.ok(9000 - player.credits > paid, 'the parts were not charged for');
+  assert.equal(9000 - player.credits, paid, 'the parts changed the price');
   room.close();
 });
 

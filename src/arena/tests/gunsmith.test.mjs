@@ -11,7 +11,7 @@ import { Room } from '../server/room.js';
 import { WEAPONS } from '../shared/constants.js';
 import { MAX_WEAPON_LEVEL, XP_CURVE } from '../shared/gunlevels.js';
 import { damageFor } from '../shared/combat.js';
-import { ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, buildCost, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
+import { ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => ({ readyState: 1, send: () => {} });
@@ -73,12 +73,12 @@ test('a part only fits where it should, and a build is cleaned of anything else'
   assert.deepEqual(cleanBuild('knife', { optic: 'dot' }), emptyBuild(), 'a knife kept an attachment');
 });
 
-test('the resolved gun costs more, and never touches the base weapon', () => {
+test('the resolved gun costs the same as the bare one, and never touches the base weapon', () => {
   const build = { ...emptyBuild(), optic: 'holo', muzzle: 'suppressor', mag: 'extmag' };
   const base = WEAPONS.talon;
   const baseMag = base.mag, baseSpread = base.spread.ads, baseLoud = base.loud;
   const built = resolveWeapon('talon', build);
-  assert.equal(built.cost, base.cost + buildCost(build));
+  assert.equal(built.cost, base.cost, 'parts changed the armoury price');
   assert.ok(built.mag > baseMag, 'the extended mag did nothing');
   assert.ok(built.loud < baseLoud, 'the suppressor did nothing');
   assert.equal(built.suppressed, true);
@@ -106,7 +106,7 @@ test('the server resolves the gun, so a lie about a build changes nothing', asyn
   room.close();
 });
 
-test('the armoury charges for what is bolted on', async () => {
+test('the armoury charges the gun\'s own price, whatever is bolted on', async () => {
   const { room } = await makeRoom();
   const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
   const build = { ...emptyBuild(), optic: 'holo', mag: 'extmag' };
@@ -116,7 +116,7 @@ test('the armoury charges for what is bolted on', async () => {
   player.credits = 9000;
   room.buy(player, 'talon');
   assert.equal(player.weapons.primary, 'talon');
-  assert.equal(player.credits, 9000 - (WEAPONS.talon.cost + buildCost(build)), 'the build was not charged for');
+  assert.equal(player.credits, 9000 - WEAPONS.talon.cost, 'the parts were charged for');
   assert.ok(player.ammo.primary.mag > WEAPONS.talon.mag, 'the gun was handed over without its mag');
   room.close();
 });
@@ -139,24 +139,21 @@ test('the armoury shows the price it is going to charge', async () => {
   room.buy(player, 'talon');
   assert.equal(player.weapons.primary, 'talon', 'the gun was not handed over');
   assert.equal(before - player.credits, shown, `the menu said ${shown} and the armoury took ${before - player.credits}`);
-  assert.ok(shown > WEAPONS.talon.cost, 'this build must cost more than the bare gun, or the test proves nothing');
+  assert.equal(shown, WEAPONS.talon.cost, 'a built gun is priced like the bare one');
   room.close();
 });
 
-// Afford the built price and you can buy it; afford only the bare price and the row must not invite you.
-test('a gun you cannot afford with its attachments is not offered at the bare price', async () => {
+// The bare price is the price: a pilot who can afford the gun gets it with their parts on.
+test('a gun with parts on is bought at the bare price', async () => {
   const { room } = await makeRoom();
   const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
-  const build = { ...emptyBuild(), optic: 'longscope', mag: 'drum' };
-  player.builds = { talon: build };
+  player.builds = { talon: { ...emptyBuild(), optic: 'longscope', mag: 'drum' } };
   room.phase = 'buy';
   player.alive = true;
-  const shown = resolveWeapon('talon', build).cost;
-  player.credits = WEAPONS.talon.cost; // exactly the bare price, which is what the menu used to advertise
-  assert.ok(player.credits < shown, 'the bare price must be short of the built price for this to mean anything');
+  player.credits = WEAPONS.talon.cost;
   room.buy(player, 'talon');
-  assert.notEqual(player.weapons.primary, 'talon', 'the server let it through at the bare price');
-  assert.equal(player.credits, WEAPONS.talon.cost, 'and took nothing');
+  assert.equal(player.weapons.primary, 'talon', 'the bare price was not enough');
+  assert.equal(player.credits, 0);
   room.close();
 });
 
@@ -406,13 +403,11 @@ test('stripping a gun is kept too, or the parts would come back', () => {
   assert.match(clear, /keepBuilds\(\)/, 'taking everything off is a change like any other');
 });
 
-// The parts cost match credits, not coins. Showing a coin next to them read as a price in the
-// currency people buy skins with, which is not what it is.
-test('attachments do not claim to cost coins', () => {
+// Parts are free to fit: the Gunsmith shows no price on them at all.
+test('attachments show no price', () => {
   const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
   const card = shop.slice(shop.indexOf('function partCard'), shop.indexOf('function partCard') + 700);
-  assert.ok(!/coins\(part\.cost\)/.test(card), 'a part must not be priced with the coin mark');
-  assert.match(card, /\+\$\$\{part\.cost\}|\+\$/, 'it is a credit price, shown the way a match shows one');
+  assert.ok(!/part\.cost/.test(card), 'a part card still shows a price');
 });
 
 test('nothing in the gunsmith is waiting to be saved any more', () => {

@@ -3,7 +3,7 @@
 import { performance } from 'node:perf_hooks';
 import { royaleWeapon } from '../shared/royale.js';
 import { outageLine, outageReason } from '../shared/outage.js';
-import { resolveWeapon, cleanBuild, buildCost } from '../shared/attachments.js';
+import { resolveWeapon, cleanBuild } from '../shared/attachments.js';
 import {
   ARMOR, ARMOR_ABSORB, BODY, BOT_DIFFICULTY, DEFAULT_LOADOUT, DEFAULT_RULES, ECONOMY, FLAG, GADGETS, GADGET_SLOTS,
   CHAMBER, GUN_LADDER, HELMET_FACTOR, MAX_PLAYERS, MAX_REWIND, MODIFIERS, PLACEMENT_MATCHES, isRanked, QUICK_COMMANDS, REACTIONS, RECONNECT_GRACE, SNAPSHOT_RATE, streakAt, teamSizeOf,

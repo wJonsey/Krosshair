@@ -218,10 +218,12 @@ attachments as it levels. Everything to tune is at the top of `shared/gunlevels.
 and `WEAPON_UNLOCKS` (a different level for one part on one gun). A new attachment needs a line in
 `UNLOCK_LEVELS` or `tests/gunlevels.test.mjs` fails.
 
-**Session only, on purpose.** Levels live in `ProfileStore.gunXp`, a map in memory that `snapshot()` never
-writes, so every restart (every deploy) puts every gun on every profile back to 0. Nothing else is touched:
-saved builds stay on the profile and simply wait until the gun is levelled enough to use them again, and
-the kill-count mastery badges in `profile.weapons` are a separate, permanent record.
+**Saved with the profile.** Levels live in `profile.gunXp` (weapon id to XP) and are written with the rest
+of the profile, so a restart or deploy keeps them. A guest's profile is never written, so a guest's levels
+last only as long as the guest. The kill-count mastery badges in `profile.weapons` are a separate record.
+
+**Parts are free.** Fitting parts never changes a gun's Armoury price: `resolveWeapon` keeps `cost` at the
+base weapon's, and the Gunsmith shows no part prices.
 
 **The server decides.** XP is paid only from `kill()` in `room.js` (`gunXp`), for the gun the server says
 did it; assists pay the gun the damage was done with (`damageWith`). Bots, watchers and the range earn

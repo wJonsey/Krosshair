@@ -1,5 +1,5 @@
 // Weapon levels: every gun starts at 0 with only its stock build, earns XP from the server's own kill
-// and assist events, unlocks parts as it levels, and goes back to 0 when the server restarts. Nothing a
+// and assist events, unlocks parts as it levels, and keeps its level through a restart. Nothing a
 // client sends can level a gun or put a locked part on one.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -141,7 +141,7 @@ test('5. each gun keeps its own level through weapon swaps', async () => {
   room.close();
 });
 
-test('6 and 7. a restart puts every gun back to 0 and leaves everything else alone', async () => {
+test('6 and 7. a restart keeps every gun\'s level, its parts, and everything else', async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-restart-'));
   const before = await store(dir);
   const token = ProfileStore.newToken();
@@ -152,17 +152,16 @@ test('6 and 7. a restart puts every gun back to 0 and leaves everything else alo
   before.awardGunXp(token, 'm44', xpFor(MAX_WEAPON_LEVEL));
   before.saveBuilds(token, { m44: { optic: 'dot', mag: 'extmag' } });
   before.scheduleSave(); before.flush();
-  // Nothing about weapon levels is on disk to come back.
   const file = await readFile(path.join(dir, 'profiles.json'), 'utf8');
-  assert.ok(!/gunXp/.test(file), 'weapon XP was written to disk');
+  assert.ok(/gunXp/.test(file), 'weapon XP was not written to disk');
   const after = await store(dir);
-  for (const id of Object.keys(WEAPONS)) assert.equal(after.gunLevel(token, id), 0, `${id} kept its level through a restart`);
-  assert.deepEqual(after.view(token).builds, {}, 'saved parts are still usable after a restart');
+  assert.equal(after.gunLevel(token, 'm44'), MAX_WEAPON_LEVEL, 'the gun lost its level in the restart');
+  assert.deepEqual(after.view(token).builds.m44, { ...before.view(token).builds.m44 }, 'the parts came off in the restart');
   const again = new Room({ name: 'gunlv-restart', queue: 'custom', profiles: after, onEmpty: () => {} });
   clearInterval(again.interval);
   const player = again.join(inbox(), { token, session: 's', name: 'Back' }, look);
   again.phase = 'live'; again.spawn(player, 0);
-  assert.equal(again.currentWeapon(player), WEAPONS.m44, 'the gun came back with its parts on');
+  assert.ok(again.currentWeapon(player).mag > WEAPONS.m44.mag, 'the gun came back without its parts');
   again.close();
   // Everything else is exactly as it was.
   const profile = after.get(token);
@@ -170,10 +169,19 @@ test('6 and 7. a restart puts every gun back to 0 and leaves everything else alo
   assert.equal(profile.xp, 12345);
   assert.ok(profile.finishes.includes('ember'));
   assert.deepEqual(profile.weapons.m44, { kills: 42, headshots: 7 }, 'the mastery record was touched');
-  assert.equal(profile.builds.m44.optic, 'dot', 'the saved build itself was deleted: it should wait for the levels to come back');
-  // Earn the level again and the saved build is there waiting.
-  after.awardGunXp(token, 'm44', xpFor(MAX_WEAPON_LEVEL));
-  assert.equal(after.view(token).builds.m44.mag, 'extmag');
+  assert.equal(profile.builds.m44.optic, 'dot');
+});
+
+test('a guest\'s weapon levels never reach disk', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'krosshair-guestxp-'));
+  const profiles = await store(dir);
+  const token = ProfileStore.newToken();
+  profiles.holdGuest(token);
+  profiles.awardGunXp(token, 'm44', 500);
+  assert.equal(profiles.gunXpOf(token, 'm44'), 500, 'the guest did not level while playing');
+  profiles.scheduleSave(); profiles.flush();
+  const file = await readFile(path.join(dir, 'profiles.json'), 'utf8').catch(() => '');
+  assert.ok(!file.includes(ProfileStore.key(token)), 'the guest was written to disk');
 });
 
 test('8. two pilots on the same gun level on their own', async () => {

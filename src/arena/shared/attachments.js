@@ -149,7 +149,7 @@ export function resolveWeapon(weaponId, build) {
   }
   out.mag = Math.max(1, Math.round(out.mag));
   out.reserve = Math.max(0, Math.round(out.reserve));
-  out.cost = base.cost + buildCost(clean);
+  out.cost = base.cost; // parts never change what the gun costs in the Armoury
   // A gun that lost its magnification loses its zoom levels with it.
   if (out.sight !== 'scope' && out.sight !== 'prism' && base.scope && out.scope === base.scope) out.scope = [...base.scope];
   return out;

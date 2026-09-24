@@ -75,9 +75,6 @@ export class ProfileStore {
     this.saveTimer = null;
     // Guest profiles live in memory only: never written to disk, dropped once the guest has gone.
     this.guests = new Map(); // key → release timer (or null while connected)
-    // Weapon levels: key → Map(weaponId → xp). Memory only, by design: it is not in snapshot(), so it
-    // never reaches disk and a restart starts every gun on every profile back at level 0.
-    this.gunXp = new Map();
   }
 
   async load() {
@@ -135,7 +132,7 @@ export class ProfileStore {
     if (!this.guests.has(key) || this.guests.get(key) === 'gone') return;
     clearTimeout(this.guests.get(key));
     // The key stays marked as a guest's, so a late write (a match ending) can never land on disk.
-    const timer = setTimeout(() => { if (this.guests.get(key) === timer) { this.guests.set(key, 'gone'); this.profiles.delete(key); this.gunXp.delete(key); } }, after);
+    const timer = setTimeout(() => { if (this.guests.get(key) === timer) { this.guests.set(key, 'gone'); this.profiles.delete(key); } }, after);
     timer.unref?.();
     this.guests.set(key, timer);
   }
@@ -258,7 +255,7 @@ export class ProfileStore {
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       // Only what each gun's level allows: a saved build is a wish, the level decides what is on it.
       builds: this.usableBuilds(token),
-      gunXp: Object.fromEntries(this.gunXp.get(ProfileStore.key(token)) || []),
+      gunXp: { ...(profile.gunXp || {}) },
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
         ...contract, text: contractText(contract),
@@ -289,19 +286,20 @@ export class ProfileStore {
     return { refused };
   }
 
-  // ---- weapon levels (session only; see gunXp above)
-  gunXpOf(token, weaponId) { return this.gunXp.get(ProfileStore.key(token))?.get(weaponId) || 0; }
+  // ---- weapon levels: saved with the rest of the profile, so a restart keeps them. A guest's profile is
+  // never written, so theirs last as long as the guest does.
+  gunXpOf(token, weaponId) { return clampXp(this.profiles.get(ProfileStore.key(token))?.gunXp?.[weaponId] || 0); }
   gunLevel(token, weaponId) { return weaponLevel(this.gunXpOf(token, weaponId)); }
   // The only way a gun earns XP. Called by the room from its own kill and assist events, never from a
   // message. Returns what changed, or null when nothing did.
   awardGunXp(token, weaponId, amount) {
     if (!token || !levelledGun(weaponId) || !Number.isFinite(amount) || amount <= 0) return null;
-    const key = ProfileStore.key(token);
-    if (!this.gunXp.has(key)) this.gunXp.set(key, new Map());
-    const guns = this.gunXp.get(key);
-    const before = guns.get(weaponId) || 0, xp = clampXp(before + amount);
+    const profile = this.get(token);
+    profile.gunXp = profile.gunXp || {};
+    const before = clampXp(profile.gunXp[weaponId] || 0), xp = clampXp(before + amount);
     if (xp === before) return null;
-    guns.set(weaponId, xp);
+    profile.gunXp[weaponId] = xp;
+    this.scheduleSave();
     const from = weaponLevel(before), to = weaponLevel(xp);
     return { weapon: weaponId, xp, gained: xp - before, level: to, from, unlocked: to > from ? unlocksBetween(weaponId, from, to).map((part) => part.id) : [] };
   }
