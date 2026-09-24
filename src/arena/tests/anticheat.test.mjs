@@ -419,9 +419,8 @@ test('a party is kept on one side when teams are dealt', async () => {
 // ------------------------------------------------------------------ gun builds
 test('parts saved after buying a gun do not go on the gun already in your hands', async () => {
   const { room, player, profiles } = await arena('yard');
-  const { xpForLevel } = await import('../shared/constants.js');
-  const { ATTACHMENT_LEVEL } = await import('../shared/attachments.js');
-  profiles.get(player.token).xp = xpForLevel(ATTACHMENT_LEVEL);
+  const { MAX_WEAPON_LEVEL, XP_CURVE } = await import('../shared/gunlevels.js');
+  profiles.awardGunXp(player.token, 'talon', XP_CURVE[MAX_WEAPON_LEVEL - 1]);
   room.phase = 'buy';
   player.credits = 9000;
   room.handle(player, { type: 'buy', item: 'talon' });

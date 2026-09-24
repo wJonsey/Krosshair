@@ -155,6 +155,4 @@ export function resolveWeapon(weaponId, build) {
   return out;
 }
 
-// What a pilot is allowed to bolt on. Attachments unlock with level so a new pilot is not drowned in them.
-export const ATTACHMENT_LEVEL = 4;
-export const attachmentsUnlocked = (level) => level >= ATTACHMENT_LEVEL;
+// What a pilot may bolt on is decided per gun, by that gun's level: see shared/gunlevels.js.

@@ -170,6 +170,28 @@ turns it: all the way round, a little tilt, and back to side on for a new gun. E
 the same way (skins, charms, crates, the Locker and Play page pilot), all through `client/turntable.js`.
 A crate lets go of its angle the moment it is opened, so the opening always swings round to face you.
 
+## Weapon levels
+
+Every gun starts at level 0 with only its stock build, earns XP when it gets kills and assists, and unlocks
+attachments as it levels. Everything to tune is at the top of `shared/gunlevels.js`: `MAX_WEAPON_LEVEL`,
+`XP_CURVE` (total XP per level), `WEAPON_XP` (kill, bot kill, headshot, assist), `UNLOCK_LEVELS` (per part)
+and `WEAPON_UNLOCKS` (a different level for one part on one gun). A new attachment needs a line in
+`UNLOCK_LEVELS` or `tests/gunlevels.test.mjs` fails.
+
+**Session only, on purpose.** Levels live in `ProfileStore.gunXp`, a map in memory that `snapshot()` never
+writes, so every restart (every deploy) puts every gun on every profile back to 0. Nothing else is touched:
+saved builds stay on the profile and simply wait until the gun is levelled enough to use them again, and
+the kill-count mastery badges in `profile.weapons` are a separate, permanent record.
+
+**The server decides.** XP is paid only from `kill()` in `room.js` (`gunXp`), for the gun the server says
+did it; assists pay the gun the damage was done with (`damageWith`). Bots, watchers and the range earn
+nothing. What a gun may carry is `usableBuild`, applied when a build is saved (`saveBuilds` refuses locked
+parts and says so), sent (`view().builds`), handed out (`holdBuild`) and bought (`buy`). The Gunsmith reads
+`game.profile.gunXp` and the `gun-xp` message only to draw levels and locks.
+
+This replaced the old rule that every part unlocked at pilot level 4 (`ATTACHMENT_LEVEL`): with both,
+a gun at level 10 would still have been locked for a new pilot.
+
 ## One game per person
 
 The newest tab or connection wins. In one browser the tabs tell each other over a `BroadcastChannel`

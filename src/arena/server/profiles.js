@@ -1,6 +1,7 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
-import { attachmentsUnlocked, cleanBuild, isEmptyBuild } from '../shared/attachments.js';
+import { cleanBuild, isEmptyBuild } from '../shared/attachments.js';
+import { clampXp, levelledGun, unlocksBetween, usableBuild, weaponLevel } from '../shared/gunlevels.js';
 import { runway } from '../shared/itemshop.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -74,6 +75,9 @@ export class ProfileStore {
     this.saveTimer = null;
     // Guest profiles live in memory only: never written to disk, dropped once the guest has gone.
     this.guests = new Map(); // key → release timer (or null while connected)
+    // Weapon levels: key → Map(weaponId → xp). Memory only, by design: it is not in snapshot(), so it
+    // never reaches disk and a restart starts every gun on every profile back at level 0.
+    this.gunXp = new Map();
   }
 
   async load() {
@@ -131,7 +135,7 @@ export class ProfileStore {
     if (!this.guests.has(key) || this.guests.get(key) === 'gone') return;
     clearTimeout(this.guests.get(key));
     // The key stays marked as a guest's, so a late write (a match ending) can never land on disk.
-    const timer = setTimeout(() => { if (this.guests.get(key) === timer) { this.guests.set(key, 'gone'); this.profiles.delete(key); } }, after);
+    const timer = setTimeout(() => { if (this.guests.get(key) === timer) { this.guests.set(key, 'gone'); this.profiles.delete(key); this.gunXp.delete(key); } }, after);
     timer.unref?.();
     this.guests.set(key, timer);
   }
@@ -252,7 +256,9 @@ export class ProfileStore {
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
       look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
-      builds: profile.builds || {},
+      // Only what each gun's level allows: a saved build is a wish, the level decides what is on it.
+      builds: this.usableBuilds(token),
+      gunXp: Object.fromEntries(this.gunXp.get(ProfileStore.key(token)) || []),
       stats: { playerKills: 0, botKills: 0, ...profile.stats }, weapons: profile.weapons, history: profile.history, recent: profile.recent,
       contracts: dailyContracts(profile.contracts.date).map((contract) => ({
         ...contract, text: contractText(contract),
@@ -265,19 +271,49 @@ export class ProfileStore {
   // Look, settings and tutorial progress follow the account between browsers.
   // Saved gun builds, one per weapon. Cleaned against the attachment rules so a crafted message cannot
   // bolt a scope onto a knife or a part that does not fit the family.
+  // A part is only kept if this pilot's level on that gun has unlocked it; the rest of the build is
+  // saved and the refused parts are returned, so the page can say so. Taking parts off always works.
   saveBuilds(token, builds) {
     const profile = this.get(token);
-    if (!builds || typeof builds !== 'object') return;
+    const refused = [];
+    if (!builds || typeof builds !== 'object') return { refused };
     profile.builds = profile.builds || {};
-    // Parts unlock at a level, and that was only ever checked in the browser. Below it, a build can be
-    // taken off but not put on.
-    const unlocked = attachmentsUnlocked(levelFromXp(profile.xp));
     for (const [weaponId, build] of Object.entries(builds).slice(0, 40)) {
       if (!Object.hasOwn(WEAPONS, weaponId) || WEAPONS[weaponId].melee) continue;
-      const clean = unlocked ? cleanBuild(weaponId, build) : {};
+      const fits = cleanBuild(weaponId, build);
+      const clean = usableBuild(weaponId, fits, this.gunLevel(token, weaponId));
+      for (const [slot, id] of Object.entries(fits)) if (id && clean[slot] !== id) refused.push({ weapon: weaponId, part: id });
       if (isEmptyBuild(clean)) delete profile.builds[weaponId]; else profile.builds[weaponId] = clean;
     }
     this.scheduleSave();
+    return { refused };
+  }
+
+  // ---- weapon levels (session only; see gunXp above)
+  gunXpOf(token, weaponId) { return this.gunXp.get(ProfileStore.key(token))?.get(weaponId) || 0; }
+  gunLevel(token, weaponId) { return weaponLevel(this.gunXpOf(token, weaponId)); }
+  // The only way a gun earns XP. Called by the room from its own kill and assist events, never from a
+  // message. Returns what changed, or null when nothing did.
+  awardGunXp(token, weaponId, amount) {
+    if (!token || !levelledGun(weaponId) || !Number.isFinite(amount) || amount <= 0) return null;
+    const key = ProfileStore.key(token);
+    if (!this.gunXp.has(key)) this.gunXp.set(key, new Map());
+    const guns = this.gunXp.get(key);
+    const before = guns.get(weaponId) || 0, xp = clampXp(before + amount);
+    if (xp === before) return null;
+    guns.set(weaponId, xp);
+    const from = weaponLevel(before), to = weaponLevel(xp);
+    return { weapon: weaponId, xp, gained: xp - before, level: to, from, unlocked: to > from ? unlocksBetween(weaponId, from, to).map((part) => part.id) : [] };
+  }
+  // A saved build as it can be used right now, and all of them.
+  usableBuild(token, weaponId, build) { return levelledGun(weaponId) ? usableBuild(weaponId, build, this.gunLevel(token, weaponId)) : null; }
+  usableBuilds(token) {
+    const out = {};
+    for (const [weaponId, build] of Object.entries(this.get(token).builds || {})) {
+      const usable = this.usableBuild(token, weaponId, build);
+      if (usable && !isEmptyBuild(usable)) out[weaponId] = usable;
+    }
+    return out;
   }
 
   savePrefs(token, { look, settings, tutorialDone } = {}) {

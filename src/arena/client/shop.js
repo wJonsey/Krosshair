@@ -2,9 +2,10 @@
 // The menu redraws often, so every animation runs off a start time: a redraw mid-spin picks up where
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
-import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, cosmeticUnlocked, dateKey, weaponClass, xpForLevel } from '../shared/constants.js';
+import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, cosmeticUnlocked, dateKey, weaponClass } from '../shared/constants.js';
 // SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
-import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachmentsUnlocked, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
+import { ATTACHMENTS, SLOTS as GUN_SLOTS, SLOT_NAMES, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
+import { nextUnlock, partUnlocked, unlockLevel, weaponProgress } from '../shared/gunlevels.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, itemSet, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
 import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, publicFinishes, PUBLIC_RARITIES } from '../shared/economy.js';
@@ -191,6 +192,12 @@ net.on('coins-result', (message) => {
     ctx.refreshCoins();
     redraw();
   }
+});
+// A gun earned XP in a match: the server sends the new total, and the Gunsmith draws from it.
+net.on('gun-xp', (message) => {
+  if (!game.profile || typeof message.weapon !== 'string') return;
+  game.profile.gunXp = { ...(game.profile.gunXp || {}), [message.weapon]: message.xp };
+  redraw();
 });
 net.on('coins-error', (message) => {
   busy = false;
@@ -775,7 +782,7 @@ function keepBuilds() {
   clearTimeout(buildTimer);
   buildTimer = setTimeout(() => {
     const dirty = smithDirty();
-    if (!dirty.length || !attachmentsUnlocked(game.profile?.level || 1)) return;
+    if (!dirty.length) return;
     net.send({ type: 'builds', builds: Object.fromEntries(dirty.map((id) => [id, smithDrafts[id]])) });
   }, 400);
 }
@@ -818,12 +825,14 @@ function partChips(part, base) {
   return chips.join('');
 }
 // A part in the open slot's list: a compact row, its price in match credits, what it trades.
-function partCard(base, slot, part, fitted, unlocked) {
+// Locked parts are shown, greyed, with the level that opens them: the list is also the road ahead.
+function partCard(base, slot, part, fitted, level) {
+  const unlocked = partUnlocked(weaponId, part.id, level);
   const on = fitted === part.id;
   // Marked from state, not :hover: the list is redrawn under a still cursor, which drops the hover.
   const peek = smithHover?.slot === slot && smithHover.id === part.id;
   return `<button type="button" class="smith-part${on ? ' on' : ''}${peek ? ' peek' : ''}${unlocked ? '' : ' locked'}" data-smith-part="${slot}:${part.id}" ${unlocked ? '' : 'disabled'}>
-    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Equipped</em>' : unlocked ? `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>` : `<em class="smith-lock">Locked · level ${ATTACHMENT_LEVEL}</em>`}</span>
+    <span class="smith-part-head"><b>${part.name}</b>${on ? '<em class="smith-fitted">Equipped</em>' : unlocked ? `<em class="smith-part-cost">${part.cost ? `+$${part.cost}` : 'Free'}</em>` : `<em class="smith-lock">🔒 Level ${unlockLevel(weaponId, part.id)}</em>`}</span>
     <small>${part.blurb}</small><span class="smith-chips">${partChips(part, base)}</span></button>`;
 }
 // Small line drawings for the slots, so the unlock preview and the callouts have something to show
@@ -848,24 +857,25 @@ function calloutColumn(slot, slots) {
   return 1 + (3 - row.length) + row.indexOf(slot) * 2;
 }
 // The callouts around the gun: every slot this gun takes, what is in it, and which one is open.
-function smithRail(base, build, unlocked) {
+function smithRail(base, build, level) {
   const slots = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
   if (!slots.includes(smithSlot_)) smithSlot_ = slots[0] || 'optic';
   return `<div class="smith-callouts" role="tablist">${slots.map((slot) => {
     const part = ATTACHMENTS[build[slot]];
     const open = smithPicking && slot === smithSlot_;
     const count = partsFor(base, slot).length;
+    const open_ = partsFor(base, slot).filter((entry) => partUnlocked(weaponId, entry.id, level)).length;
     // An empty optic is still a sight: say which one the gun came with.
     const name = part ? part.name : slot === 'optic' ? `${SIGHT_NAMES[base.sight] || 'Stock'}` : 'None';
     return `<button type="button" role="tab" aria-selected="${open}" class="smith-callout ${CALLOUT_AT[slot]}${open ? ' active' : ''}${part ? ' filled' : ''}" style="--col:${calloutColumn(slot, slots)}" data-smith-slot="${slot}">
-      <span class="smith-callout-top">${glyph(slot)}<small>${SLOT_NAMES[slot]}</small><em>${unlocked ? count : 0}/${count}</em></span><b>${name}</b></button>`;
+      <span class="smith-callout-top">${glyph(slot)}<small>${SLOT_NAMES[slot]}</small><em>${open_}/${count}</em></span><b>${name}</b></button>`;
   }).join('')}</div>`;
 }
 // Only the open slot draws its parts.
-function smithSlotBody(base, build, unlocked) {
-  const parts = partsFor(base, smithSlot_);
+function smithSlotBody(base, build, level) {
+  const parts = partsFor(base, smithSlot_).sort((a, b) => unlockLevel(weaponId, a.id) - unlockLevel(weaponId, b.id));
   if (!parts.length) return '<p class="smith-none">Nothing fits this slot on this gun.</p>';
-  return `<div class="smith-grid">${parts.map((entry) => partCard(base, smithSlot_, entry, build[smithSlot_], unlocked)).join('')}</div>`;
+  return `<div class="smith-grid">${parts.map((entry) => partCard(base, smithSlot_, entry, build[smithSlot_], level)).join('')}</div>`;
 }
 // The summary bars. Every one is a number the gun already has, read off the same resolved weapon the
 // server fires; the bar only places it against the rest of the guns so its length means something.
@@ -933,22 +943,20 @@ function gunsmithHtml() {
   const shown = peekBuild ? (resolveWeapon(weaponId, peekBuild) || built) : built;
   const peeking = Boolean(peekBuild);
   const peekOff = peeking && build[smithHover.slot] === smithHover.id;
-  const level = game.profile.level || 1;
-  const xp = game.profile.xp || 0;
-  const unlocked = attachmentsUnlocked(level);
   const partsCost = buildCost(build);
   const fitted = GUN_SLOTS.filter((slot) => build[slot]).length;
   const slotsWith = GUN_SLOTS.filter((slot) => partsFor(base, slot).length);
-  const kills = game.profile.weapons?.[weaponId]?.kills || 0;
 
-  // Top right: the real progression. Parts all unlock together at one pilot level, so until then the
-  // bar is the road to it and the icons are what it opens; after that it is the pilot's own level.
-  const progress = unlocked
-    ? Math.max(0, Math.min(1, (xp - xpForLevel(level)) / Math.max(1, xpForLevel(level + 1) - xpForLevel(level))))
-    : Math.max(0, Math.min(1, xp / Math.max(1, xpForLevel(ATTACHMENT_LEVEL))));
-  const levelBlock = unlocked
-    ? `<small>Pilot level</small><b>Level ${level}</b><i class="smith-xp"><s style="width:${(progress * 100).toFixed(1)}%"></s></i><span>${plural(kills, 'kill')} with this gun</span>`
-    : `<small>Attachments unlock</small><b>Level ${ATTACHMENT_LEVEL}</b><i class="smith-xp"><s style="width:${(progress * 100).toFixed(1)}%"></s></i><span class="smith-next">Next unlock ${slotsWith.map((slot) => `<em title="${SLOT_NAMES[slot]}">${glyph(slot)}</em>`).join('')}</span>`;
+  // Top right: this gun's own level. It starts at 0 on every server start, earns XP from kills and
+  // assists with it, and every level it gains can open a part. The server decides all of that; this
+  // only draws what the profile says.
+  const gun = weaponProgress(game.profile.gunXp?.[weaponId] || 0);
+  const level = gun.level;
+  const coming = nextUnlock(weaponId, level);
+  const progress = gun.max ? 1 : gun.into / Math.max(1, gun.needed);
+  const levelBlock = `<small>Weapon level</small><b>Level ${level}</b><i class="smith-xp"><s style="width:${(progress * 100).toFixed(1)}%"></s></i>
+    <span>${gun.max ? 'Max level' : `${gun.into.toLocaleString('en')} / ${gun.needed.toLocaleString('en')} XP`}</span>
+    ${coming ? `<span class="smith-next">Next unlock <em title="${SLOT_NAMES[coming.part.slot]}">${glyph(coming.part.slot)}</em>${coming.part.name} · level ${coming.level}</span>` : ''}`;
 
   const guns = WEAPON_CLASSES.map((c) => {
     const list = smithGuns.filter((weapon) => weaponClass(weapon) === c.id);
@@ -962,12 +970,11 @@ function gunsmithHtml() {
   const since = Math.min(1, now() - smithListAt).toFixed(3);
   const part = ATTACHMENTS[build[smithSlot_]];
   const keys = [
-    // Locked, a click on a part does nothing, so the footer does not offer one.
-    ...(smithPicking && !unlocked ? [] : [['Click', smithPicking ? 'Equip' : 'Select slot']]),
+    ['Click', smithPicking ? 'Equip' : 'Select slot'],
     ['Hover', 'Preview'],
     ['Drag', 'Rotate'],
     ...(smithPicking ? [[codeLabel('Escape'), 'Back']] : []),
-    ...(smithPicking && part && unlocked ? [[codeLabel('KeyR'), 'Remove']] : []),
+    ...(smithPicking && part ? [[codeLabel('KeyR'), 'Remove']] : []),
   ];
 
   return `<div class="smith-screen${smithPicking ? ' picking' : ''}${peeking ? ' peeking' : ''}">
@@ -982,17 +989,16 @@ function gunsmithHtml() {
     <nav class="smith-guns" aria-label="Weapons">${guns}</nav>
     <div class="smith-floor">
       <div id="skin-stage" class="skin-stage smith-stage"></div>
-      ${smithRail(base, build, unlocked)}
+      ${smithRail(base, build, level)}
       <aside class="smith-list" style="--since:${since}s" aria-hidden="${!smithPicking}">
         <header><button type="button" class="smith-back" data-smith-back="1" aria-label="Back">‹</button><span><small>${fitted}/${slotsWith.length} equipped</small><b>${SLOT_NAMES[smithSlot_] || 'Parts'}</b></span></header>
-        ${unlocked ? '' : `<p class="smith-locked-note">Locked. Attachments unlock at level ${ATTACHMENT_LEVEL}. You’re level ${level}.</p>`}
-        ${smithPicking ? smithSlotBody(base, build, unlocked) : ''}
+        ${smithPicking ? smithSlotBody(base, build, level) : ''}
       </aside>
       <section class="smith-stats">
         <header><small>${peekOff ? 'If you take that off' : peeking ? 'If you equip that' : fitted ? 'As built' : 'Stock'}</small><button type="button" class="smith-detail-toggle" data-smith-detail="1">${smithDetail ? 'Summary' : 'All stats'}</button></header>
         ${smithDetail ? `<div class="smith-groups">${stats}</div>` : `<div class="smith-bars">${smithBars(peeking ? built : base, shown)}</div>`}
         <footer><span><small>Armoury price</small><b>$${base.cost + partsCost}</b>${partsCost ? `<i>gun $${base.cost} + parts $${partsCost}</i>` : '<i>match credits, not coins</i>'}</span>
-          ${fitted && unlocked ? '<button type="button" class="smith-strip" data-smith-clear="1">Remove all</button>' : ''}</footer>
+          ${fitted ? '<button type="button" class="smith-strip" data-smith-clear="1">Remove all</button>' : ''}</footer>
       </section>
     </div>
     <footer class="smith-keys">${keys.map(([key, label]) => `<span><kbd>${key}</kbd>${label}</span>`).join('')}<span class="smith-kept">${fitted ? `${plural(fitted, 'part')} equipped · saved` : 'Stock · nothing equipped'}</span></footer>
@@ -1332,6 +1338,8 @@ export function onShopClick(button) {
   if (d.smithPart) {
     const [slot, id] = d.smithPart.split(':');
     const build = { ...workingBuild(weaponId) };
+    // Taking a part off is always allowed; putting on a locked one is not (the server refuses it anyway).
+    if (build[slot] !== id && !partUnlocked(weaponId, id, weaponProgress(game.profile.gunXp?.[weaponId] || 0).level)) { play('deny'); return true; }
     build[slot] = build[slot] === id ? null : id;
     smithDrafts[weaponId] = build;
     smithHover = null;
@@ -1444,7 +1452,7 @@ addEventListener('keydown', (event) => {
   if (event.code === 'Escape') { event.preventDefault(); if (onShopClick({ dataset: { smithBack: '1' } })) ctx.rerender(); return; }
   if (event.code !== 'KeyR') return;
   const fitted = workingBuild(weaponId)[smithSlot_];
-  if (!fitted || !attachmentsUnlocked(game.profile?.level || 1)) return;
+  if (!fitted) return;
   event.preventDefault();
   if (onShopClick({ dataset: { smithPart: `${smithSlot_}:${fitted}` } })) ctx.rerender();
 });

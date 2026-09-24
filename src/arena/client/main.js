@@ -2,6 +2,7 @@
 // and runs the frame loop.
 import * as THREE from 'three';
 import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
+import { ATTACHMENTS } from '../shared/attachments.js';
 import { bus, game, graphics, isEnemy, nameOf, saveSettings, heldBuilds } from './state.js';
 import { net } from './net.js';
 import { bindLabel } from './input.js';
@@ -363,6 +364,13 @@ net.on('mark', (message) => {
   const fresh = !game.marks.has(message.id) || game.marks.get(message.id).until < net.time();
   game.marks.set(message.id, { until: message.until, reason: message.reason });
   if (fresh && message.reason !== 'overtime') play('marked', { volume: 0.6 });
+});
+// A gun levelled up. The server decided it; this only says so. The Gunsmith updates from the same message.
+net.on('gun-xp', (message) => {
+  if (message.level <= message.from || !WEAPONS[message.weapon]) return;
+  const parts = (message.unlocked || []).map((id) => ATTACHMENTS[id]?.name).filter(Boolean);
+  hud.notice(`${WEAPONS[message.weapon].name} level ${message.level}${parts.length ? ` · ${parts.join(', ')} unlocked` : ''}`, 'good');
+  play('xp');
 });
 net.on('gadget-used', (message) => {
   const gadget = GADGETS[message.gadget];

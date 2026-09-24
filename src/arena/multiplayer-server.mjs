@@ -938,9 +938,10 @@ wss.on('connection', (socket, request) => {
       }
       if (message.type === 'builds' && socket.identified) {
         if (outages.featureOut('gunsmith')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'gunsmith'), 'The Gunsmith') });
-        profiles.saveBuilds(socket.token, message.builds);
-        const saved = profiles.get(socket.token).builds || {};
-        if (socket.player && socket.room && !socket.room.royale) socket.room.takeBuilds(socket.player, saved);
+        const { refused } = profiles.saveBuilds(socket.token, message.builds);
+        if (socket.player && socket.room && !socket.room.royale) socket.room.takeBuilds(socket.player, profiles.usableBuilds(socket.token));
+        // A locked part is refused here whatever the page let through; the reply puts the page right.
+        if (refused.length) send(socket, { type: 'error', message: 'Locked. That gun needs more levels.' });
         return send(socket, { type: 'profile', profile: profiles.view(socket.token) });
       }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {

@@ -10,6 +10,7 @@ import {
   VARIANT_NAMES, WEAPONS, clamp, dailyModifier, dateKey, levelFromXp,
 } from '../shared/constants.js';
 import { killCoins } from '../shared/economy.js';
+import { WEAPON_XP } from '../shared/gunlevels.js';
 import { DEV_ACTION_IDS, DEV_SERVER_TOOLS, DEV_SPEED } from '../shared/devtools.js';
 import { MAP_IDS, getMap, zoneAt } from '../shared/map.js';
 import { PAD_LAUNCH, POWERS } from '../shared/royale.js';
@@ -239,7 +240,7 @@ export class Room {
       dev: Boolean(profile.dev), party: typeof hello.party === 'string' ? hello.party : null,
     });
     // Saved gun builds come with the pilot. Royale ignores them: guns come off the floor there.
-    player.builds = this.royale ? null : (profile.builds || {});
+    player.builds = this.royale ? null : this.profiles.usableBuilds ? this.profiles.usableBuilds(hello.token) : (profile.builds || {});
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
     const replaceable = midMatch && [...this.players.values()].some((p) => p.bot && !p.dummy) && this.queue !== 'custom';
     // Next to your party if there is room on its side.
@@ -504,7 +505,7 @@ export class Room {
     player.history = [];
     player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee';
     player.reloadEnd = 0; player.nextFire = 0; player.equipUntil = 0; player.stimUntil = 0; player.stimUsed = false; player.ghostUntil = 0; player.strikes = 0;
-    player.damageFrom.clear();
+    player.damageFrom.clear(); player.damageWith?.clear();
     this.refillAmmo(player);
     if (player.bot) resetBot(player);
     this.send(player, { type: 'spawn', x: point.x, y: point.y, z: point.z, yaw: player.yaw, epoch: player.epoch });
@@ -1187,8 +1188,14 @@ export class Room {
   holdBuild(player, slot, build) {
     const id = player.weapons[slot];
     player.gunBuilds ||= {};
-    if (build !== undefined || player.gunBuilds[slot]?.id !== id) player.gunBuilds[slot] = { id, build: build !== undefined ? build : player.builds?.[id] || null };
+    if (build !== undefined || player.gunBuilds[slot]?.id !== id) player.gunBuilds[slot] = { id, build: build !== undefined ? build : this.usable(player, id) };
     return player.gunBuilds[slot].build;
+  }
+  // The saved build for a gun, cut down to what that gun's level has unlocked for this pilot. Checked
+  // again here, not only when saved, so nothing stale or forged ever reaches a gun in hand.
+  usable(player, id) {
+    const build = player.builds?.[id] || null;
+    return build && this.profiles.usableBuild ? this.profiles.usableBuild(player.token, id, build) : build;
   }
   buildOf(player, id) {
     const held = Object.values(player.gunBuilds || {}).find((entry) => entry.id === id);
@@ -1454,6 +1461,7 @@ export class Room {
     if (!sameTeam && !victim.dummy) { attacker.match.damage += dealt; this.roundDamage[attacker.team] += dealt; }
     if (zone === 'head' && !sameTeam) attacker.match.headshots += 1; // a team mate's head is not a stat, even with friendly fire on
     victim.damageFrom.set(attacker.id, (victim.damageFrom.get(attacker.id) || 0) + dealt);
+    (victim.damageWith ||= new Map()).set(attacker.id, weapon?.id || null);
     const killed = victim.hp <= 0;
     this.send(attacker, { type: 'hit', target: victim.id, zone, damage: dealt, killed, wallbang: Boolean(meta.wallbang), armor: absorbed > 0, helmetBroke, distance: round2(meta.distance || 0) });
     this.send(victim, { type: 'hurt', from: attacker.id, x: round2(attacker.x), z: round2(attacker.z), damage: dealt, zone, helmetBroke });
@@ -1483,6 +1491,7 @@ export class Room {
         if (weapon.melee) killer.match.knifeKills += 1;
         if (weapon.slot === 'sidearm') killer.match.sidearmKills += 1;
         this.pay(killer, ECONOMY.kill + (zone === 'head' ? ECONOMY.headshot : 0));
+        this.gunXp(killer, weapon.id, (victim.bot ? WEAPON_XP.botKill : WEAPON_XP.kill) + (zone === 'head' ? WEAPON_XP.headshot : 0));
         this.modifierKill(killer);
         killer.streak = (killer.streak || 0) + 1;
         killer.match.bestStreak = Math.max(killer.match.bestStreak || 0, killer.streak);
@@ -1494,7 +1503,7 @@ export class Room {
         const helper = this.players.get(id);
         if (id !== killer.id && helper && helper.team === killer.team && damage >= bestDamage) { bestDamage = damage; assist = helper; }
       }
-      if (assist && !victim.dummy) { assist.match.assists += 1; this.pay(assist, ECONOMY.assist); this.pushYou(assist); }
+      if (assist && !victim.dummy) { assist.match.assists += 1; this.pay(assist, ECONOMY.assist); this.gunXp(assist, victim.damageWith?.get(assist.id), WEAPON_XP.assist); this.pushYou(assist); }
     }
     const event = {
       type: 'kill', killer: killer?.id || null, victim: victim.id, weapon: weapon?.id || null, zone, distance: Math.round(meta.distance || 0),
@@ -1514,6 +1523,14 @@ export class Room {
     if (victim.dummy || this.mode === 'range') { victim.respawnAt = t + (victim.dummy ? 2.2 : 2.5); return; }
     this.pushRoom();
     this.checkRoundEnd();
+  }
+
+  // Weapon XP, only ever from the kill and assist above: the server's own events, one award each, for the
+  // gun the server says did it. Bots, watchers and the range's dummies earn and give nothing.
+  gunXp(player, weaponId, amount) {
+    if (player.bot || player.watching || this.mode === 'range' || !this.profiles.awardGunXp) return;
+    const result = this.profiles.awardGunXp(player.token, weaponId, amount);
+    if (result) this.send(player, { type: 'gun-xp', ...result });
   }
 
   // Recent shots and swings, so a killcam can replay every round of the fight, not just the last one.
@@ -1616,7 +1633,7 @@ export class Room {
     };
     if (own(WEAPONS, item) && !WEAPONS[item].melee) {
       // You buy the gun as you built it, and you pay for what is bolted on.
-      const weapon = (this.royale || !player.builds || Room.featureOut('gunsmith')) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
+      const weapon = (this.royale || !player.builds || Room.featureOut('gunsmith')) ? WEAPONS[item] : (resolveWeapon(item, this.usable(player, item)) || WEAPONS[item]);
       if (!Number.isFinite(weapon.cost)) return this.notice(player, 'Not available.', 'warn');
       if (Room.out('weapon', item)) return this.notice(player, outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
@@ -1630,7 +1647,7 @@ export class Room {
       delete player.bought[`slot:${weapon.slot}`];
       if (weapon.cost > 0) player.bought[`slot:${weapon.slot}`] = { cost: weapon.cost, item };
       player.weapons[weapon.slot] = item;
-      this.holdBuild(player, weapon.slot, this.royale || !player.builds || Room.featureOut('gunsmith') ? null : player.builds[item] || null);
+      this.holdBuild(player, weapon.slot, this.royale || !player.builds || Room.featureOut('gunsmith') ? null : this.usable(player, item));
       player.ammo[weapon.slot] = { mag: weapon.mag, reserve: weapon.reserve };
       if (player.active === weapon.slot || weapon.slot === 'primary') { player.active = weapon.slot; player.reloadEnd = 0; }
     } else if (item === 'light' || item === 'heavy') {

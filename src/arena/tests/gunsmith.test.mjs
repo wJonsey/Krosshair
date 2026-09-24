@@ -8,9 +8,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { Room } from '../server/room.js';
-import { WEAPONS, xpForLevel } from '../shared/constants.js';
+import { WEAPONS } from '../shared/constants.js';
+import { MAX_WEAPON_LEVEL, XP_CURVE } from '../shared/gunlevels.js';
 import { damageFor } from '../shared/combat.js';
-import { ATTACHMENT_LEVEL, ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, buildCost, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
+import { ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, buildCost, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => ({ readyState: 1, send: () => {} });
@@ -18,6 +19,13 @@ async function makeRoom(extra = {}) {
   const profiles = new ProfileStore(path.join(await mkdtemp(path.join(tmpdir(), 'krosshair-smith-')), 'profiles.json'));
   const room = new Room({ name: `smith-${Math.random()}`, queue: 'custom', profiles, onEmpty: () => {}, ...extra });
   clearInterval(room.interval);
+  // These tests are about what a build does, not about earning it: every pilot who joins has every gun
+  // at the top level, so nothing is held back by weapon levels (tests/gunlevels.test.mjs covers those).
+  const join = room.join.bind(room);
+  room.join = (socket, hello, look) => {
+    for (const id of Object.keys(WEAPONS)) profiles.awardGunXp(hello.token, id, XP_CURVE[MAX_WEAPON_LEVEL - 1]);
+    return join(socket, hello, look);
+  };
   return { room, profiles };
 }
 
@@ -479,7 +487,7 @@ test('the server tells you which build it is scoring with', async () => {
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
-  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
+  profiles.awardGunXp(token, 'm44', XP_CURVE[MAX_WEAPON_LEVEL - 1]); // parts unlock with the gun's level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
 
   const room = new Room({ name: 'held', queue: 'casual', profiles, onEmpty: () => {} });
@@ -498,7 +506,7 @@ test('the gun in your hands is the one you built, not the stock one', async () =
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
-  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
+  profiles.awardGunXp(token, 'm44', XP_CURVE[MAX_WEAPON_LEVEL - 1]); // parts unlock with the gun's level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
   const room = new Room({ name: 'held2', queue: 'casual', profiles, onEmpty: () => {} });
   clearInterval(room.interval);
@@ -520,7 +528,7 @@ test('royale hands out floor guns, so no build is sent there', async () => {
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
-  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
+  profiles.awardGunXp(token, 'm44', XP_CURVE[MAX_WEAPON_LEVEL - 1]); // parts unlock with the gun's level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
   const { RoyaleRoom } = await import('../server/royale.js');
   const room = new RoyaleRoom({ name: 'roy2', queue: 'royale', profiles, onEmpty: () => {} });
@@ -759,9 +767,9 @@ test('the gunsmith keys do what a click does, and only what the footer offers', 
   const keys = shop.slice(shop.indexOf("// Keys on the gunsmith"), shop.indexOf('let lookupTimer'));
   assert.match(keys, /onShopClick\(\{ dataset: \{ smithBack: '1' \} \}\)/, 'Escape goes through the back button');
   assert.match(keys, /onShopClick\(\{ dataset: \{ smithPart: `\$\{smithSlot_\}:\$\{fitted\}` \} \}\)/, 'R is a click on the fitted part, which takes it off');
-  assert.match(keys, /if \(!fitted \|\| !attachmentsUnlocked/, 'R does nothing on an empty or locked slot');
+  assert.match(keys, /if \(!fitted\) return;/, 'R does nothing on an empty slot');
   const footer = shop.slice(shop.indexOf('const keys = ['), shop.indexOf('return `<div class="smith-screen'));
-  assert.match(footer, /smithPicking && part && unlocked \? \[\[codeLabel\('KeyR'\), 'Remove'\]\]/, 'Remove is only offered when R would work');
+  assert.match(footer, /smithPicking && part \? \[\[codeLabel\('KeyR'\), 'Remove'\]\]/, 'Remove is only offered when R would work');
   assert.match(footer, /codeLabel\('Escape'\)/, 'key names come from input.js');
 });
 

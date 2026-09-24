@@ -8,6 +8,7 @@ import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { OutageBook } from '../server/outage.js';
 import { Room } from '../server/room.js';
+import { MAX_WEAPON_LEVEL, XP_CURVE } from '../shared/gunlevels.js';
 import { MAP_IDS } from '../shared/map.js';
 import { WEAPONS } from '../shared/constants.js';
 import { DEFAULT_REASON, FEATURES, FEATURE_IDS, cleanReason, featureOut, outageReason } from '../shared/outage.js';
@@ -161,6 +162,7 @@ test('with the Gunsmith pulled, everyone is on stock guns', async () => {
   Room.useOutages(out);
   try {
     const player = room.join(fakeSocket(), { token: ProfileStore.newToken(), session: 's1', name: 'A' }, look);
+    room.profiles.awardGunXp(player.token, 'talon', XP_CURVE[MAX_WEAPON_LEVEL - 1]); // the drum has to be unlocked first
     player.builds = { talon: { optic: null, muzzle: null, barrel: null, mag: 'drum', stock: null, grip: null } };
     player.weapons.primary = 'talon';
     player.active = 'primary';
