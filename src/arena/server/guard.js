@@ -39,7 +39,8 @@ export class Guard {
   }
 
   key(socket) {
-    return socket.token || socket.session || socket._socket?.remoteAddress || 'anon';
+    // `address` is the player's own (see addressOf): behind the tunnel the raw one is cloudflared's, shared by everyone.
+    return socket.token || socket.session || socket.address || socket._socket?.remoteAddress || 'anon';
   }
 
   strike(socket, reason) {

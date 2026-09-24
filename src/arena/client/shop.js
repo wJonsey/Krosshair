@@ -2,12 +2,12 @@
 // The menu redraws often, so every animation runs off a start time: a redraw mid-spin picks up where
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
-import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, dateKey, weaponClass, xpForLevel } from '../shared/constants.js';
+import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, cosmeticUnlocked, dateKey, weaponClass, xpForLevel } from '../shared/constants.js';
 // SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
 import { ATTACHMENTS, ATTACHMENT_LEVEL, SLOTS as GUN_SLOTS, SLOT_NAMES, attachmentsUnlocked, buildCost, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
-import { bundleOn, bundlePrice, itemName, itemPrice, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
+import { bundleOn, bundlePrice, itemName, itemPrice, itemSet, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
-import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, PUBLIC_FINISHES, PUBLIC_RARITIES } from '../shared/economy.js';
+import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, publicFinishes, PUBLIC_RARITIES } from '../shared/economy.js';
 import { bus, game } from './state.js';
 import { codeLabel } from './input.js';
 import { net } from './net.js';
@@ -19,6 +19,7 @@ import { turntable } from './turntable.js';
 import { CRATE_OPEN_TIME, buildCrate, poseCrate } from './cratebox.js';
 import { animateOperator, buildOperator, lookOf, styleOperator } from './characters.js';
 import { skinArt } from './weaponart.js';
+import { shopNow, shopToday } from './itemcatalogue.js';
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 export const COIN = '<svg class="coin-icon" viewBox="0 0 20 20" width="14" height="14" aria-hidden="true"><polygon points="10,1 18,5.5 18,14.5 10,19 2,14.5 2,5.5" fill="#ffb547"/><polygon points="10,4 15.4,7 15.4,13 10,16 4.6,13 4.6,7" fill="none" stroke="#7a4a00" stroke-width="1.2"/><path d="M8.3 6.8v6.4M8.3 10l3.6-3.2M9.6 9l2.5 4.2" stroke="#7a4a00" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>';
@@ -178,8 +179,13 @@ net.on('coins-result', (message) => {
     redraw();
   } else {
     if (message.profile) game.profile = message.profile;
-    if (message.bought?.finish) { equip(message.bought.finish); ctx.toast(`${finishInfo(message.bought.finish).name} is on every gun.`, 'good'); }
-    if (message.bought?.kind) ctx.onGearBought(message.bought);
+    // The shelf answers { finish }, the Item Shop { kind, id } for every piece, a skin included. A skin
+    // once went to the gear path, which looked it up in COSMETICS and threw before the page redrew.
+    const bought = message.bought;
+    const finish = bought?.finish || (bought?.kind === 'finish' ? bought.id : null);
+    if (finish) { equip(finish); ctx.toast(`${finishInfo(finish)?.name || 'Skin'} is on every gun.`, 'good'); }
+    else if (bought?.kind && COSMETICS[bought.kind]) ctx.onGearBought(bought);
+    if (bought?.bundle) ctx.toast(`${itemSet(bought.set)?.name || 'Set'} unlocked.`, 'good');
     if (message.sent) { ctx.toast(`Sent ${message.sent.amount} coins to ${message.sent.to}.`, 'good'); wallet = { to: '', amount: '', pilot: null, looking: false }; for (const id of ['#send-to', '#send-amount']) { const box = document.querySelector(id); if (box) box.value = ''; } }
     play('buy');
     ctx.refreshCoins();
@@ -494,15 +500,15 @@ function skinsHtml() {
   const owned = game.profile.finishes || [];
   const equipped = equippedFinish();
   const showing = showingFinish();
-  const shelf = isDev() ? FINISHES : PUBLIC_FINISHES;
+  const shelf = isDev() ? FINISHES : publicFinishes();
   // An exclusive is only listed once it has been out. One still to come is not named anywhere.
-  const pool = shelf.filter((finish) => finish.shop !== 'item' || seenLine('finish', finish.id));
+  const pool = shelf.filter((finish) => finish.shop !== 'item' || seenLine('finish', finish.id, shopToday()));
   const guns = WEAPON_CLASSES.map((c) => `<p class="shop-class">${c.name}</p>${skinnable.filter((w) => !w.melee && weaponClass(w) === c.id).map((weapon) => weaponButton(weapon)).join('')}`).join('') + `<p class="shop-class">Melee</p>${weaponButton(WEAPONS.knife)}`;
   const card = (finish) => {
     const info = finishInfo(finish.id), rarity = RARITY[info.rarity];
     const mine = owned.includes(finish.id) || (devFinish(finish.id) && isDev()), on = equipped === finish.id;
     const key = `skin:${finish.id}`;
-    const seen = finish.shop === 'item' ? seenLine('finish', finish.id) : null;
+    const seen = finish.shop === 'item' ? seenLine('finish', finish.id, shopToday()) : null;
     const action = on ? '<em class="state on">On every gun</em>' : mine ? `<button type="button" class="mini" data-equip="${finish.id}">Equip</button>`
       : seen ? `<em class="state item-only">Item Shop · ${seenText(seen?.days)}</em>`
       : !rarity.price ? '<em class="state crates-only">Crates only</em>'
@@ -537,7 +543,7 @@ function weaponButton(weapon, mark = '') {
 }
 function ownedCount() {
   const count = (game.profile.finishes || []).length;
-  return count ? `${count}/${PUBLIC_FINISHES.length}` : '';
+  return count ? `${count}/${publicFinishes().filter((finish) => finish.shop !== 'item' || seenLine('finish', finish.id, shopToday())).length}` : '';
 }
 
 // ------------------------------------------------------------------ crates
@@ -645,7 +651,7 @@ function inventoryHtml() {
   return `<div class="shop-inventory">
     <div class="inv-top">
       <div class="panel skin-preview rarity-${pick.rarity}"><div id="skin-stage" class="skin-stage"></div><div><small>${devFinish(pick.finish) ? devChip : 'Every gun'}</small><h3>${info.name}</h3><span><b style="color:${rarity.color}">${rarity.name}</b>${animatedFinish(pick.finish) ? ' · animated' : ''}</span>
-        <div class="button-row">${equipped ? '<em class="state on">On every gun</em>' : '<button type="button" class="mini" data-inv-equip="1">Equip</button>'}${pick.rarity === 'dev' ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : `<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button>`}</div></div></div>
+        <div class="button-row">${equipped ? '<em class="state on">On every gun</em>' : '<button type="button" class="mini" data-inv-equip="1">Equip</button>'}${pick.rarity === 'dev' ? `<span class="dev-note">${DEV_CLASS.blurb}</span>` : info.shop === 'item' ? '' : `<button type="button" class="mini${armed === scrapKey ? ' armed' : ''}" data-scrap="1">${armed === scrapKey ? 'Confirm scrap' : 'Scrap'} ${coins(scrapValue)}</button>`}</div></div></div>
       <div class="panel trade-panel"><p class="eyebrow">Trade-up</p><p class="muted">${TRADE_UP} skins of one rarity for 1 random skin of the next.</p><div class="trade-slots">${slots}</div>
         <div class="button-row">${tradeMode ? `<button type="button" data-trade-go="1" ${trade.length === TRADE_UP && !busy ? '' : 'disabled'}>Trade up${tradeRarity ? ` to ${RARITY[NEXT_RARITY[tradeRarity]].name}` : ''}</button><button type="button" class="ghost-button" data-trade-cancel="1">Cancel</button>` : '<button type="button" class="secondary-button" data-trade-start="1">Pick skins</button>'}</div></div>
     </div>
@@ -669,13 +675,18 @@ const lookKey = (kind) => LOOK_KEY[kind] || kind;
 function tryLook() { return tryOn ? { ...game.look, [lookKey(gearKind)]: tryOn } : { ...game.look }; }
 function gearStatus(kind, item) {
   const owned = (game.profile.owned || []).includes(`${kind}:${item.id}`) || Boolean(item.dev && isDev());
-  const unlocked = item.dev ? isDev() : item.price ? owned : (game.profile.level || 1) >= item.level;
+  // The server's own rule. Item Shop pieces have neither a price nor a level, so a copy of the rule that
+  // only knew those two read a bought one as locked at "Level undefined" and never offered Equip.
+  const unlocked = cosmeticUnlocked(kind, item.id, game.profile.level || 1, game.profile.owned || [], isDev());
   return { owned, unlocked, equipped: game.look[lookKey(kind)] === item.id };
 }
+// The line under a card's name: where it comes from, or that it is already yours.
+const gearTag = (kind, item, state) => (item.dev ? devChip : item.shop === 'item' ? (state.owned ? 'Owned' : escapeHtml(seenLine(kind, item.id, shopToday())?.name || 'Item Shop')) : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`);
 function gearAction(kind, item, state) {
   const key = `gear:${kind}:${item.id}`;
   if (state.equipped) return '<em class="state on">Equipped</em>';
   if (state.unlocked) return `<button type="button" class="mini" data-gear-equip="${item.id}">Equip</button>`;
+  if (item.shop === 'item') return '<em class="state item-only">Item Shop</em>';
   if (!item.price) return `<em class="state">Level ${item.level}</em>`;
   return `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-gear-buy="${item.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(item.price)}</button>`;
 }
@@ -702,7 +713,7 @@ function gearHtml() {
   const current = COSMETICS[gearKind].find((item) => item.id === look[lookKey(gearKind)]);
   const cards = items.map((item) => {
     const state = gearStatus(gearKind, item);
-    return `<div class="gear-card${state.equipped ? ' on' : ''}${tryOn === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-try="${item.id}">${gearVisual(gearKind, item)}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction(gearKind, item, state)}</div>`;
+    return `<div class="gear-card${state.equipped ? ' on' : ''}${tryOn === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-try="${item.id}">${gearVisual(gearKind, item)}<b>${escapeHtml(item.name)}</b><small>${gearTag(gearKind, item, state)}</small></button>${gearAction(gearKind, item, state)}</div>`;
   }).join('');
   return `<div class="shop-gear">
     <div class="panel operator-try"><div id="skin-stage" class="skin-stage tall"></div>
@@ -727,7 +738,7 @@ function charmsHtml() {
   const charms = COSMETICS.charm.filter(listed);
   const cards = charms.map((item) => {
     const state = gearStatus('charm', item);
-    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${item.dev ? devChip : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
+    return `<div class="gear-card${state.equipped ? ' on' : ''}${showing === item.id ? ' showing' : ''}${state.unlocked ? '' : ' locked'}${item.dev ? ' dev' : ''}"><button type="button" class="gear-look" data-charm-try="${item.id}">${thumb(`charm:${item.id}`) ? `<img class="charm-thumb" src="${thumb(`charm:${item.id}`)}" alt="" />` : `<i class="charm-icon charm-${item.id}"></i>`}<b>${escapeHtml(item.name)}</b><small>${gearTag('charm', item, state)}</small></button>${gearAction('charm', item, state).replace('data-gear-equip', 'data-charm-equip').replace('data-gear-buy', 'data-charm-buy')}</div>`;
   }).join('');
   const item = COSMETICS.charm.find((entry) => entry.id === showing);
   return `<div class="shop-charms">
@@ -1163,19 +1174,18 @@ const clock = (ms) => { const s = Math.floor(ms / 1000); return `${String(Math.f
 // The countdown was written once and then left, so it sat at whatever it said when the page opened and
 // the shop never noticed midnight going past: the same four sets until you reloaded. It ticks now, and
 // when the day turns it asks the server for the new catalogue, because a set debuting today is not in
-// the one handed over at connect. The reply redraws the page.
-let shopDay = dateKey();
+// the one handed over at connect. The reply redraws the page. Both run on the server's clock, and if
+// the reply is still yesterday's (its midnight a moment behind ours) it asks again a few seconds on.
+let askedAt = 0;
 setInterval(() => {
   const face = document.querySelector('#item-clock');
-  if (face) face.textContent = clock(untilRotation());
-  const today = dateKey();
-  if (today === shopDay) return;
-  shopDay = today;
+  if (face) face.textContent = clock(untilRotation(shopNow()));
+  if (dateKey(shopNow()) === shopToday() || !net.connected || Date.now() - askedAt < 5000) return;
+  askedAt = Date.now();
   net.send({ type: 'itemshop' });
-  redraw();
 }, 1000);
 bus.on('itemshop', redraw);
-const ITEM_DAY = { weekday: 'long', day: 'numeric', month: 'short' };
+const ITEM_DAY = { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' };
 
 let itemPick = null;                 // { set, kind, id } being looked at on the turntable
 // What the turntable shows for the piece in hand: a gun wearing the paint, or you wearing the gear.
@@ -1187,7 +1197,7 @@ function itemSubject() {
   return { kind: 'operator', look: { ...game.look, [lookKey(pick.kind)]: pick.id } };
 }
 function firstPiece() {
-  const set = shopFor()[0];
+  const set = shopFor(shopToday())[0];
   if (!set) return null;
   const [kind, id] = set.items[0];
   return { set: set.id, kind, id };
@@ -1214,24 +1224,25 @@ function itemPiece(set, kind, id, pick) {
 }
 
 function itemHeadHtml() {
-  const today = new Date();
+  const today = new Date(`${shopToday()}T12:00:00Z`);
   // Worked out on the server: only it knows about the sets that have not landed yet.
   const left = isDev() ? game.profile?.itemRunway : null;
   return `<div class="item-head"><div><p class="eyebrow">Item Shop</p><h2>${today.toLocaleDateString('en-GB', ITEM_DAY)}</h2>
       ${left ? `<p class="item-runway${left.days < 45 ? ' low' : ''}">DEV · ${left.days} days of sets left (${left.left} still to land, last on ${left.last}). Make more before then.</p>` : ''}</div>
-    <div class="item-timer"><small>New shop in</small><b id="item-clock">${clock(untilRotation())}</b></div></div>`;
+    <div class="item-timer"><small>New shop in</small><b id="item-clock">${clock(untilRotation(shopNow()))}</b></div></div>`;
 }
 
 function itemSetsHtml() {
-  const sets = shopFor();
+  const day = shopToday();
+  const sets = shopFor(day);
   if (!sets.length) return '<div class="panel item-empty"><p class="muted">The Item Shop opens tomorrow. Come back then.</p></div>';
   if (itemPick && !sets.some((set) => set.id === itemPick.set)) itemPick = null;
   const pick = itemPick;
   return sets.map((set) => {
-    const featured = bundleOn(set.id);
+    const featured = bundleOn(set.id, day);
     const whole = featured && set.items.every(([kind, id]) => !ownsItem(kind, id, game.profile));
-    const seen = lastSeen(set.id);
-    const days = seen ? Math.round((Date.parse(dateKey()) - Date.parse(seen)) / 86400000) : NaN;
+    const seen = lastSeen(set.id, day);
+    const days = seen ? Math.round((Date.parse(day) - Date.parse(seen)) / 86400000) : NaN;
     const back = Number.isFinite(days) && days > 0 ? ` · last out ${seenText(days)}` : '';
     return `<section class="mode-block item-set${featured ? ' featured' : ''}">
       <header class="block-head"><small>${escapeHtml(set.name.toUpperCase())}${back}${featured ? ' · TODAY\'S BUNDLE' : ''}</small><b>${escapeHtml(set.blurb)}</b>
@@ -1275,7 +1286,7 @@ export function onShopClick(button) {
   if (d.itemPick) { const [set, kind, id] = d.itemPick.split(':'); itemPick = { set, kind, id }; armed = null; play('ui'); return true; }
   // Item Shop. The server checks the day and the price again: this only asks.
   if (d.itemSet) {
-    const cost = d.itemKind === 'bundle' ? bundlePrice(shopFor().find((set) => set.id === d.itemSet) || { items: [] }) : itemPrice(d.itemKind, d.itemId);
+    const cost = d.itemKind === 'bundle' ? bundlePrice(shopFor(shopToday()).find((set) => set.id === d.itemSet) || { items: [] }) : itemPrice(d.itemKind, d.itemId);
     if (game.profile.coins < cost) { ctx.toast('Not enough coins.', 'warn'); play('deny'); return true; }
     const key = `item:${d.itemSet}:${d.itemKind}:${d.itemId}`;
     if (armed !== key) { armed = key; play('ui'); return true; }

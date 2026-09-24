@@ -64,7 +64,7 @@ async function arena(names) {
   const { dir, sessions } = await seed(names);
   const port = await freePort();
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ARENA_PORT: String(port), ARENA_DATA: path.join(dir, 'profiles.json'), ALLOW_GUESTS: '1' },
+    env: { ...process.env, ARENA_PORT: String(port), ARENA_DATA: path.join(dir, 'profiles.json'), ALLOW_GUESTS: '1', DISCORD_WEBHOOK_UPDATES: 'off', DISCORD_WEBHOOK_LEADERBOARD: 'off' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await new Promise((resolve, reject) => {
@@ -198,4 +198,49 @@ test('every social message the server sends is handled by the client', async () 
   for (const source of [client, main]) for (const [, type] of source.matchAll(/net\.on\('([^']+)'/g)) handled.add(type);
   const orphans = [...sent].filter((type) => !handled.has(type));
   assert.deepEqual(orphans, [], `these arrive at the browser and nothing listens: ${orphans.join(', ')}`);
+});
+
+// Where somebody is belongs to their friends and their party. A request they never accepted, a block,
+// or one match together used to be a live feed of their room name, and the room could then be walked into.
+test('a pilot who is not your friend shows no presence', async (t) => {
+  const { clients: [vex, nova], stop } = await arena(['Vex', 'Nova']);
+  t.after(stop);
+  nova.send({ type: 'enter', action: 'room', room: 'nova-secret', look: {} });
+  await nova.settle('welcome');
+  vex.send({ type: 'friends', action: 'add', name: 'Nova' });
+  const pending = await vex.settle('friends-result', (m) => hasName(m.requestsOut, 'Nova'));
+  const row = pending.requestsOut.find((entry) => entry.name === 'Nova');
+  assert.equal(row.room, undefined, 'a pending request shows the room they are in');
+  // And the other way: a request arriving does not tell you where its sender is either.
+  const asked = await nova.settle('social', (m) => hasName(m.requestsIn, 'Vex'));
+  assert.equal(asked.requestsIn.find((entry) => entry.name === 'Vex').where, undefined, 'an incoming request shows where they are');
+  assert.equal(row.where, undefined, 'a pending request shows where they are');
+  assert.equal(row.online, undefined, 'a pending request shows whether they are on');
+  await pace();
+  vex.send({ type: 'friends', action: 'block', name: 'Nova' });
+  const blocked = await vex.settle('friends-result', (m) => hasName(m.blocked, 'Nova'));
+  assert.equal(blocked.blocked.find((entry) => entry.name === 'Nova').room, undefined, 'a block shows the room they are in');
+});
+
+test('party invites go to friends only', async (t) => {
+  const { clients: [vex, nova], stop } = await arena(['Vex', 'Nova']);
+  t.after(stop);
+  vex.send({ type: 'party', action: 'invite', name: 'Nova' });
+  const refused = await vex.settle('party-result', (m) => Boolean(m.error));
+  assert.equal(refused.error, 'You can only invite friends.');
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.ok(!nova.inbox.some((m) => m.type === 'party-invite'), 'a stranger\'s invite popped up');
+});
+
+test('blocking your own leader takes you out of the party, not them', async (t) => {
+  const { clients: [vex, nova], stop } = await arena(['Vex', 'Nova']);
+  t.after(stop);
+  const invite = await paired(vex, nova);
+  await pace();
+  nova.send({ type: 'friends', action: 'block', name: 'Vex' });
+  const mine = await nova.settle('social', (m) => hasName(m.blocked, 'Vex') && m.party?.members.length === 1);
+  assert.equal(mine.party.leader, 'Nova', 'the blocker is in a party of their own');
+  const theirs = await vex.settle('social', (m) => m.party?.members.length === 1);
+  assert.equal(theirs.party.leader, 'Vex', 'the leader lost their party to the pilot who blocked them');
+  assert.equal(theirs.party.id, invite.id, 'the leader was the one put out of the party');
 });

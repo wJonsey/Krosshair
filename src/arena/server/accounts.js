@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
+import { readStore } from './profiles.js';
 
 const KDF = { name: 'scrypt', N: 16384, r: 8, p: 1, keylen: 64 };
 const SESSION_LIMIT = 10;
@@ -28,25 +29,28 @@ export class AccountStore {
   }
 
   async load() {
-    try {
-      const data = JSON.parse(await readFile(this.file, 'utf8'));
+    // A file that will not parse stops the boot rather than being saved over (see readStore).
+    const data = await readStore(this.file);
+    if (data) {
       for (const account of Object.values(data.accounts || {})) {
         const key = account.username.toLowerCase();
         this.accounts.set(key, account);
         if (account.discordId) this.discord.set(account.discordId, key);
         for (const session of account.sessions || []) this.sessions.set(session.hash, key);
       }
-    } catch { /* first boot */ }
+    }
   }
 
   scheduleSave() {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(async () => {
       this.saveTimer = null;
+      // Its own temp file: flush() on shutdown can run while this one is still writing.
+      const temp = `${this.file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
       try {
         await mkdir(path.dirname(this.file), { recursive: true });
-        await writeFile(`${this.file}.tmp`, JSON.stringify({ version: 1, accounts: Object.fromEntries(this.accounts) }), { mode: 0o600 });
-        await rename(`${this.file}.tmp`, this.file);
+        await writeFile(temp, JSON.stringify({ version: 1, accounts: Object.fromEntries(this.accounts) }), { mode: 0o600 });
+        await rename(temp, this.file);
       } catch (error) { console.warn('account save failed', error.message); }
     }, 500);
   }

@@ -23,7 +23,7 @@ export class DiscordAuth {
     this.guildId = env.DISCORD_GUILD_ID || '1550214491696799824'; // the Krosshair server behind discord.com/invite/2K2XJQK9yd
     this.publicUrl = (env.PUBLIC_URL || '').replace(/\/$/, '');
     this.api = env.DISCORD_API || DISCORD_API; // overridable so the flow can be tested against a stand-in
-    this.states = new Map(); // state → created at; proves the callback belongs to a login we started
+    this.states = new Map(); // state → { at, by }; proves the callback belongs to a login we started
   }
 
   get enabled() { return /^\d{15,25}$/.test(this.clientId); }
@@ -37,19 +37,22 @@ export class DiscordAuth {
     return `${proto}://${request.headers.host}/auth/discord/callback`;
   }
 
-  start(request) {
+  // by: the address asking. One address may hold only a few logins open at once: the table was shared,
+  // and one script opening two thousand of them locked everyone else out of logging in for ten minutes.
+  start(request, by = 'anon') {
     const t = Date.now();
-    for (const [state, at] of this.states) if (t - at > STATE_TTL) this.states.delete(state);
-    if (this.states.size > 2000) return null;
+    let mine = 0;
+    for (const [state, entry] of this.states) { if (t - entry.at > STATE_TTL) this.states.delete(state); else if (entry.by === by) mine += 1; }
+    if (mine >= 10 || this.states.size > 20000) return null;
     const state = randomBytes(24).toString('base64url');
-    this.states.set(state, t);
+    this.states.set(state, { at: t, by });
     const query = new URLSearchParams({ client_id: this.clientId, response_type: this.flow, redirect_uri: this.redirectUri(request), scope: this.autoJoin ? 'identify guilds.join' : 'identify', state, prompt: 'none' });
     return `https://discord.com/oauth2/authorize?${query}`;
   }
 
   // Returns { user, joined } or throws with a message that is safe to show.
   async finish(request, code, state) {
-    const at = this.states.get(state);
+    const at = this.states.get(state)?.at;
     this.states.delete(state);
     if (!at || Date.now() - at > STATE_TTL) throw new Error('Login expired. Try again.');
     const tokenResponse = await fetch(`${this.api}/oauth2/token`, {
@@ -70,7 +73,7 @@ export class DiscordAuth {
   // Implicit grant: the browser brought us a token. /oauth2/@me says who it is for and which application
   // it was issued to. A token minted for some other app must not log anyone in here.
   async finishToken(accessToken, state) {
-    const at = this.states.get(state);
+    const at = this.states.get(state)?.at;
     this.states.delete(state);
     if (!at || Date.now() - at > STATE_TTL) throw new Error('Login expired. Try again.');
     if (typeof accessToken !== 'string' || accessToken.length < 10 || accessToken.length > 200) throw new Error('No login from Discord. Try again.');

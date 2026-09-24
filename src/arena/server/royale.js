@@ -7,7 +7,7 @@ import { randomInt } from 'node:crypto';
 import { ARMOR, FLAG, GADGETS, GADGET_SLOTS, WEAPONS } from '../shared/constants.js';
 import { ROYALE_MAP } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
-import { AIRDROP_LOOT, AIRDROP_STAGES, DROP, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
+import { AIRDROP_LOOT, AIRDROP_STAGES, DROP, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, lootInSight, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { setRoomMap } from './mapflow.js';
 import { Room, freshMatchStats, now } from './room.js';
 
@@ -112,11 +112,19 @@ export class RoyaleRoom extends Room {
     bounds.maxY = bounds.ceiling || roof;
     try { super.onState(player, m); } finally { bounds.maxY = roof; }
   }
+  // The fall is the pilot's own movement, so one message used to land them from 190 m, looting before
+  // anyone else was down. Free fall, then the chute, which opens by itself under DROP.chuteAt and takes
+  // a second or so to slow you: by 25 m under it an honest pilot is down to chute speed.
+  fallLimit(player) {
+    if (!player.inDrop) return super.fallLimit(player);
+    return player.y > DROP.chuteAt - 25 ? DROP.fall * 1.15 : DROP.chuteFall * 1.4;
+  }
   // Look at it, press the key: a pilot picks up one thing, swapping a gun for the one in that slot.
   takeLoot(player, message) {
     const loot = this.loot.get(String(message.id));
     if (!player.alive || this.phase !== 'live' || !loot) return;
     if (Math.hypot(loot.x - player.x, loot.z - player.z) > ROYALE.reach + 1 || Math.abs(loot.y - player.y) > 3) return;
+    if (!lootInSight(this.world, this.eyeOf(player), loot)) return;
     const text = this.take(player, loot.item, true);
     if (!text) { this.send(player, { type: 'pickup', text: loot.item.kind === 'heal' ? 'Health is full.' : 'No use for that right now.', refused: true }); return; }
     this.loot.delete(loot.id);
@@ -182,7 +190,7 @@ export class RoyaleRoom extends Room {
       const start = { x: Math.max(-limit, Math.min(limit, point.x + Math.cos(angle) * off)), y: DROP.height + random() * 12, z: Math.max(-limit, Math.min(limit, point.z + Math.sin(angle) * off)), yaw: Math.atan2(Math.cos(angle), Math.sin(angle)) };
       this.spawn(player, 0, start);
       player.flags &= ~FLAG.ground;
-      if (player.bot) { player.dropping = true; player.landAt = point; }
+      if (player.bot) { player.dropping = true; player.landAt = point; } else player.inDrop = true;
       player.match.roundsPlayed = 1;
     }
     this.broadcast({ type: 'phase', phase: 'live', phaseEnds: this.phaseEnds });

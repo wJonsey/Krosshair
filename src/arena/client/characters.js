@@ -102,6 +102,10 @@ class Entity {
   }
 
   push(sample) {
+    // A gap means they were out of sight and not sent: start again from here rather than sliding across
+    // the gap from wherever they were last seen.
+    const last = this.buffer[this.buffer.length - 1];
+    if (last && sample.t - last.t > 0.25) this.buffer.length = 0;
     this.buffer.push(sample);
     if (this.buffer.length > 40) this.buffer.shift();
   }

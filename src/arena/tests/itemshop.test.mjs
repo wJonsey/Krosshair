@@ -123,8 +123,8 @@ test('the shop sells only what is out today, and only one bundle a day', async (
 test('the runway says how long the shop can run before it needs more sets', () => {
   const now = runway('2026-09-20');
   assert.equal(now.left, ITEM_SETS.length, 'some sets have already landed');
-  assert.ok(now.days > 180, `only ${now.days} days of sets`);
   assert.equal(now.last, ITEM_SETS.map((set) => set.debut).sort().pop());
+  assert.equal(now.days, Math.round((Date.parse(now.last) - Date.parse('2026-09-20')) / 86400000), 'the runway is not the days to the last debut');
   // Past the last debut there is nothing new left to land.
   assert.equal(runway(dayAfter(now.last, 10)).days, 0);
   assert.equal(runway(dayAfter(now.last, 10)).left, 0);
@@ -191,32 +191,63 @@ test('the shop deals a different hand once there is more than one set to deal', 
   assert.ok(moved, 'a fortnight of days all dealt the same sets');
 });
 
-// Worth stating outright, because it reads as a broken shop: with one set released the shop shows that
-// one set every day, and there is nothing the page can do about it.
-test('one set released means one set in the shop, every day', () => {
-  const only = ITEM_SETS.map((set) => set.debut).sort()[0];
+// With one set out the shop can only show that set, and for three months after launch there was only
+// one: the next debut was in December, so the shop looked broken every day. It launches a week of sets
+// one a day, then keeps the gaps short.
+test('one set released means one set in the shop, until the next lands', () => {
+  const [only, next] = ITEM_SETS.map((set) => set.debut).sort();
   assert.equal(knownSets(only).length, 1, 'the first day should have exactly the first set');
-  assert.equal(shopFor(only).length, 1, 'and the shop can only show what exists');
-  assert.equal(shopFor(dayAfter(only, 30)).map((s) => s.id).join(), shopFor(only).map((s) => s.id).join(),
-    'until another lands, the hand cannot change');
+  for (let key = only; key < next; key = dayAfter(key, 1)) assert.equal(shopFor(key).length, 1, `${key} showed a set that had not landed`);
+  assert.equal(shopFor(next).length, 2, 'the second set did not join the first');
+});
+
+test('the schedule never leaves the shop stuck on the same few sets', () => {
+  const days = ITEM_SETS.map((set) => set.debut).sort();
+  for (let i = 1; i < days.length; i += 1) {
+    const gap = (Date.parse(days[i]) - Date.parse(days[i - 1])) / 86400000;
+    assert.ok(gap >= 1, `two sets debut on ${days[i]}, so that day holds more than one launch`);
+    assert.ok(gap <= 14, `${gap} days with nothing new between ${days[i - 1]} and ${days[i]}`);
+  }
+  // Once enough are out to fill the shelf and more, the hand changes: never the same three days running.
+  const full = days[SHOP_SETS_PER_DAY];
+  const hand = (key) => shopFor(key).map((set) => set.id).sort().join();
+  for (let i = 0; i < 120; i += 1) {
+    const key = dayAfter(full, i);
+    assert.ok(!(hand(key) === hand(dayAfter(key, 1)) && hand(key) === hand(dayAfter(key, 2))), `the shop sat still from ${key}`);
+  }
 });
 
 test('the page notices midnight instead of waiting to be reloaded', () => {
   const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
-  const ticker = shop.slice(shop.indexOf('let shopDay = dateKey();'), shop.indexOf("bus.on('itemshop'"));
+  const ticker = shop.slice(shop.indexOf('let askedAt = 0;'), shop.indexOf("bus.on('itemshop'"));
   assert.match(ticker, /setInterval/, 'nothing runs, so the clock cannot tick');
-  assert.match(ticker, /#item-clock[\s\S]*textContent = clock\(untilRotation\(\)\)/, 'the countdown is never rewritten');
-  assert.match(ticker, /const today = dateKey\(\);[\s\S]*if \(today === shopDay\) return;/, 'the day is never compared, so the turnover is missed');
+  assert.match(ticker, /#item-clock[\s\S]*textContent = clock\(untilRotation\(shopNow\(\)\)\)/, 'the countdown is never rewritten, or runs on this machine\'s clock');
+  assert.match(ticker, /dateKey\(shopNow\(\)\) === shopToday\(\)/, 'the day is never compared with the one the catalogue was dealt for');
+  assert.match(ticker, /Date\.now\(\) - askedAt < 5000/, 'a reply that is still yesterday\'s is never asked for again, or it is asked every second');
   assert.match(ticker, /net\.send\(\{ type: 'itemshop' \}\)/, 'a set debuting today is only in the catalogue the server has');
-  assert.match(ticker, /redraw\(\)/, 'nothing redraws, so the new hand is never shown');
+  assert.match(shop, /bus\.on\('itemshop', redraw\)/, 'nothing redraws, so the new hand is never shown');
+});
+
+// A page whose clock is off deals a hand for its own day. The catalogue carries the server's day, and
+// everything the page works out about the shop uses that.
+test('the page deals the shop for the server\'s day, not its own', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const calls = shop.match(/\b(shopFor|bundleOn|lastSeen|seenLine|untilRotation)\(([^)]*)\)/g).filter((call) => !call.startsWith('untilRotation(shopNow'));
+  assert.ok(calls.length >= 6, 'the shop calls moved: this test no longer sees them');
+  for (const call of calls) assert.match(call, /shopToday\(\)|, day|\(day\)/, `${call} is worked out for this machine's day`);
+  const catalogue = readFileSync(new URL('../client/itemcatalogue.js', import.meta.url), 'utf8');
+  assert.match(catalogue, /clock\.day = day/, 'the server\'s day is never kept');
+  assert.match(catalogue, /clock\.skew = now - Date\.now\(\)/, 'the server\'s clock is never kept');
 });
 
 // The reply has to be its own message: config carries the login and would re-run it.
 test('asking for the new shop does not re-run the login', () => {
   const server = readFileSync(new URL('../multiplayer-server.mjs', import.meta.url), 'utf8');
   const route = server.slice(server.indexOf("message.type === 'itemshop'"), server.indexOf("message.type === 'dev-online'"));
-  assert.match(route, /type: 'itemshop', itemShop: publicCatalogue\(dateKey\(\)\)/, 'it must answer with today, on its own message');
+  assert.match(route, /type: 'itemshop', itemShop: shopCatalogue\(\)/, 'it must answer with today, on its own message');
   assert.ok(!/type: 'config'/.test(route), 'a config reply would reset loginRequired and resume the session again');
+  const stamp = server.slice(server.indexOf('const shopCatalogue = '), server.indexOf('\n', server.indexOf('const shopCatalogue = ')));
+  assert.match(stamp, /publicCatalogue\(dateKey\(at\)\), day: dateKey\(at\), now: at/, 'the catalogue is not stamped with the day it was dealt for');
 });
 
 // The lesson from the party invite that sent perfectly and was dropped on arrival.
@@ -234,4 +265,66 @@ test('the server only ever hands over sets that have already landed', () => {
   for (const set of today.sets) assert.ok(set.debut <= '2026-08-10', `${set.name} is not out yet`);
   const later = publicCatalogue('2027-08-10');
   assert.ok(later.sets.length >= today.sets.length, 'the catalogue only ever grows');
+});
+
+// Bought in the Item Shop, then nowhere to put it on: the Locker kept its own copy of the unlock rule,
+// knew only prices and levels, and read every exclusive as "Level undefined".
+test('a piece bought in the Item Shop can be worn, and one not bought cannot', async () => {
+  const set = ITEM_SETS.find((entry) => entry.items.some(([kind]) => kind !== 'finish'));
+  const realNow = Date.now;
+  Date.now = () => Date.parse(`${set.debut}T12:00:00Z`);
+  try {
+    const profiles = await store();
+    const buyer = ProfileStore.newToken(), other = ProfileStore.newToken();
+    profiles.credit(buyer, 999999, 'test', 'test');
+    profiles.credit(other, 999999, 'test', 'test');
+    for (const [kind, id] of set.items) assert.ok(buyItemShop(profiles, buyer, set.id, kind, id).bought, `${kind}:${id} did not sell on its debut`);
+    const look = { skins: {} };
+    for (const [kind, id] of set.items) if (kind === 'finish') look.skins.m44 = id; else look[kind === 'suit' ? 'color' : kind === 'visor' ? 'accent' : kind] = id;
+    const worn = profiles.sanitizeCosmetics(buyer, look), refused = profiles.sanitizeCosmetics(other, look);
+    for (const [key, value] of Object.entries(look)) {
+      if (key === 'skins') continue;
+      assert.equal(worn[key], value, `${key} ${value} was bought but taken off`);
+      assert.notEqual(refused[key], value, `${key} ${value} was worn without buying it`);
+    }
+    assert.equal(worn.skins.m44, look.skins.m44, 'a bought skin was taken off');
+    assert.equal(refused.skins.m44, undefined, 'a skin was worn without buying it');
+  } finally { Date.now = realNow; }
+});
+
+test('the Locker asks the same unlock rule the server wears you by', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const status = shop.slice(shop.indexOf('function gearStatus('), shop.indexOf('function gearVisual('));
+  assert.match(status, /cosmeticUnlocked\(kind, item\.id,/, 'the Locker has its own idea of what is unlocked');
+  assert.ok(!/Level \$\{item\.level\}`\) : ''/.test(status) && !/>= item\.level/.test(status), 'a price-or-level shortcut is back');
+  const menu = readFileSync(new URL('../client/menu.js', import.meta.url), 'utf8');
+  const picker = menu.slice(menu.indexOf('function chooseGear('), menu.indexOf('const LOOK_KEY'));
+  assert.match(picker, /cosmeticUnlocked\(/, 'the Operator page can equip what the server will refuse');
+});
+
+// The Item Shop answers { kind: 'finish', id } for a skin. That went down the gear path, which looked the
+// skin up in COSMETICS and threw, so the page never redrew after the purchase.
+test('buying an Item Shop skin does not go down the gear path', () => {
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  const reply = shop.slice(shop.indexOf('const bought = message.bought;'), shop.indexOf('if (message.sent)'));
+  assert.match(reply, /bought\?\.kind === 'finish' \? bought\.id/, 'an Item Shop skin is not treated as a skin');
+  assert.match(reply, /else if \(bought\?\.kind && COSMETICS\[bought\.kind\]\) ctx\.onGearBought/, 'a skin can still reach onGearBought');
+});
+
+// The shelf list was taken once, when the module loaded, before the catalogue had put the exclusives
+// into FINISHES, so the skins wall never showed an Item Shop skin to anyone but a developer.
+test('the skins wall lists the Item Shop skins that have been out', async () => {
+  const { publicFinishes } = await import('../shared/economy.js');
+  const released = EXCLUSIVE_FINISHES[0];
+  assert.ok(publicFinishes().some((finish) => finish.id === released.id), 'an installed exclusive is missing from the public list');
+  const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
+  assert.ok(!/PUBLIC_FINISHES/.test(shop), 'the skins wall still reads a list taken at load');
+  // Nor is an exclusive offered for scrap: the server refuses it, so the button only ever failed.
+  const inventory = shop.slice(shop.indexOf('function inventoryHtml('), shop.indexOf('// ------------------------------------------------------------------ gear'));
+  assert.match(inventory, /info\.shop === 'item' \? '' : `<button type="button" class="mini\$\{armed === scrapKey/, 'Scrap is offered on an Item Shop skin');
+});
+
+test('a refused callsign does not leave a Play waiting to go off by itself', () => {
+  const menu = readFileSync(new URL('../client/menu.js', import.meta.url), 'utf8');
+  assert.match(menu, /net\.on\('error', \(\) => \{ pendingPlay = null; \}\)/, 'a refused identify keeps the queued Play');
 });

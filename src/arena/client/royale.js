@@ -4,7 +4,7 @@
 // when you are knocked out or win. It brings its own styles and HUD elements.
 import * as THREE from 'three';
 import { ARMOR, GADGETS, WEAPONS } from '../shared/constants.js';
-import { DROP, LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
+import { DROP, LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, lootInSight, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { bus, game } from './state.js';
 import { net } from './net.js';
 import { bindLabel, held, isBound } from './input.js';
@@ -593,7 +593,7 @@ export function initRoyale({ arena, hud, player }) {
         for (const loot of state.loot.values()) {
           const dx = loot.entry.x - me.x, dy = loot.entry.y + 0.6 - me.y, dz = loot.entry.z - me.z;
           const flat = Math.hypot(dx, dz);
-          if (flat > ROYALE.reach || Math.abs(dy) > 3.2) continue;
+          if (flat > ROYALE.reach || Math.abs(dy) > 3.2 || !lootInSight(arena.physics, [me.x, me.y, me.z], loot.entry)) continue;
           const dist = Math.hypot(flat, dy) || 0.01;
           const off = flat < 0.9 ? 0.05 : Math.acos(Math.max(-1, Math.min(1, (dx * fx + dy * fy + dz * fz) / dist)));
           if (off < best) { best = off; look = loot; }

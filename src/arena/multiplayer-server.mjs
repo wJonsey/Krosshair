@@ -77,6 +77,17 @@ const rooms = new Map();
 let roomCounter = 1;
 const sockets = new Set();
 const parties = new PartyBook();
+// Connections per address. A page needs one and a household or a classroom a few dozen; with no limit one
+// script could open thousands, each sent the menu every tick. Behind the tunnel every socket comes from
+// cloudflared on this machine, so the address is the one Cloudflare saw, believed only from there.
+const PER_ADDRESS = 40;
+const perAddress = new Map();
+function addressOf(request) {
+  const direct = request?.socket?.remoteAddress || '';
+  const local = direct === '127.0.0.1' || direct === '::1' || direct === '::ffff:127.0.0.1';
+  const seen = String(request?.headers?.['cf-connecting-ip'] || '').trim().slice(0, 64);
+  return local && seen ? seen : direct || 'unknown';
+}
 
 function send(socket, message) {
   if (socket.readyState === 1) socket.send(JSON.stringify(message));
@@ -86,14 +97,19 @@ function createRoom(name, options) {
   rooms.set(name, room);
   return room;
 }
+// Only plain values are text. String() on an object runs its toString, and a message can make that throw
+// (`{"toString":1}`): inside the async feedback handler that escaped every catch and ended the process.
+const plain = (value) => (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : '');
 function cleanRoomName(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
+  return plain(value).toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 24);
 }
+// Invisible and direction-flipping characters go too: `Alice` with a zero-width space in it read exactly
+// like the account called Alice.
 function cleanName(value) {
-  return String(value || '').replace(/[\x00-\x1f<>&"']/g, '').trim().slice(0, 16);
+  return plain(value).replace(/[\x00-\x1f<>&"'\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').trim().slice(0, 16);
 }
 function cleanText(value, max) {
-  return String(value || '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').trim().slice(0, max);
+  return plain(value).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '').trim().slice(0, max);
 }
 async function saveFeedback(socket, message) {
   const reply = (ok, text, extra = {}) => send(socket, { type: 'feedback-result', ok, message: text, ...extra });
@@ -260,13 +276,15 @@ function presenceOf(name) {
   const queue = room.royale ? 'Royale' : String(room.queue || 'match').toUpperCase();
   return { online: true, where: room.phase === 'lobby' ? `${queue} lobby` : `Playing ${queue}`, room: room.name };
 }
-function pilotView(name, viewer = null) {
+// presence: whether this viewer may see where the pilot is. Friends and party members only: a request
+// nobody accepted, a block, or one match together used to be a live feed of someone's room name.
+function pilotView(name, viewer = null, presence = true) {
   const account = accountOf(name);
   if (!account) return null;
   const profile = profiles.profiles.get(ProfileStore.key(account.profileToken));
   return {
     name: account.username, avatar: avatarOf(account), level: levelFromXp(profile?.xp || 0),
-    title: profile?.look?.title || 'Recruit', ...presenceOf(account.username),
+    title: profile?.look?.title || 'Recruit', ...(presence ? presenceOf(account.username) : {}),
     relation: viewer ? relation(viewer, account.username) : 'none',
   };
 }
@@ -286,14 +304,15 @@ function socialView(socket) {
   socialLists(me);
   if (normalizeFriends(me, socket.name, profileOf)) profiles.scheduleSave();
   const view = (name) => pilotView(name, me);
+  const stranger = (name) => pilotView(name, me, false);
   const seen = new Set([...me.friends, ...me.requestsIn, ...me.requestsOut, ...me.blocked].map((n) => n.toLowerCase()));
   return {
     friends: me.friends.map(view).filter(Boolean).sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name)),
-    requestsIn: me.requestsIn.map(view).filter(Boolean),
-    requestsOut: me.requestsOut.map(view).filter(Boolean),
-    blocked: me.blocked.map(view).filter(Boolean),
+    requestsIn: me.requestsIn.map(stranger).filter(Boolean),
+    requestsOut: me.requestsOut.map(stranger).filter(Boolean),
+    blocked: me.blocked.map(stranger).filter(Boolean),
     // Pilots you have played against and not dealt with yet.
-    recent: (me.recent || []).filter((name) => !seen.has(name.toLowerCase())).map(view).filter(Boolean).slice(0, 8),
+    recent: (me.recent || []).filter((name) => !seen.has(name.toLowerCase())).map(stranger).filter(Boolean).slice(0, 8),
     party: partyView(parties.ensure(socket.name)),
   };
 }
@@ -340,9 +359,12 @@ function handleFriends(socket, message) {
   const result = run();
   if (result.ok) {
     // Blocking has to break the party too, or a blocked pilot is still sitting in it.
+    // Blocking your own leader takes you out rather than them: the leadership used to pass to whoever was
+    // next, so blocking and unblocking was a way to take a party over.
     if (result.kind === 'blocked') {
       const party = parties.of(socket.name);
-      if (parties.has(party, them)) { parties.leave(party, them); tell(them, 'You were removed from the party.', 'bad'); pushParty(party); }
+      if (parties.has(party, them) && parties.isLeader(party, them) && !parties.isLeader(party, socket.name)) { parties.leave(party, socket.name); pushParty(party); pushParty(parties.ensure(socket.name)); }
+      else if (parties.has(party, them)) { parties.leave(party, them); tell(them, 'You were removed from the party.', 'bad'); pushParty(party); }
     }
     profiles.scheduleSave();
     if (result.tell) tell(them, result.tell, 'good');
@@ -357,12 +379,20 @@ function handleParty(socket, message) {
   const account = name ? accountOf(name) : null;
   const them = account?.username || null;
   const fail = (error) => send(socket, { type: 'party-result', error, ...socialView(socket) });
+  // Every invite is a popup on someone else's screen, so they are paced, and only go to friends (the
+  // drawer only ever offers it for them). Forty a second from a stranger used to get through.
+  const t = now();
+  if (message.action === 'invite') {
+    if (socket.inviteAt && t - socket.inviteAt < 1) return fail('Slow down.');
+    socket.inviteAt = t;
+  }
 
   if (message.action === 'invite') {
     if (!them) return fail('No pilot with that name.');
     const other = profileOf(them);
     const me = profiles.wallet(socket.token);
     if (!other || blockedEitherWay(me, other, socket.name, them)) return fail('You cannot invite that pilot.');
+    if (relation(me, them) !== 'friend') return fail('You can only invite friends.');
     if (!socketOf(them)) return fail('They are offline.');
     const result = parties.invite(party, them);
     if (result.error) return fail(result.error);
@@ -460,6 +490,8 @@ async function handleAuth(socket, message) {
     accounts.logout(message.session);
     leaveRoom(socket, true);
     dropGuest(socket);
+    // Out of the party too, as a closed tab is: a logged out pilot used to hold a place in it.
+    if (socket.account) { const party = parties.of(socket.name); if (party && party.members.length > 1) { parties.leave(party, socket.name); pushParty(party); } tellFriends(socket.name); }
     Object.assign(socket, { identified: false, token: null, name: null, account: null });
     return send(socket, { type: 'logged-out' });
   }
@@ -551,6 +583,9 @@ function newestChange(dir) {
   return newest;
 }
 installCatalogue();
+// Stamped with the day it was dealt for and the server's clock. The page deals the shop for this day,
+// not for whatever its own clock says, so it never shows a hand the server would refuse to sell.
+const shopCatalogue = () => { const at = Date.now(); return { ...publicCatalogue(dateKey(at)), day: dateKey(at), now: at }; };
 const BUILD = Math.round(newestChange(path.join(root, 'src', 'arena'))).toString(36);
 
 // Menus stay live: anyone not in a room gets the online count and the public room list whenever they change.
@@ -578,7 +613,8 @@ function findQuickRoom(queue, rating = 1000) {
 }
 
 // Only the game itself is served: never the profile store, never dotfiles.
-const allowed = [/^\/index\.html$/, /^\/src\/arena\/(?!server\/|tests\/|multiplayer-server)[\w./-]+$/, /^\/node_modules\/three\/build\/three\.(module|core)(\.min)?\.js$/];
+// Case-blind, for a disk that is: `/SERVER/` must not open `server/` anywhere this runs.
+const allowed = [/^\/index\.html$/, /^\/src\/arena\/(?!server\/|tests\/|multiplayer-server)[\w./-]+$/i, /^\/node_modules\/three\/build\/three\.(module|core)(\.min)?\.js$/];
 const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.flac': 'audio/flac' };
 
 async function discordRoute(request, response, url) {
@@ -600,7 +636,7 @@ async function discordRoute(request, response, url) {
     } catch (error) { return reply(400, { error: error instanceof SyntaxError ? 'Bad request.' : error.message }); }
   }
   if (url.pathname === '/auth/discord') {
-    const target = discord.start(request);
+    const target = discord.start(request, addressOf(request));
     if (!target) return page(503, { error: 'Too many logins right now. Try again in a minute.' });
     response.writeHead(302, { Location: target, 'Cache-Control': 'no-store' });
     return response.end();
@@ -618,14 +654,26 @@ async function discordRoute(request, response, url) {
 }
 
 const server = createServer((request, response) => {
-  const url = new URL(request.url, 'http://arena.local');
+  // Nobody frames the game (a framed page can be clicked through without the pilot knowing, and coins
+  // are one confirm away), no file is read as anything but what it says it is, and no full URL leaks out.
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  response.setHeader('Content-Security-Policy', "frame-ancestors 'self'");
+  response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // A malformed target (`/%`, `http://[zz`) threw here, outside any handler, and one request took the
+  // whole server and every match down with it.
+  let url, requested;
+  try { url = new URL(request.url, 'http://arena.local'); requested = decodeURIComponent(url.pathname); } catch {
+    response.writeHead(400);
+    response.end('Bad request');
+    return;
+  }
   if (url.pathname === '/api/status') {
     response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify({ online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()), discord: { login: discord.enabled, autoJoin: discord.autoJoin, required: LOGIN_REQUIRED, webhooks: webhooks.status() } }));
     return;
   }
   if (url.pathname === '/auth/discord' || url.pathname === '/auth/discord/callback' || url.pathname === '/auth/discord/token') return void discordRoute(request, response, url);
-  const requested = decodeURIComponent(url.pathname);
   // Relative asset paths only resolve from the real page URL, so send bare visits there.
   if (requested === '/' || requested === '/index.html' || requested === '/src/arena/' || requested === '/src/arena') {
     response.writeHead(302, { Location: `/src/arena/index.html${url.search}` });
@@ -633,7 +681,10 @@ const server = createServer((request, response) => {
     return;
   }
   const filePath = path.resolve(root, `.${requested}`);
-  if (!filePath.startsWith(root) || requested.includes('..') || !allowed.some((pattern) => pattern.test(requested))) {
+  // Judged on the path the disk will open, not the one asked for: `//server/` and `%2Fserver/` passed a
+  // check on the raw string and then resolved into server code, the unreleased Item Shop sets included.
+  const served = `/${path.relative(root, filePath).split(path.sep).join('/')}`;
+  if (requested.includes('\0') || served.split('/').some((part) => part.startsWith('.')) || !allowed.some((pattern) => pattern.test(served))) {
     response.writeHead(404);
     response.end('Not found');
     return;
@@ -730,6 +781,7 @@ function enter(socket, message) {
     if (name.length < 3) return send(socket, { type: 'error', message: 'Room codes need 3+ characters.' });
     room = rooms.get(name);
     if (room && isRanked(room.queue) && !socket.account) return send(socket, { type: 'error', message: RANKED_LOGIN });
+    if (room && isRanked(room.queue) && room.phase !== 'lobby' && !room.seatOf(socket.token)) return send(socket, { type: 'error', message: 'That ranked match has started.' });
     if (room?.wager && !socket.account) return send(socket, { type: 'error', message: WAGER_LOGIN });
     if (room && room.queue !== 'custom' && !room.isPublic) return send(socket, { type: 'error', message: 'That room is private.' });
     if (!room) room = createRoom(name, { queue: 'custom', isPublic: Boolean(message.isPublic) });
@@ -740,10 +792,19 @@ function enter(socket, message) {
   const party = socket.account ? parties.of(socket.name) : null;
   if (party && parties.isLeader(party, socket.name) && party.members.length > 1 && action !== 'rejoin') {
     parties.setQueued(party, room.name);
+    // In ranked the party plays on one side, so it brings no more than one side holds.
+    let seats = isRanked(room.queue) ? room.teamSize - 1 : Infinity;
     for (const member of party.members) {
       if (member === socket.name) continue;
       const mate = socketOf(member);
       if (!mate || !mate.identified) { tell(member, 'You were not taken into the match.', 'bad'); continue; }
+      // The anti-cheat lockout holds however you get in, and nobody is pulled out of a match they are
+      // playing: a leader pressing Play used to drag a member out of a live wager and forfeit their stake.
+      if (guard.locked(mate)) { tell(member, 'You were not taken into the match: anti-cheat lockout.', 'bad'); continue; }
+      const busy = mate.room && mate.room !== room && mate.room.mode !== 'range' && !['lobby', 'matchEnd'].includes(mate.room.phase);
+      if (busy) { tell(member, 'You were not taken into the match: you are in one.', 'bad'); tell(socket.name, `${member} is in a match.`, 'bad'); continue; }
+      if (seats <= 0) { tell(member, 'You were not taken into the match: the party is too big for it.', 'bad'); continue; }
+      seats -= 1;
       leaveRoom(mate, true);
       if (!place(mate, room, { look: mate.lastLook || {} })) tell(member, 'That room filled up before you got in.', 'bad');
     }
@@ -757,15 +818,21 @@ function place(socket, room, message) {
   if (taken && taken.connected) { send(socket, { type: 'error', message: 'You are already in that match in another tab.' }); return false; }
   const look = profiles.sanitizeCosmetics(socket.token, message.look || {});
   socket.lastLook = message.look || socket.lastLook || {};
-  const player = room.join(socket, { token: socket.token, session: socket.session, name: socket.name }, look);
+  const party = socket.account ? parties.of(socket.name) : null;
+  const player = room.join(socket, { token: socket.token, session: socket.session, name: socket.name, party: party && party.members.length > 1 ? party.id : null }, look);
   if (!player) { send(socket, { type: 'error', message: 'Room full.' }); return false; }
   return true;
 }
 
-wss.on('connection', (socket) => {
+wss.on('connection', (socket, request) => {
+  socket.address = addressOf(request);
+  const open = (perAddress.get(socket.address) || 0) + 1;
+  if (open > PER_ADDRESS) return socket.close(1013, 'Too many connections');
+  perAddress.set(socket.address, open);
+  socket.on('close', () => { const left = (perAddress.get(socket.address) || 1) - 1; if (left > 0) perAddress.set(socket.address, left); else perAddress.delete(socket.address); });
   sockets.add(socket);
   // Only the sets that have already been out. A set still to come is not described to anyone.
-  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: publicCatalogue(dateKey()), outages: outages.view() });
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: shopCatalogue(), outages: outages.view() });
   socket.identified = false;
   socket.room = null;
   socket.player = null;
@@ -782,7 +849,7 @@ wss.on('connection', (socket) => {
     if (!message || typeof message.type !== 'string') return;
     try {
       if (message.type === 'ping') {
-        if (socket.player) socket.player.ping = Math.round(Math.min(999, Number(message.rtt) || 0));
+        if (socket.player) socket.player.ping = Math.round(Math.min(999, Math.max(0, Number(message.rtt) || 0)));
         return send(socket, { type: 'pong', c: message.c, s: now() });
       }
       if (message.type === 'guard') {
@@ -797,7 +864,7 @@ wss.on('connection', (socket) => {
       }
       if (message.type === 'auth') {
         if (!ACCOUNTS_ENABLED && !discord.enabled && message.action !== 'logout') return send(socket, { type: 'auth-required' });
-        return void handleAuth(socket, message);
+        return void handleAuth(socket, message).catch((error) => console.error('auth handler failed', error));
       }
       if (message.type === 'identify') {
         if (LOGIN_REQUIRED) return send(socket, { type: 'auth-required' });
@@ -806,7 +873,11 @@ wss.on('connection', (socket) => {
         const name = cleanName(message.name);
         if (name.length < 2) return send(socket, { type: 'error', message: 'Callsign needs 2+ characters.' });
         if (socket.account) return;
-        const token = typeof message.token === 'string' && message.token.length <= 64 && profiles.isGuest(message.token) ? message.token : ProfileStore.newToken();
+        // A guest cannot go by an account's name: in a roster or a kill feed the two looked the same.
+        if (accounts.taken(name)) return send(socket, { type: 'error', message: 'That callsign belongs to an account.' });
+        // A guest who says it again without a token keeps the one it has: minting a fresh profile on every
+        // identify let one socket fill memory with guests that are held for a quarter of an hour each.
+        const token = typeof message.token === 'string' && message.token.length <= 64 && profiles.isGuest(message.token) ? message.token : socket.guest && socket.token ? socket.token : ProfileStore.newToken();
         if (socket.guest && socket.token !== token) dropGuest(socket);
         socket.token = token;
         socket.guest = true;
@@ -817,11 +888,11 @@ wss.on('connection', (socket) => {
         const profile = profiles.get(socket.token);
         profile.name = name;
         profiles.scheduleSave();
-        if (socket.player) { socket.player.name = name; socket.room.pushRoom(); }
+        if (socket.player && socket.player.name !== name) { socket.player.name = name; socket.room.pushRoom(); }
         return send(socket, { type: 'identity', token: socket.token, guest: true, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
       }
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
-      if (message.type === 'feedback') return void saveFeedback(socket, message);
+      if (message.type === 'feedback') return void saveFeedback(socket, message).catch((error) => console.error('feedback handler failed', error));
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
       if (['shop', 'game', 'crash', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
       if (message.type === 'party') { if (!socket.account) return send(socket, { type: 'party-result', error: 'Log in to use parties.' }); return handleParty(socket, message); }
@@ -829,7 +900,12 @@ wss.on('connection', (socket) => {
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
       // The shop turns over at midnight. A page left open since yesterday asks for the new one rather
       // than reconnecting, which is also the only way it learns about a set debuting today.
-      if (message.type === 'itemshop') return send(socket, { type: 'itemshop', itemShop: publicCatalogue(dateKey()) });
+      if (message.type === 'itemshop') {
+        // The page asks at most every few seconds; anything faster is only there to make us send the catalogue.
+        if (socket.shopAt && now() - socket.shopAt < 2) return;
+        socket.shopAt = now();
+        return send(socket, { type: 'itemshop', itemShop: shopCatalogue() });
+      }
       if (message.type === 'dev-online') return sendOnline(socket);
       if (message.type === 'dev-watch') return watchRoom(socket, message);
       if (message.type === 'enter') return enter(socket, message);
@@ -864,7 +940,7 @@ wss.on('connection', (socket) => {
         if (outages.featureOut('gunsmith')) return send(socket, { type: 'error', message: outageLine(outages.get('feature', 'gunsmith'), 'The Gunsmith') });
         profiles.saveBuilds(socket.token, message.builds);
         const saved = profiles.get(socket.token).builds || {};
-        if (socket.player) socket.player.builds = saved;
+        if (socket.player && socket.room && !socket.room.royale) socket.room.takeBuilds(socket.player, saved);
         return send(socket, { type: 'profile', profile: profiles.view(socket.token) });
       }
       if (message.type === 'look' && socket.identified && socket.player && socket.room.phase === 'lobby') {

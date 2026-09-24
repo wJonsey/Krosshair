@@ -75,3 +75,10 @@ export const POWERS = {
 };
 // Jump pads throw you this fast straight up: enough for any roof.
 export const PAD_LAUNCH = 15.5;
+
+// Whether a pilot can see a pickup well enough to take it: from the eye to the item, or just over it,
+// with nothing solid in between. Reach alone let loot come through walls and up through floors. The
+// browser asks the same question before it offers the pickup, so it never offers one the server refuses.
+export function lootInSight(world, eye, loot) {
+  return world.lineOfSight(eye[0], eye[1], eye[2], loot.x, loot.y + 0.35, loot.z) || world.lineOfSight(eye[0], eye[1], eye[2], loot.x, loot.y + 0.9, loot.z);
+}

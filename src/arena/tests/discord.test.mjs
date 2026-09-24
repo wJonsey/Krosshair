@@ -114,3 +114,14 @@ test('settings, key binds and crosshair are saved to the profile, cleaned', asyn
   assert.equal(saved.crosshair.dot.size, 12);
   assert.equal(saved.evil, undefined);
 });
+
+// The table of logins in progress was shared by everyone, so one script filling it shut the door on
+// every real login for ten minutes. Each address holds only a few at once.
+test('one address cannot fill the table of logins in progress', () => {
+  const discord = new DiscordAuth({ DISCORD_CLIENT_ID: '123456789012345678', PUBLIC_URL: 'https://krosshair.test' });
+  const request = { headers: { host: 'krosshair.test' } };
+  let opened = 0;
+  for (let i = 0; i < 2500; i += 1) if (discord.start(request, '203.0.113.9')) opened += 1;
+  assert.ok(opened <= 10, `one address opened ${opened} logins`);
+  assert.ok(discord.start(request, '198.51.100.4'), 'somebody else could not log in');
+});

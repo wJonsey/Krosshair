@@ -91,7 +91,7 @@ function rowHtml(who, { note, actions, flag = false, tone = '' } = {}) {
   return `<div class="social-row${tone ? ` ${tone}` : ''}">
     ${avatarHtml(who, 30)}
     <span class="social-who"><b>${escapeHtml(who.name)}</b><small>${escapeHtml(where)}</small></span>
-    ${flag ? '<i class="social-flag" aria-hidden="true">!</i>' : `<i class="live-dot${who.online ? '' : ' off'}" title="${who.online ? 'Online' : 'Offline'}"></i>`}
+    ${flag ? '<i class="social-flag" aria-hidden="true">!</i>' : who.online === undefined ? '' : `<i class="live-dot${who.online ? '' : ' off'}" title="${who.online ? 'Online' : 'Offline'}"></i>`}
     <span class="social-actions">${actions}</span>
   </div>`;
 }

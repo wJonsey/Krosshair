@@ -130,7 +130,9 @@ export const FINISHES = [
 export const finishInfo = (id) => FINISHES.find((finish) => finish.id === id) || null;
 export const finishPrice = (id) => RARITY[finishInfo(id)?.rarity]?.price || 0;   // 0: not for sale
 export const devFinish = (id) => finishInfo(id)?.rarity === 'dev';
-export const PUBLIC_FINISHES = FINISHES.filter((finish) => !RARITY[finish.rarity].secret);
+// Worked out when asked, not once at load: the Item Shop's skins are pushed into FINISHES when the
+// catalogue arrives, and a list taken at load never had them, so the skins wall never showed one.
+export const publicFinishes = () => FINISHES.filter((finish) => !RARITY[finish.rarity].secret);
 // Sold only in the Item Shop, so the crates, the trade-up and the normal shelf all leave them alone.
 export const shopOnly = (id) => finishInfo(id)?.shop === 'item';
 export const finishValue = (id) => RARITY[finishInfo(id)?.rarity]?.value || 0;

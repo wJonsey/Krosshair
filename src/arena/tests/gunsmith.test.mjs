@@ -8,9 +8,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { Room } from '../server/room.js';
-import { WEAPONS } from '../shared/constants.js';
+import { WEAPONS, xpForLevel } from '../shared/constants.js';
 import { damageFor } from '../shared/combat.js';
-import { ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, buildCost, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
+import { ATTACHMENT_LEVEL, ATTACHMENTS, BETTER_DOWN, BETTER_UP, SLOTS, buildCost, cleanBuild, emptyBuild, fitsWeapon, partsFor, resolveWeapon, touchedKeys } from '../shared/attachments.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => ({ readyState: 1, send: () => {} });
@@ -93,7 +93,7 @@ test('the server resolves the gun, so a lie about a build changes nothing', asyn
   assert.ok(built.mag > WEAPONS.talon.mag, 'the room ignored the build');
   // A build full of nonsense resolves to the plain gun rather than anything invented.
   player.builds = { talon: { optic: 'not-a-part', mag: 'longscope' } };
-  player.kit = null; player.kitFor = null;
+  player.kit = null; player.kitFor = null; player.gunBuilds = {}; // a fresh gun, as if handed out again
   assert.equal(room.currentWeapon(player).mag, WEAPONS.talon.mag);
   room.close();
 });
@@ -479,6 +479,7 @@ test('the server tells you which build it is scoring with', async () => {
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
+  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
 
   const room = new Room({ name: 'held', queue: 'casual', profiles, onEmpty: () => {} });
@@ -497,6 +498,7 @@ test('the gun in your hands is the one you built, not the stock one', async () =
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
+  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
   const room = new Room({ name: 'held2', queue: 'casual', profiles, onEmpty: () => {} });
   clearInterval(room.interval);
@@ -518,6 +520,7 @@ test('royale hands out floor guns, so no build is sent there', async () => {
   await profiles.load();
   const token = ProfileStore.newToken();
   profiles.credit(token, 10, 'seed', 'x');
+  profiles.get(token).xp = xpForLevel(ATTACHMENT_LEVEL); // parts unlock at a level, on the server too
   profiles.saveBuilds(token, { m44: { optic: 'dot' } });
   const { RoyaleRoom } = await import('../server/royale.js');
   const room = new RoyaleRoom({ name: 'roy2', queue: 'royale', profiles, onEmpty: () => {} });

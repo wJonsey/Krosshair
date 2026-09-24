@@ -8,6 +8,11 @@ import { ProfileStore } from '../server/profiles.js';
 import { Room } from '../server/room.js';
 import { BODY } from '../shared/constants.js';
 import { hasFooting } from '../shared/physics.js';
+import { performance } from 'node:perf_hooks';
+
+// Movement is checked against time, so the clock moves a frame between messages the way a real one does.
+let clock = performance.now();
+performance.now = () => clock;
 
 test('the coyote grace is spent once, so a held jump cannot renew itself', () => {
   const grace = BODY.coyoteTime;
@@ -34,7 +39,7 @@ async function setup() {
   return { room, player };
 }
 // One state message, a frame apart, saying the pilot is at this height.
-const move = (room, player, y) => { room.onState(player, { e: player.epoch, x: player.x, y, z: player.z, yaw: 0, pitch: 0, f: 0 }); return player.y; };
+const move = (room, player, y) => { clock += 1000 / 30; room.onState(player, { e: player.epoch, x: player.x, y, z: player.z, yaw: 0, pitch: 0, f: 0 }); return player.y; };
 
 test('the server takes a jump and refuses a climb', async () => {
   const { room, player } = await setup();

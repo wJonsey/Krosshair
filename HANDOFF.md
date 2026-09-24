@@ -38,10 +38,27 @@ Known limit, accepted: the painters in `client/skins.js` and the geometry in `cl
 with the client and are keyed by id, so a reader of the source can find bare ids. What they cannot find
 is the name, the set, the price or the date.
 
-**Adding a set.** Append to `ALL_SETS` in `server/itemsets.js` with a debut at least a week after the
-last one, add its pieces to `EXCLUSIVE_FINISHES` or `EXCLUSIVE_COSMETICS` with `shop: 'item'`, then add
-the art: a painter in `client/skins.js`, a maker in `client/charms.js`, or a group in
-`client/operator.js`. `tests/itemshop.test.mjs` fails if a piece has no art.
+**Adding a set.** Add it to `ALL_SETS` in `server/itemsets.js` (the list is in debut order) with a debut a
+week after the last one, add its pieces to `EXCLUSIVE_FINISHES` or `EXCLUSIVE_COSMETICS` with `shop: 'item'`,
+then add the art: a painter in `client/skins.js`, a maker in `client/charms.js`, or a group in
+`client/operator.js`. `tests/itemshop.test.mjs` fails if a piece has no art, if two sets debut on one day,
+or if more than a fortnight passes with nothing new.
+
+**The schedule is what makes it rotate.** Four a day out of however many have landed: with one set out the
+shop shows that one set every day, which is exactly what players saw for its first week (the next debut was
+three months away). It launched with a week of one set a day, then one a week; the last current set lands
+2026-12-17, so new ones are needed before then (the dev runway line counts down to it).
+
+**The page deals for the server's day.** The catalogue arrives stamped with the server's `day` and clock
+(`shopCatalogue` in `multiplayer-server.mjs`), and `client/itemcatalogue.js` keeps them (`shopToday`,
+`shopNow`). Every shop call in `client/shop.js` passes `shopToday()`: a machine whose clock is off used to
+deal a hand the server refused to sell, and a fast one asked for the new shop before the server's midnight.
+
+**A bought piece is worn by the same rule everywhere.** `cosmeticUnlocked` in `shared/constants.js` decides;
+the Locker, the Operator page and the server all call it. A copy of the rule that only knew prices and levels
+is how every exclusive once showed as "Level undefined" with no Equip. An Item Shop purchase replies
+`{ set, kind, id }`, a skin included (`kind: 'finish'`), so the reply handler turns that into a skin before
+anything treats it as gear.
 
 **Exclusives have no other way in.** No crate drops one, no trade-up pays one out or eats one, the
 normal shelf refuses to sell one, and they cannot be scrapped. If you add a route that hands out a
@@ -162,6 +179,50 @@ and machines, and a takeover mid-match carries the seat into the new tab with a 
 that is taken over stands down (`net.suspend` state, no retries) and shows a card whose only way on is
 Play here: if it reconnected by itself the two tabs would take the game from each other for ever.
 Two different browsers as two guests are still two players; nothing ties them together.
+
+## What the server checks
+
+The client is a proposal. These are the rules it is held to, and the tests that prove each one
+(`tests/anticheat.test.mjs`, `serving.test.mjs`, `partyfollow.test.mjs`); each was a working exploit first.
+
+- **Movement is budgeted over time** (`onState` in `room.js`). Distance refills at `BODY.speedLimit` a second
+  and at most `MOVE_BANK` seconds of it can be carried; the path between updates must be clear (`swept`); a
+  landing is still only a jump above the last ground (`climbOk`); coming down is budgeted too (`fallLimit`,
+  and the royale drop's own chute rule on `RoyaleRoom`). The drone has the same budget and stays in the map.
+  The test that matters most is the honest one: a pilot flat out on every arena with network hitches is never
+  refused. Run it after touching any of this, or after adding a way to move fast (a pad, a boost, a mode).
+- **Shots start at the server's eye** for the pilot, within `SHOT_SLACK` and in sight of it. The spread seed
+  follows the server's count of shots (`shotSeed`), so a client cannot pick a lucky one; an honest page counts
+  up by one and still predicts every pellet.
+- **A table lookup with a client key uses `own()`.** `WEAPONS['constructor']` is truthy; buying it made
+  credits NaN and every price check pass after that. The same goes for `COSMETICS`, `MODIFIERS` and the rest.
+- **Ranked is settled by the roster that started** (`rankedStart`, `expectedA`). Walking out is a loss there and
+  then (`forfeit`), a started ranked match takes nobody new, and a pilot who played no round of a match gets
+  nothing recorded; a win's rewards need half the rounds (`short`).
+- **A gun keeps the build it was bought or handed out with** (`holdBuild`). A build saved mid-match is for the
+  next gun; in the lobby and on the range it applies at once (`takeBuilds`). Parts unlock by level on the server.
+- **A party follows its leader only where that is fair**: never out of a match a member is playing, never past
+  the anti-cheat lockout, never onto both sides of a ranked match, and dealt onto one side where it fits.
+  Where a pilot is (`presenceOf`) goes to friends and party members only. Invites go to friends, paced.
+- **Floods are bounded**: 40 connections per address (the address Cloudflare saw, believed only from
+  loopback), one guest profile per socket, room pushes gathered past 20 a second, one catalogue a couple of
+  seconds, a few logins in progress per address.
+- **Each pilot is sent only the enemies they could see or hear** (`sightSet` and `canSee` in `room.js`), so an
+  ESP has nothing to draw. In sight means a clear line from the eye, or from where it will be a moment from now,
+  to the head, chest or knees, or a little either side (`SIGHT_EDGE`, `SIGHT_LEAD`), held for `SIGHT_HOLD`
+  after; heard means running within `HEARING`, which is how far the browser plays footsteps; marked means a
+  pulse, a drone or overtime. Team mates are always sent and the dead see what their side sees. Developer
+  accounts (`player.dev`, from the server), staff watching and the royale's dead get everything, which is
+  what keeps the dev ESP working. `client/characters.js` drops a pilot's old samples across a gap so one
+  coming back into sight does not slide there. Two tests matter: the ESP one, and the one where a pilot
+  sprints out past a corner and the enemy must already be on the page the first frame they could see them.
+  Gunfire (`shot`) and a pulse still go to everyone, on purpose: they are meant to give you away.
+- **Stores refuse to start over a file that will not parse** (`readStore`). It used to load as empty and the next
+  save wrote the empty store over everyone.
+- **Not fixable from the server, so still open**: aim is the client's (an aimbot needs a modified client, and
+  `window.__arena` hands one everything it can see), an enemy running within earshot is sent through walls
+  because the page needs them for footsteps, rewind trusts the client's timestamp up to `MAX_REWIND`, and the
+  crouch/scoped/ground flags are the client's word.
 
 ## Traps that have already cost a day
 

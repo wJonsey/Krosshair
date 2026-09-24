@@ -22,6 +22,26 @@ import { createBot, createDummy, updateBot, resetBot, botBuy, botOnHurt, botOnSo
 export const now = () => performance.now() / 1000;
 const round2 = (value) => Math.round(value * 100) / 100;
 const round3 = (value) => Math.round(value * 1000) / 1000;
+// A key the client sent, looked up in one of our tables. `WEAPONS['constructor']` is truthy, and buying
+// one made credits NaN, after which every price check passed.
+const own = (table, key) => typeof key === 'string' && Object.hasOwn(table, key);
+// Movement is checked against time, not message by message. A pilot can carry MOVE_BANK seconds of
+// travel at the limit, for a hitch that bunches updates together; past that, distance has to be earned.
+// The old check passed any step under 0.9 m however often it came, so short steps sent fast went at
+// any speed at all.
+const MOVE_BANK = 0.3;
+const FALL_LIMIT = 45;        // m/s down: faster than a roof or the sky can throw anyone
+const DRONE_SPEED = 18;       // m/s: flat out on the diagonal and climbing, with room to spare
+const DRONE_CEILING = 14;     // the client holds its drone under this too
+// How far a shot may start from the eye the server has for its pilot: an update or two of movement and
+// a crouch the flags have not caught up with. It used to be 2.2 m, enough to fire from behind a wall.
+const SHOT_SLACK = 1;
+// What each pilot is sent. An ESP can only draw what reaches the page, so an enemy is sent to a pilot
+// who could see or hear them, and to nobody else.
+const SIGHT_HOLD = 0.6;       // seconds an enemy stays sent after last being in sight: no flicker at an edge
+const SIGHT_LEAD = 0.2;       // seconds ahead both sides are also looked from, so a peek never pops in late
+const SIGHT_EDGE = 0.6;       // metres either side of a pilot that already count as in sight
+const HEARING = 30;           // metres a running footstep carries (the browser's own falloff)
 
 export function freshMatchStats() {
   return { kills: 0, playerKills: 0, botKills: 0, deaths: 0, assists: 0, headshots: 0, headshotKills: 0, bestStreak: 0, damage: 0, shots: 0, hits: 0, roundsWon: 0, roundsPlayed: 0, longest: 0, longshots: 0, wallbangs: 0, knifeKills: 0, sidearmKills: 0, gadgets: 0, clutches: 0, coinKills: 0, weaponKills: {} };
@@ -83,10 +103,10 @@ export class Room {
       this.variant = 'noon';
       this.map.dummies.forEach((spec, index) => { const dummy = createDummy(this, spec, index); this.players.set(dummy.id, dummy); });
     }
-    this.interval = setInterval(() => this.tick(), 1000 / 30);
+    this.interval = setInterval(() => this.safeTick(), 1000 / 30);
   }
 
-  close() { this.refundWager('room closed'); this.closed = true; clearInterval(this.interval); }
+  close() { this.refundWager('room closed'); this.closed = true; clearInterval(this.interval); clearTimeout(this.pushTimer); }
 
   // ---------------------------------------------------------------- messaging
   send(player, message) {
@@ -125,12 +145,22 @@ export class Room {
         // What is bolted to the guns in their hands, so everyone else, and a killcam most of all,
         // draws the gun that actually shot them. Only the guns they hold: the rest is nobody's business
         // and would be sent on every room push for nothing.
-        builds: player.builds ? Object.fromEntries(Object.values(player.weapons || {}).filter((id) => player.builds[id]).map((id) => [id, player.builds[id]])) : null,
+        builds: player.builds ? Object.fromEntries(Object.values(player.weapons || {}).filter((id) => this.buildOf(player, id)).map((id) => [id, this.buildOf(player, id)])) : null,
         level: player.level, rating: player.rating, rankedMatches: player.rankedMatches, primary: player.weapons.primary, armor: player.armor > 0,
       })),
     };
   }
-  pushRoom() { this.broadcast(this.roomState()); }
+  // A change goes out at once, up to a point. A script sending `ready` 150 times a second had the whole
+  // roster sent to everyone in the room 150 times a second; past 20 in a second, changes are gathered
+  // and the latest goes out a tenth of a second later.
+  pushRoom() {
+    const t = now();
+    if (t - (this.pushWindow || -Infinity) >= 1) { this.pushWindow = t; this.pushCount = 0; }
+    if (++this.pushCount <= 20) { this.broadcast(this.roomState()); return; }
+    if (this.pushTimer) return;
+    this.pushTimer = setTimeout(() => { this.pushTimer = null; if (!this.closed) this.broadcast(this.roomState()); }, 100);
+    this.pushTimer.unref?.();
+  }
   scoreOf(player) { return player.match.playerKills * 100 + player.match.botKills * 50 + player.match.assists * 40 + Math.round(player.match.damage / 5) + player.match.roundsWon * 20; }
 
   youState(player) {
@@ -140,7 +170,7 @@ export class Room {
       // The build the server is actually scoring with. Without it the browser drew the stock gun while
       // the server used the built one, so a fitted part changed nothing you could see or feel. Null in
       // royale and while the gunsmith is pulled: that is the server's call, not the browser's.
-      builds: (this.royale || Room.featureOut('gunsmith')) ? null : (player.builds || null),
+      builds: (this.royale || Room.featureOut('gunsmith')) ? null : (player.builds ? { ...player.builds, ...this.heldBuilds(player) } : null),
       // Royale only: what rarity the guns in hand were found at, so the pickup card can compare properly.
       ...(this.royale && player.rarity ? { rarity: player.rarity } : {}),
     };
@@ -181,7 +211,7 @@ export class Room {
     for (const match of [(p) => p.session && p.session === hello.session, (p) => hello.token && p.token === hello.token]) {
       for (const existing of this.players.values()) {
         if (existing.bot || existing.connected || !match(existing)) continue;
-        existing.socket = socket; existing.connected = true; existing.disconnectedAt = 0; existing.session = hello.session;
+        existing.socket = socket; existing.connected = true; existing.disconnectedAt = 0; existing.session = hello.session; existing.seqSet = false;
         socket.player = existing; socket.room = this;
         this.welcome(existing, true);
         this.pushRoom();
@@ -191,6 +221,9 @@ export class Room {
     }
     // Still here and already seated means a second live tab, not a reconnect.
     if (this.seatOf(hello.token)) return null;
+    // A ranked match is played by the pilots who started it. A seat taken at match point used to be paid
+    // the whole win and its rating.
+    if (isRanked(this.queue) && this.mode === 'match' && this.phase !== 'lobby') return null;
     if (this.wager && this.humans().length >= this.wager.size * 2) return null;
     const seats = this.team('A').length + this.team('B').length;
     if (this.mode === 'range' ? this.connectedHumans().length >= 4 : seats >= this.capacity) {
@@ -203,13 +236,15 @@ export class Room {
     const player = this.newPlayer({
       name: hello.name, token: hello.token, session: hello.session, socket, ...look,
       level: levelFromXp(profile.xp), rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
-      dev: Boolean(profile.dev),
+      dev: Boolean(profile.dev), party: typeof hello.party === 'string' ? hello.party : null,
     });
     // Saved gun builds come with the pilot. Royale ignores them: guns come off the floor there.
     player.builds = this.royale ? null : (profile.builds || {});
     const midMatch = this.mode === 'match' && this.phase !== 'lobby';
     const replaceable = midMatch && [...this.players.values()].some((p) => p.bot && !p.dummy) && this.queue !== 'custom';
-    player.team = this.mode === 'range' ? 'A' : this.pickTeam();
+    // Next to your party if there is room on its side.
+    const mate = player.party && [...this.players.values()].find((p) => p.party === player.party && !p.bot && !p.watching && p !== player);
+    player.team = this.mode === 'range' ? 'A' : mate && this.team(mate.team).length < (this.teamSize || this.capacity / 2) ? mate.team : this.pickTeam();
     player.pendingJoin = replaceable;
     player.host = this.queue === 'custom' && !this.connectedHumans().length;
     this.players.set(player.id, player);
@@ -257,6 +292,7 @@ export class Room {
     if (player.watching) { this.removePlayer(player); return; }
     player.socket = null;
     const holdSlot = !deliberate && this.mode === 'match' && this.phase !== 'lobby';
+    if (deliberate) this.forfeit(player);
     if (deliberate && player.alive && this.live && this.mode === 'match') this.kill(player, null, null, 'torso', { reason: 'disconnect' });
     if (holdSlot) {
       player.connected = false; player.disconnectedAt = now();
@@ -299,7 +335,7 @@ export class Room {
 
   addBot(team, difficulty = this.rules.botDifficulty) {
     if (this.team('A').length + this.team('B').length >= this.capacity) return null;
-    const bot = createBot(this, team || this.pickTeam(), BOT_DIFFICULTY[difficulty] ? difficulty : 'veteran');
+    const bot = createBot(this, team || this.pickTeam(), own(BOT_DIFFICULTY, difficulty) ? difficulty : 'veteran');
     this.players.set(bot.id, bot);
     return bot;
   }
@@ -311,9 +347,16 @@ export class Room {
     else if (this.queue === 'bots') perTeam = Math.max(perTeam, 3);
     else if (humans < 2) perTeam = Math.max(perTeam, 2);
     perTeam = Math.max(1, Math.min(this.teamSize || 4, perTeam));
-    // Spread humans evenly first.
+    // Spread humans evenly first, each party on one side where it fits. Dealt alternately, two friends who
+    // queued together always ended up on opposite sides, and in ranked could trade wins.
     const roster = this.team('A').concat(this.team('B')).filter((p) => !p.bot);
-    roster.forEach((player, index) => { player.team = index % 2 ? 'B' : 'A'; });
+    const groups = new Map();
+    for (const player of roster) { const key = player.party || player.id; groups.set(key, [...(groups.get(key) || []), player]); }
+    const count = { A: 0, B: 0 };
+    for (const group of [...groups.values()].sort((a, b) => b.length - a.length)) {
+      const side = count.A <= count.B ? 'A' : 'B';
+      for (const player of group) { player.team = count[side] < perTeam ? side : side === 'A' ? 'B' : 'A'; count[player.team] += 1; }
+    }
     if (this.queue === 'bots') roster.forEach((player) => { player.team = 'A'; });
     for (const team of ['A', 'B']) while (this.team(team).length < perTeam) if (!this.addBot(team)) break;
   }
@@ -339,10 +382,32 @@ export class Room {
       player.gunLevel = 0;
       player.credits = this.rules.startCredits;
       player.weapons = { ...DEFAULT_LOADOUT };
-      player.armor = 0; player.helmet = false; player.gadgets = []; player.diedThisRound = false; player.pendingJoin = false; player.ready = false;
+      player.gunBuilds = {};
+      player.armor = 0; player.helmet = false; player.gadgets = []; player.diedThisRound = false; player.pendingJoin = false; player.ready = false; player.forfeited = false;
     }
+    // Ranked or not, and who was expected to win, are settled by who started. A pilot walking out used to
+    // make the match unranked for everyone, taking their own loss and the winner's rating with them.
+    this.rankedStart = this.rankedNow();
+    this.expectedA = this.expectedNow();
     this.broadcast({ type: 'match-start', variant: this.variant, rules: this.rules, map: this.map.id, mapTitle: this.map.title, mapPrint: mapFingerprint(this.map) });
     this.startRound();
+  }
+  rankedNow() { return isRanked(this.queue) && this.team('A').some((p) => !p.bot) && this.team('B').some((p) => !p.bot); }
+  expectedNow() {
+    const avg = (team) => { const list = this.team(team).filter((p) => !p.bot); return list.length ? list.reduce((s, p) => s + p.rating, 0) / list.length : 1000; };
+    return 1 / (1 + 10 ** ((avg('B') - avg('A')) / 400));
+  }
+  // Leaving a started ranked match is a loss, recorded there and then.
+  forfeit(player) {
+    if (!this.rankedStart || player.bot || player.forfeited || !['buy', 'live', 'overtime', 'roundEnd'].includes(this.phase)) return;
+    player.forfeited = true;
+    const expected = player.team === 'A' ? this.expectedA : 1 - this.expectedA;
+    const k = player.rankedMatches < PLACEMENT_MATCHES ? 60 : 30;
+    this.profiles.recordMatch(player.token, {
+      ...player.match, won: false, draw: false, ranked: true, ratingDelta: -k * expected, mode: this.queue, variant: this.variant, vsHumans: true, topKills: false,
+      score: `${this.scores[player.team]}–${this.scores[player.team === 'A' ? 'B' : 'A']}`, mvp: false,
+      rivals: this.humans().filter((p) => p !== player).map((p) => p.name),
+    });
   }
 
   startRound() {
@@ -363,7 +428,7 @@ export class Room {
       if (bot) { player.team = bot.team; player.credits = bot.credits; this.removePlayer(bot); }
     }
     for (const player of [...this.players.values()]) {
-      if (!player.bot && !player.connected && now() - player.disconnectedAt > RECONNECT_GRACE) this.removePlayer(player);
+      if (!player.bot && !player.connected && now() - player.disconnectedAt > RECONNECT_GRACE) { this.forfeit(player); this.removePlayer(player); }
     }
     // Matchmade rooms top teams back up with bots when pilots walk out.
     if (this.queue !== 'custom') {
@@ -390,6 +455,7 @@ export class Room {
       if (player.drone) this.endDrone(player, false);
       if (player.diedThisRound || this.round === 1) {
         player.weapons = { ...DEFAULT_LOADOUT };
+        player.gunBuilds = {};
         player.armor = 0; player.helmet = false; player.gadgets = [];
       }
       if (this.rules.modifier === 'sidearms') player.weapons.primary = null;
@@ -433,7 +499,7 @@ export class Room {
   // at: an exact spot, for modes that choose their own (the royale drop).
   spawn(player, index = 0, at = null) {
     const point = at || (player.dummy ? player.home : this.spawnPoint(player, index));
-    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, footing: point.y, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0 });
+    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, footing: point.y, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0, lastStateAt: now(), moveBank: 0, fallBank: 0, inDrop: false });
     player.epoch += 1;
     player.history = [];
     player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee';
@@ -553,9 +619,8 @@ export class Room {
     this.phaseEnds = now() + this.rules.matchEndTime;
     const winner = this.scores.A === this.scores.B ? null : this.scores.A > this.scores.B ? 'A' : 'B';
     const everyone = [...this.players.values()].filter((p) => !p.dummy && !p.watching);
-    const ranked = isRanked(this.queue) && this.team('A').some((p) => !p.bot) && this.team('B').some((p) => !p.bot);
-    const avg = (team) => { const list = this.team(team).filter((p) => !p.bot); return list.length ? list.reduce((s, p) => s + p.rating, 0) / list.length : 1000; };
-    const expectedA = 1 / (1 + 10 ** ((avg('B') - avg('A')) / 400));
+    const ranked = this.rankedStart ?? this.rankedNow();
+    const expectedA = this.expectedA ?? this.expectedNow();
     const pool = winner ? this.team(winner) : everyone;
     const mvp = [...pool].sort((m, n) => this.scoreOf(n) - this.scoreOf(m))[0];
     const table = everyone.map((p) => ({
@@ -571,6 +636,10 @@ export class Room {
     const humansInMatch = everyone.filter((p) => !p.bot).length;
     const topKills = Math.max(1, ...everyone.map((p) => p.match.kills));
     for (const player of this.humans()) {
+      // A seat taken at match point is not a match played: nothing is recorded for a pilot who played no
+      // round of it, and a win's rewards need a fair share of the rounds.
+      if (this.round && !player.match.roundsPlayed) continue;
+      const short = player.match.roundsPlayed < Math.ceil(this.round / 2);
       const won = winner === player.team;
       const vsHumans = this.team(player.team === 'A' ? 'B' : 'A').some((p) => !p.bot);
       const expected = player.team === 'A' ? expectedA : 1 - expectedA;
@@ -578,7 +647,7 @@ export class Room {
       const k = player.rankedMatches < PLACEMENT_MATCHES ? 60 : 30;
       const ratingDelta = ranked ? k * ((winner ? (won ? 1 : 0) : 0.5) - expected) : 0;
       const report = this.profiles.recordMatch(player.token, {
-        ...player.match, won, draw: !winner, ranked, ratingDelta, mode: this.wager ? 'wager' : this.queue, variant: this.variant,
+        ...player.match, won, short, draw: !winner, ranked, ratingDelta, mode: this.wager ? 'wager' : this.queue, variant: this.variant,
         vsHumans, topKills: humansInMatch >= 2 && player.match.kills === topKills,
         score: `${this.scores[player.team]}–${this.scores[player.team === 'A' ? 'B' : 'A']}`, mvp: mvp && mvp.id === player.id,
         rivals: everyone.filter((p) => !p.bot && p.id !== player.id).map((p) => p.name),
@@ -599,11 +668,12 @@ export class Room {
   // Everyone's stake is taken as the match starts. If anyone can't cover it, nobody pays and it's back to the lobby.
   takeStakes() {
     const { stake } = this.wager;
+    if (this.pot && !this.pot.settled) this.refundWager('restarted');
     if (!this.wagerReady()) { this.broadcast({ type: 'notice', text: `Wagers need a full ${this.wager.size}v${this.wager.size}.`, tone: 'warn' }); return false; }
     const held = [];
     for (const player of this.humans()) {
       if (!this.profiles.hold(player.token, stake, this.name)) {
-        held.forEach((p) => this.profiles.settle(p.token, stake, 'Wager refunded (cancelled)'));
+        held.forEach((p) => this.profiles.settle(p.token, stake, 'Wager refunded (cancelled)', this.name));
         this.broadcast({ type: 'notice', text: `${player.name} can't cover the stake.`, tone: 'warn' });
         return false;
       }
@@ -622,14 +692,14 @@ export class Room {
     const winners = winner ? pot.entries.filter((entry) => entry.team === winner) : [];
     const results = {};
     if (!winners.length) {
-      for (const entry of pot.entries) { this.profiles.settle(entry.token, pot.stake, 'Wager refunded (draw)'); results[entry.token] = { stake: pot.stake, payout: pot.stake }; }
+      for (const entry of pot.entries) { this.profiles.settle(entry.token, pot.stake, 'Wager refunded (draw)', this.name); results[entry.token] = { stake: pot.stake, payout: pot.stake }; }
       return results;
     }
     const share = Math.floor(total / winners.length);
     let spare = total - share * winners.length;
     for (const entry of pot.entries) {
       const payout = entry.team === winner ? share + (spare-- > 0 ? 1 : 0) : 0;
-      this.profiles.settle(entry.token, payout, payout ? `Won the pot in ${this.name}` : `Lost the wager in ${this.name}`);
+      this.profiles.settle(entry.token, payout, payout ? `Won the pot in ${this.name}` : `Lost the wager in ${this.name}`, this.name);
       results[entry.token] = { stake: pot.stake, payout };
     }
     this.broadcast({ type: 'feed', text: `${winners.map((w) => w.name).join(' & ')} ${winners.length === 1 ? 'takes' : 'take'} the pot: ${total} coins`, tone: 'good' });
@@ -639,7 +709,7 @@ export class Room {
     const pot = this.pot;
     if (!pot || pot.settled) return;
     pot.settled = true;
-    for (const entry of pot.entries) this.profiles.settle(entry.token, pot.stake, `Wager refunded (${reason})`);
+    for (const entry of pot.entries) this.profiles.settle(entry.token, pot.stake, `Wager refunded (${reason})`, this.name);
   }
   // A side with nobody connected for the reconnect window forfeits the match (and the pot).
   checkForfeit(t) {
@@ -700,6 +770,8 @@ export class Room {
   }
 
   toLobby() {
+    // A match stopped early (a pulled map) leaves its pot open, and the next takeStakes wrote over it.
+    this.refundWager('match stopped');
     this.phase = 'lobby';
     this.phaseEnds = 0;
     this.round = 0;
@@ -717,6 +789,14 @@ export class Room {
   }
 
   // ---------------------------------------------------------------- tick
+  // One room's bug must not end every match on the server: a throw here used to take the process down.
+  // Logged (the first, then every 300th, so a stuck room cannot fill the journal) and the room carries on.
+  safeTick() {
+    try { this.tick(); } catch (error) {
+      this.tickErrors = (this.tickErrors || 0) + 1;
+      if (this.tickErrors % 300 === 1) console.error(`room ${this.name}: tick failed (${this.tickErrors})`, error);
+    }
+  }
   tick() {
     const t = now();
     const dt = Math.min(0.1, t - this.lastTick);
@@ -783,7 +863,102 @@ export class Room {
     const drones = [...this.players.values()].filter((p) => p.drone).map((p) => [p.id, round2(p.drone.x), round2(p.drone.y), round2(p.drone.z), round3(p.drone.yaw)]);
     if (drones.length) message.d = drones;
     if (this.decoys.size) message.c = [...this.decoys.values()].map((d) => [d.id, d.owner, round2(d.body.x), round2(d.body.y), round2(d.body.z), round3(d.yaw)]);
-    this.broadcast(message);
+    if (!this.culling()) return this.broadcast(message);
+    const everything = JSON.stringify(message);
+    const sets = new Map();
+    for (const viewer of this.players.values()) {
+      if (!viewer.socket || viewer.socket.readyState !== 1) continue;
+      if (this.seesAll(viewer)) { viewer.socket.send(everything); continue; }
+      const seen = this.sightSet(viewer, t, sets);
+      const own = { type: 's', t: message.t, p: rows.filter((row) => seen.has(row[0])) };
+      if (drones.length) own.d = drones.filter((row) => seen.has(`drone:${row[0]}`));
+      if (message.c) own.c = message.c.filter((row) => seen.has(row[0]));
+      viewer.socket.send(JSON.stringify(own));
+    }
+  }
+
+  // ---------------------------------------------------------------- who sees whom
+  // Only while a round is being played: between rounds, and on the range, there is nothing to hide.
+  culling() { return this.mode === 'match' && ['buy', 'live', 'overtime'].includes(this.phase); }
+  // Developers (the account, checked on the server, never the page), staff watching, and the royale's
+  // dead, who are out of it for good, are sent the lot.
+  seesAll(viewer) { return Boolean(viewer.dev) || Boolean(viewer.watching) || (Boolean(this.royale) && !viewer.alive); }
+  // Everything this pilot may be sent right now, by id: pilots, decoys, and drones as `drone:<owner>`.
+  // The dead of a round see what their side sees, which is what spectating a team mate shows anyway.
+  sightSet(viewer, t, sets) {
+    if (sets.has(viewer.id)) return sets.get(viewer.id);
+    const seen = new Set([viewer.id]);
+    sets.set(viewer.id, seen);
+    const eyes = viewer.alive ? [viewer] : [...this.players.values()].filter((p) => p.alive && p.team === viewer.team && !p.watching);
+    for (const other of this.players.values()) {
+      if (!other.alive || other === viewer) continue;
+      if (other.team === viewer.team || other.dummy || other.markedFor?.[viewer.team] > t || eyes.some((eye) => eye === other || this.perceives(eye, other, t))) seen.add(other.id);
+      if (other.drone && (other.team === viewer.team || eyes.some((eye) => this.perceivesPoint(eye, other.drone, `drone:${other.id}`, t)))) seen.add(`drone:${other.id}`);
+    }
+    for (const decoy of this.decoys.values()) {
+      if (decoy.team === viewer.team || eyes.some((eye) => this.perceivesPoint(eye, { x: decoy.body.x, y: decoy.body.y + 1.2, z: decoy.body.z }, decoy.id, t))) seen.add(decoy.id);
+    }
+    return seen;
+  }
+  // In sight or within earshot. What is in sight is looked again a few times a second and held a moment.
+  perceives(viewer, target, t) {
+    if (this.heard(viewer, target, t)) return true;
+    const entry = this.sightEntry(viewer, target.id, target.epoch);
+    if (t >= entry.next) {
+      entry.next = t + (this.royale ? 0.2 : 0.1) * (0.8 + Math.random() * 0.4);
+      if (this.canSee(viewer, target)) entry.until = t + SIGHT_HOLD;
+    }
+    return t < entry.until;
+  }
+  perceivesPoint(viewer, point, key, t) {
+    if (Math.hypot(point.x - viewer.x, point.z - viewer.z) <= HEARING) return true; // a drone buzzes, a decoy runs
+    const entry = this.sightEntry(viewer, key, 0);
+    if (t >= entry.next) {
+      entry.next = t + 0.15;
+      const eye = this.eyeOf(viewer);
+      if (this.world.lineOfSight(eye[0], eye[1], eye[2], point.x, point.y, point.z)) entry.until = t + SIGHT_HOLD;
+    }
+    return t < entry.until;
+  }
+  sightEntry(viewer, key, epoch) {
+    const cache = (viewer.sight ||= new Map());
+    let entry = cache.get(key);
+    // A respawn is a new place: what was in sight before it says nothing about where they are now.
+    if (!entry || entry.epoch !== epoch) { entry = { epoch, until: 0, next: 0 }; cache.set(key, entry); }
+    return entry;
+  }
+  // Running on the ground makes a noise the browser plays; walking, crouching and Silent Step do not.
+  heard(viewer, target, t) {
+    if (target.ghostUntil > t || target.speed <= 3.6 || !(target.flags & FLAG.ground) || (target.flags & (FLAG.crouch | FLAG.walking))) return false;
+    return Math.hypot(target.x - viewer.x, target.y - viewer.y, target.z - viewer.z) <= HEARING;
+  }
+  // From the eye (and the drone, while flying one), now and a moment ahead, to the target's head, chest and
+  // knees, a little either side of them, and where they are heading. Any one clear line is enough.
+  canSee(viewer, target) {
+    const lead = (p) => { const h = p.history, n = h.length; if (n < 2) return [0, 0, 0]; const a = h[n - 2], b = h[n - 1], dt = Math.max(1e-3, b.t - a.t); return [(b.x - a.x) / dt * SIGHT_LEAD, (b.y - a.y) / dt * SIGHT_LEAD, (b.z - a.z) / dt * SIGHT_LEAD]; };
+    const eye = this.eyeOf(viewer), move = lead(viewer), ahead = lead(target);
+    const dx = target.x - viewer.x, dz = target.z - viewer.z, flat = Math.hypot(dx, dz) || 1;
+    // Far off, a step either way is a sliver of the screen: fewer lines, which is what keeps a full
+    // royale island affordable.
+    const far = flat > 60;
+    const eyes = far ? [eye] : [eye, [eye[0] + move[0], eye[1] + move[1], eye[2] + move[2]]];
+    if (viewer.drone) eyes.push([viewer.drone.x, viewer.drone.y, viewer.drone.z]);
+    const side = [(-dz / flat) * SIGHT_EDGE, (dx / flat) * SIGHT_EDGE];
+    const low = target.flags & FLAG.crouch;
+    const chest = target.y + (low ? 0.8 : 1.2), head = target.y + (low ? 1.1 : 1.65), knee = target.y + 0.45;
+    const points = far
+      ? [[target.x, chest, target.z], [target.x, head, target.z], [target.x + ahead[0], chest + ahead[1], target.z + ahead[2]]]
+      : [
+        [target.x, chest, target.z], [target.x, head, target.z], [target.x + side[0], chest, target.z + side[1]], [target.x - side[0], chest, target.z - side[1]],
+        [target.x, knee, target.z], [target.x + ahead[0], chest + ahead[1], target.z + ahead[2]],
+      ];
+    for (const from of eyes) for (const to of points) if (this.world.lineOfSight(from[0], from[1], from[2], to[0], to[1], to[2])) return true;
+    return false;
+  }
+  // A pilot's gadget going off is heard by their side and by whoever could see or hear them.
+  toPerceivers(player, message) {
+    const t = now();
+    this.broadcast(message, (other) => other.team === player.team || this.seesAll(other) || !this.culling() || this.perceives(other, player, t));
   }
 
   // Where was this player at time t? (lag compensation)
@@ -845,6 +1020,8 @@ export class Room {
   // Dev tools. Checked against the account every single time, so nobody else and no bot can hold one.
   onDevTool(player, message) {
     if (!player.dev || player.bot) { player.devTools = {}; return; }
+    // Someone else's rating or coins ride on these, so god mode and the rest stay out of them.
+    if (isRanked(this.queue) || this.wager) { player.devTools = {}; this.send(player, { type: 'dev', tools: {} }); return this.notice(player, 'Dev tools are off in ranked and wagers.', 'warn'); }
     const action = String(message.action || '');
     if (DEV_ACTION_IDS.includes(action)) {
       if (!player.alive) return;
@@ -885,10 +1062,10 @@ export class Room {
     if ([3, 5, 7].includes(rules.roundsToWin)) next.roundsToWin = rules.roundsToWin;
     if ([60, 100, 140].includes(rules.roundTime)) next.roundTime = rules.roundTime;
     if ([400, 800, 2000, 9000].includes(rules.startCredits)) next.startCredits = rules.startCredits;
-    if (rules.variant === 'auto' || VARIANT_NAMES[rules.variant]) next.variant = rules.variant;
+    if (rules.variant === 'auto' || own(VARIANT_NAMES, rules.variant)) next.variant = rules.variant;
     if (validMapRule(rules.map)) next.map = rules.map;
-    if (MODIFIERS[rules.modifier]) next.modifier = rules.modifier;
-    if (BOT_DIFFICULTY[rules.botDifficulty]) next.botDifficulty = rules.botDifficulty;
+    if (own(MODIFIERS, rules.modifier)) next.modifier = rules.modifier;
+    if (own(BOT_DIFFICULTY, rules.botDifficulty)) next.botDifficulty = rules.botDifficulty;
     if (typeof rules.friendlyFire === 'boolean') next.friendlyFire = rules.friendlyFire;
     if (typeof rules.overtimeOn === 'boolean') next.overtime = rules.overtimeOn ? DEFAULT_RULES.overtime : 0;
     this.rules = next;
@@ -910,10 +1087,28 @@ export class Room {
   // Open air is free space, so bodyFree alone never stopped a tampered client holding jump and
   // climbing away. You only ever get a jump's worth above the last ground under your feet, and that
   // mark follows you down as you fall, so height has to be fallen for first.
+  // Landing on something is held to that too: a footed destination used to pass at any height, so one
+  // message put you on top of a 10 m wall.
   climbOk(player, x, y, z) {
+    if (y > player.footing + this.hopHeight()) return false;
     const footed = y - this.world.groundBelow(x, y + 0.2, z) < 0.4;
-    if (footed || !(y > player.footing)) { player.footing = y; return true; }
-    return y <= player.footing + this.hopHeight();
+    if (footed || !(y > player.footing)) player.footing = y;
+    if (footed) player.inDrop = false;
+    return true;
+  }
+  // How fast this pilot may come down. The royale drop has its own, slower, rule.
+  fallLimit() { return FALL_LIMIT; }
+
+  // Clear all the way from one point to the next, not only where it ends: a single step used to go
+  // through a thin wall, or down through a floor to where no shot could reach. Something already stuck
+  // (a shield put down on top of you) is let out rather than held there.
+  swept(from, to, free) {
+    if (!free(to[0], to[1], to[2])) return false;
+    if (!free(from[0], from[1], from[2])) return true;
+    const dx = to[0] - from[0], dy = to[1] - from[1], dz = to[2] - from[2];
+    const steps = Math.ceil(Math.hypot(dx, dy, dz) / 0.15);
+    for (let i = 1; i < steps; i += 1) { const k = i / steps; if (!free(from[0] + dx * k, from[1] + dy * k, from[2] + dz * k)) return false; }
+    return true;
   }
 
   onState(player, m) {
@@ -923,16 +1118,22 @@ export class Room {
     const t = now();
     const { bounds } = this.map;
     const x = clamp(m.x, bounds.minX, bounds.maxX), z = clamp(m.z, bounds.minZ, bounds.maxZ), y = clamp(m.y, bounds.minY - 1, bounds.maxY + 6);
-    const elapsed = Math.max(1 / 120, t - (player.lastStateAt || t - 0.05));
+    const since = Math.max(0, t - (player.lastStateAt || t));
+    const elapsed = Math.max(1 / 120, since || 0.05);
     const dist = Math.hypot(x - player.x, z - player.z);
+    const drop = Math.max(0, player.y - y);
     const speed = dist / elapsed;
     // Dev tools loosen the checks for that account only: flying goes through walls, speed moves faster.
     const fly = Boolean(player.devTools?.fly);
     const limit = fly ? 60 : player.devTools?.speed ? BODY.speedLimit * DEV_SPEED : BODY.speedLimit;
-    let reject = speed > limit && dist > 0.9;
+    const fall = fly ? 60 : this.fallLimit(player);
+    player.moveBank = Math.min(limit * MOVE_BANK, (player.moveBank || 0) + limit * since);
+    player.fallBank = Math.min(fall * MOVE_BANK, (player.fallBank || 0) + fall * since);
+    let reject = dist > player.moveBank + 1e-6 || drop > player.fallBank + 1e-6;
     // During the buy phase pilots stay behind their gate.
     if (this.phase === 'buy' && this.mode === 'match' && !inSpawnZone(this, player, x, z)) reject = true;
-    if (!reject && !fly && !this.world.bodyFree(x, y + 0.3, z, BODY.radius * 0.5, 0.9)) reject = true;
+    const body = (px, py, pz) => this.world.bodyFree(px, py + 0.3, pz, BODY.radius * 0.5, 0.9);
+    if (!reject && !fly && !this.swept([player.x, player.y, player.z], [x, y, z], body)) reject = true;
     if (!reject && !fly && !this.climbOk(player, x, y, z)) reject = true;
     player.lastStateAt = t;
     if (reject) {
@@ -941,17 +1142,23 @@ export class Room {
       return;
     }
     player.strikes = Math.max(0, player.strikes - 0.2);
+    player.moveBank -= dist; player.fallBank -= drop;
     player.speed = player.speed * 0.5 + Math.min(speed, 9) * 0.5;
     player.x = x; player.y = y; player.z = z;
     player.yaw = m.yaw; player.pitch = clamp(m.pitch, -1.5, 1.5);
     const flags = (m.f | 0) & (FLAG.crouch | FLAG.scoped | FLAG.ground | FLAG.walking);
     if ((flags & FLAG.scoped) && !(player.flags & FLAG.scoped)) player.scopedSince = t;
     player.flags = flags;
+    // The drone on the same terms: its own budget, the whole path clear, inside the map. It used to take
+    // any 3 m step per message, and 112 m later it was marking the whole enemy team from the sky.
     if (player.drone && Array.isArray(m.drone) && m.drone.length === 5 && m.drone.every(Number.isFinite)) {
       const d = player.drone;
-      const step = Math.hypot(m.drone[0] - d.x, m.drone[1] - d.y, m.drone[2] - d.z);
-      if (step < 3 && this.world.bodyFree(m.drone[0], m.drone[1] - 0.15, m.drone[2], 0.15, 0.3)) { d.x = m.drone[0]; d.y = m.drone[1]; d.z = m.drone[2]; }
-      d.yaw = m.drone[3]; d.pitch = m.drone[4];
+      const to = [clamp(m.drone[0], bounds.minX, bounds.maxX), clamp(m.drone[1], bounds.minY + 0.2, DRONE_CEILING), clamp(m.drone[2], bounds.minZ, bounds.maxZ)];
+      d.bank = Math.min(DRONE_SPEED * MOVE_BANK, (d.bank || 0) + DRONE_SPEED * Math.max(0, t - (d.movedAt || t)));
+      d.movedAt = t;
+      const step = Math.hypot(to[0] - d.x, to[1] - d.y, to[2] - d.z);
+      if (step <= d.bank + 1e-6 && this.swept([d.x, d.y, d.z], to, (px, py, pz) => this.world.bodyFree(px, py - 0.15, pz, 0.15, 0.3))) { [d.x, d.y, d.z] = to; d.bank -= step; }
+      d.yaw = m.drone[3]; d.pitch = clamp(m.drone[4], -1.5, 1.5);
     }
   }
 
@@ -966,12 +1173,34 @@ export class Room {
     if (this.royale) return royaleWeapon(WEAPONS[id], player.rarity?.[slot]) || null;
     // Gunsmith pulled: everyone is on stock guns until it is back.
     if (!player.builds || Room.featureOut('gunsmith')) return WEAPONS[id] || null;
+    const build = this.holdBuild(player, slot);
     if (!player.kit) player.kit = {};
-    if (player.kit[slot]?.id !== id || player.kitFor?.[slot] !== player.builds[id]) {
-      player.kit[slot] = resolveWeapon(id, player.builds[id]);
-      (player.kitFor = player.kitFor || {})[slot] = player.builds[id];
+    if (player.kit[slot]?.id !== id || player.kitFor?.[slot] !== build) {
+      player.kit[slot] = resolveWeapon(id, build);
+      (player.kitFor = player.kitFor || {})[slot] = build;
     }
     return player.kit[slot] || WEAPONS[id] || null;
+  }
+  // The build a gun in hand was bought or handed out with, fixed from then on. A build saved mid-round
+  // used to change the gun already in your hands, so the parts came after paying for the bare gun, free.
+  // A new build is for the next gun: bought, or handed out at the next spawn.
+  holdBuild(player, slot, build) {
+    const id = player.weapons[slot];
+    player.gunBuilds ||= {};
+    if (build !== undefined || player.gunBuilds[slot]?.id !== id) player.gunBuilds[slot] = { id, build: build !== undefined ? build : player.builds?.[id] || null };
+    return player.gunBuilds[slot].build;
+  }
+  buildOf(player, id) {
+    const held = Object.values(player.gunBuilds || {}).find((entry) => entry.id === id);
+    return held ? held.build : player.builds?.[id] || null;
+  }
+  heldBuilds(player) { return Object.fromEntries(Object.values(player.gunBuilds || {}).filter((entry) => entry.id).map((entry) => [entry.id, entry.build])); }
+  // A build saved from the Gunsmith. In the lobby and on the range it is on the gun straight away;
+  // mid-match it waits for the next gun.
+  takeBuilds(player, builds) {
+    player.builds = builds;
+    if (this.mode === 'range' || ['lobby', 'mapvote', 'matchEnd'].includes(this.phase)) { player.gunBuilds = {}; player.kit = null; player.kitFor = null; }
+    this.pushYou(player);
   }
 
   switchWeapon(player, slot) {
@@ -1010,13 +1239,26 @@ export class Room {
     const dir = [m.d[0] / length, m.d[1] / length, m.d[2] / length];
     let origin = m.o;
     const eye = this.eyeOf(player);
-    if (Math.hypot(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]) > 2.2) origin = eye;
+    const off = Math.hypot(origin[0] - eye[0], origin[1] - eye[1], origin[2] - eye[2]);
+    // Close to the eye and on the same side of every wall as it, or the shot leaves the eye itself.
+    if (off > SHOT_SLACK || (off > 0.01 && !this.world.lineOfSight(eye[0], eye[1], eye[2], origin[0], origin[1], origin[2]))) origin = eye;
     const t = now();
-    this.fire(player, origin, dir, clamp(Number(m.t) || t, t - MAX_REWIND, t), m.seq | 0);
+    const seq = m.seq | 0;
+    this.fire(player, origin, dir, clamp(Number(m.t) || t, t - MAX_REWIND, t), seq, this.shotSeed(player, seq));
+  }
+
+  // The spread seed follows the server's own count of shots. The client's number used to be taken as
+  // given, so a cheat could pick, shot by shot, whichever one threw its round dead centre. An honest
+  // client counts up by one, so it still predicts every pellet exactly; the first shot in a seat (or
+  // after a reconnect, when the page starts counting again) sets where the count starts.
+  shotSeed(player, seq) {
+    player.shotSeq = player.seqSet ? player.shotSeq + 1 : seq;
+    player.seqSet = true;
+    return player.shotSeq;
   }
 
   // Shared by humans and bots. Returns true when a round actually left the barrel.
-  fire(player, origin, dir, rewindTo, seq) {
+  fire(player, origin, dir, rewindTo, seq, seed = seq) {
     const t = now();
     const weapon = this.currentWeapon(player);
     if (!this.live || !player.alive || !weapon || weapon.melee || player.drone) return false;
@@ -1033,7 +1275,7 @@ export class Room {
     // the exception: its spread is the pattern, not a penalty. At zero angle all nine pellets land on the
     // same spot and a bot one-shots across the map, so a multi-pellet weapon keeps its tightest pattern.
     const angle = player.bot ? (weapon.pellets > 1 ? weapon.spread.ads : 0) : spreadAngle(weapon, { scoped, speed: player.speed, airborne: !(player.flags & FLAG.ground), crouched: Boolean(player.flags & FLAG.crouch), bloom });
-    const rng = mulberry32(hashString(player.id) + seq * 7919);
+    const rng = mulberry32(hashString(player.id) + seed * 7919);
     if (weapon.rocket) {
       const spec = weapon.rocket;
       const shotDir = applySpread(dir, angle, rng);
@@ -1094,7 +1336,7 @@ export class Room {
   onMelee(player, m) {
     const t = now();
     const weapon = this.currentWeapon(player);
-    if (!this.live || !player.alive || !weapon?.melee || t < player.nextFire - 0.03 || player.drone) return;
+    if (!this.live || !player.alive || !weapon?.melee || t < player.nextFire - 0.03 || t < player.equipUntil || player.drone) return;
     player.nextFire = t + weapon.cooldown;
     this.meleeSwing(player, weapon, clamp(Number(m.t) || t, t - MAX_REWIND, t));
   }
@@ -1210,7 +1452,7 @@ export class Room {
     victim.hp -= dealt;
     const sameTeam = attacker.team === victim.team;
     if (!sameTeam && !victim.dummy) { attacker.match.damage += dealt; this.roundDamage[attacker.team] += dealt; }
-    if (zone === 'head') attacker.match.headshots += 1;
+    if (zone === 'head' && !sameTeam) attacker.match.headshots += 1; // a team mate's head is not a stat, even with friendly fire on
     victim.damageFrom.set(attacker.id, (victim.damageFrom.get(attacker.id) || 0) + dealt);
     const killed = victim.hp <= 0;
     this.send(attacker, { type: 'hit', target: victim.id, zone, damage: dealt, killed, wallbang: Boolean(meta.wallbang), armor: absorbed > 0, helmetBroke, distance: round2(meta.distance || 0) });
@@ -1353,6 +1595,8 @@ export class Room {
 
   mark(target, duration, reason, teamOverride = null) {
     const team = teamOverride || (target.team === 'A' ? 'B' : 'A');
+    // A mark is meant to be seen through walls, so the marked pilot is sent to that side while it lasts.
+    (target.markedFor ||= {})[team] = Math.max(target.markedFor[team] || 0, now() + duration);
     this.sendTeam(team, { type: 'mark', id: target.id, until: round3(now() + duration), reason });
   }
 
@@ -1362,18 +1606,20 @@ export class Room {
     if (!free && this.phase !== 'buy') return this.notice(player, 'Armoury opens between rounds.', 'warn');
     if (!player.alive) return;
     const modifier = this.rules.modifier;
+    // Gun Game and One in the Chamber hand everything out: armour and gadgets were still on sale.
+    if (MODIFIERS[modifier]?.fixed && !free) return this.notice(player, `${MODIFIERS[modifier].name}: the kit is handed out.`, 'warn');
     const charge = (cost) => {
       if (free) return true;
       if (player.credits < cost) { this.notice(player, 'Not enough credits.', 'warn'); return false; }
       player.credits -= cost;
       return true;
     };
-    if (WEAPONS[item] && !WEAPONS[item].melee) {
+    if (own(WEAPONS, item) && !WEAPONS[item].melee) {
       // You buy the gun as you built it, and you pay for what is bolted on.
       const weapon = (this.royale || !player.builds || Room.featureOut('gunsmith')) ? WEAPONS[item] : (resolveWeapon(item, player.builds[item]) || WEAPONS[item]);
+      if (!Number.isFinite(weapon.cost)) return this.notice(player, 'Not available.', 'warn');
       if (Room.out('weapon', item)) return this.notice(player, outageLine(Room.outages.get('weapon', item), weapon.name), 'warn');
       if (weapon.slot === 'primary' && modifier === 'sidearms') return this.notice(player, 'Sidearms only.', 'warn');
-      if (MODIFIERS[modifier]?.fixed) return this.notice(player, `${MODIFIERS[modifier].name}: the guns are handed out.`, 'warn');
       const families = MODIFIERS[modifier]?.families;
       if (families && weapon.slot === 'primary' && !families.includes(weapon.family)) return this.notice(player, `${MODIFIERS[modifier].name}.`, 'warn');
       if (player.weapons[weapon.slot] === item) return;
@@ -1384,6 +1630,7 @@ export class Room {
       delete player.bought[`slot:${weapon.slot}`];
       if (weapon.cost > 0) player.bought[`slot:${weapon.slot}`] = { cost: weapon.cost, item };
       player.weapons[weapon.slot] = item;
+      this.holdBuild(player, weapon.slot, this.royale || !player.builds || Room.featureOut('gunsmith') ? null : player.builds[item] || null);
       player.ammo[weapon.slot] = { mag: weapon.mag, reserve: weapon.reserve };
       if (player.active === weapon.slot || weapon.slot === 'primary') { player.active = weapon.slot; player.reloadEnd = 0; }
     } else if (item === 'light' || item === 'heavy') {
@@ -1399,7 +1646,7 @@ export class Room {
     } else if (item === 'helmet') {
       if (player.helmet || modifier === 'instagib' || !charge(ARMOR.helmet.cost)) return;
       player.helmet = true; player.bought.helmet = { cost: ARMOR.helmet.cost, item };
-    } else if (GADGETS[item]) {
+    } else if (own(GADGETS, item)) {
       if (player.gadgets.includes(item)) return;
       if (player.gadgets.length >= GADGET_SLOTS) return this.notice(player, 'Gadget slots full. Click one to sell it.', 'warn');
       if (!charge(GADGETS[item].cost)) return;
@@ -1413,15 +1660,16 @@ export class Room {
     if (this.phase !== 'buy' && this.mode !== 'range') return;
     const free = this.mode === 'range';
     const refund = (key) => { const entry = player.bought[key]; if (!entry) return free; if (!free) player.credits += entry.cost; delete player.bought[key]; return true; };
-    if (WEAPONS[item] && player.weapons[WEAPONS[item].slot] === item && WEAPONS[item].cost > 0) {
+    if (own(WEAPONS, item) && player.weapons[WEAPONS[item].slot] === item && WEAPONS[item].cost > 0) {
       const slot = WEAPONS[item].slot;
       if (!refund(`slot:${slot}`)) return this.notice(player, 'Only this round’s buys can be refunded.', 'warn');
       player.weapons[slot] = DEFAULT_LOADOUT[slot];
+      if (player.gunBuilds) delete player.gunBuilds[slot];
       const weapon = this.weaponFor(player, slot) || WEAPONS[player.weapons[slot]];
       player.ammo[slot] = { mag: weapon.mag, reserve: weapon.reserve };
     } else if ((item === 'light' || item === 'heavy') && player.bought.armor?.item === item) {
       player.armor = player.bought.armor.before || 0; refund('armor');
-    } else if (item === 'helmet' && player.bought.helmet) { player.helmet = false; refund('helmet'); } else if (GADGETS[item] && player.gadgets.includes(item)) {
+    } else if (item === 'helmet' && player.bought.helmet) { player.helmet = false; refund('helmet'); } else if (own(GADGETS, item) && player.gadgets.includes(item)) {
       if (!refund(`gadget:${item}`)) return this.notice(player, 'Only this round’s buys can be refunded.', 'warn');
       player.gadgets = player.gadgets.filter((id) => id !== item);
     } else return;
@@ -1467,13 +1715,13 @@ export class Room {
     }
     if (id === 'drone') {
       const eye = this.eyeOf(player);
-      player.drone = { x: eye[0] - Math.sin(player.yaw) * 0.8, y: eye[1] + 0.3, z: eye[2] - Math.cos(player.yaw) * 0.8, yaw: player.yaw, pitch: 0, until: t + gadget.duration, nextScan: 0 };
+      player.drone = { x: eye[0] - Math.sin(player.yaw) * 0.8, y: eye[1] + 0.3, z: eye[2] - Math.cos(player.yaw) * 0.8, yaw: player.yaw, pitch: 0, until: t + gadget.duration, nextScan: 0, movedAt: t, bank: 0 };
       if (!this.world.bodyFree(player.drone.x, player.drone.y - 0.15, player.drone.z, 0.15, 0.3)) { player.drone.x = eye[0]; player.drone.z = eye[2]; }
       this.send(player, { type: 'drone-start', ...player.drone });
     }
     player.match.gadgets += 1;
     if (this.mode !== 'range') player.gadgets.splice(m.slot | 0, 1);
-    this.broadcast({ type: 'gadget-used', id: player.id, gadget: id, x: round2(player.x), y: round2(player.y), z: round2(player.z) });
+    this.toPerceivers(player, { type: 'gadget-used', id: player.id, gadget: id, x: round2(player.x), y: round2(player.y), z: round2(player.z) });
     this.pushYou(player);
   }
 
@@ -1534,7 +1782,8 @@ export class Room {
     this.sendTeam(player.team, { type: 'ping-loc', from: player.id, bot: player.bot, x: round2(m.x), y: round2(m.y), z: round2(m.z), where: zoneAt(this.map, m.x, m.y, m.z), danger: Boolean(m.danger) });
   }
   onChat(player, m) {
-    const text = String(m.text || '').replace(/[\x00-\x1f<>]/g, '').trim().slice(0, 140);
+    // Invisible and direction-flipping characters too: they could make a line read as someone else's.
+    const text = String(m.text || '').replace(/[\x00-\x1f<>\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/g, '').trim().slice(0, 140);
     const t = now();
     if (!text || t - (player.lastChat || 0) < 0.5) return;
     player.lastChat = t;

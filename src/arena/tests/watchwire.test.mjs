@@ -68,7 +68,7 @@ async function arena() {
   const { dir, sessions } = await seed();
   const port = await freePort();
   const child = spawn(process.execPath, [entry], {
-    env: { ...process.env, ARENA_PORT: String(port), ARENA_DATA: path.join(dir, 'profiles.json'), ALLOW_GUESTS: '1' },
+    env: { ...process.env, ARENA_PORT: String(port), ARENA_DATA: path.join(dir, 'profiles.json'), ALLOW_GUESTS: '1', DISCORD_WEBHOOK_UPDATES: 'off', DISCORD_WEBHOOK_LEADERBOARD: 'off' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await new Promise((resolve, reject) => {

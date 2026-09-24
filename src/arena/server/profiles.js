@@ -1,6 +1,6 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
-import { cleanBuild, isEmptyBuild } from '../shared/attachments.js';
+import { attachmentsUnlocked, cleanBuild, isEmptyBuild } from '../shared/attachments.js';
 import { runway } from '../shared/itemshop.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
@@ -10,6 +10,17 @@ import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, DEFAULT_
 import { COINS, devFinish, finishInfo } from '../shared/economy.js';
 
 const HISTORY_LIMIT = 25;
+// A store file that is missing is a first boot. One that is there and will not parse is not: it used to
+// load as empty, and the next save wrote the empty store over everybody's progress. Refuse to start
+// instead, and leave the file exactly as it is for a human to look at.
+export async function readStore(file) {
+  let text;
+  try { text = await readFile(file, 'utf8'); } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  if (!text.trim()) return null;
+  try { return JSON.parse(text); } catch (error) {
+    throw new Error(`${file} is not valid JSON (${error.message}). Not starting over it: fix or move the file first.`);
+  }
+}
 const COIN_LOG_LIMIT = 30;
 // Look keys and the cosmetics list that validates each.
 const LOOK_KINDS = { color: 'suit', accent: 'visor', tracer: 'tracer', title: 'title', headgear: 'headgear', face: 'face', pack: 'pack', pattern: 'pattern', charm: 'charm' };
@@ -66,10 +77,8 @@ export class ProfileStore {
   }
 
   async load() {
-    try {
-      const data = JSON.parse(await readFile(this.file, 'utf8'));
-      Object.entries(data).forEach(([key, profile]) => this.profiles.set(key, profile));
-    } catch { /* first boot */ }
+    const data = await readStore(this.file);
+    if (data) Object.entries(data).forEach(([key, profile]) => this.profiles.set(key, profile));
     // Coins held for a wager when the process died are handed back: the match never finished.
     for (const profile of this.profiles.values()) {
       if (!profile.escrow) continue;
@@ -87,10 +96,12 @@ export class ProfileStore {
     if (this.saveTimer) return;
     this.saveTimer = setTimeout(async () => {
       this.saveTimer = null;
+      // Its own temp file: flush() on shutdown can run while this one is still writing.
+      const temp = `${this.file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`;
       try {
         await mkdir(path.dirname(this.file), { recursive: true });
-        await writeFile(`${this.file}.tmp`, this.snapshot());
-        await rename(`${this.file}.tmp`, this.file);
+        await writeFile(temp, this.snapshot());
+        await rename(temp, this.file);
       } catch (error) { console.warn('profile save failed', error.message); }
     }, 1500);
   }
@@ -209,14 +220,17 @@ export class ProfileStore {
     return true;
   }
   // Wager stakes are held on the profile until the match settles, so a crash can refund them.
+  // One stake at a time: a second would overwrite the first, and a restart would refund only one.
   hold(token, amount, room) {
+    if (this.get(token).escrow) return false;
     if (!this.debit(token, amount, 'wager', `Staked in ${room}`)) return false;
     this.get(token).escrow = { amount, room, at: Date.now() };
     return true;
   }
-  settle(token, payout, note) {
+  // room: only that room's stake is released, so one room settling never clears another's.
+  settle(token, payout, note, room = null) {
     const profile = this.get(token);
-    profile.escrow = null;
+    if (!room || profile.escrow?.room === room) profile.escrow = null;
     if (payout > 0) this.credit(token, payout, 'wager', note); else this.scheduleSave();
   }
 
@@ -255,9 +269,12 @@ export class ProfileStore {
     const profile = this.get(token);
     if (!builds || typeof builds !== 'object') return;
     profile.builds = profile.builds || {};
+    // Parts unlock at a level, and that was only ever checked in the browser. Below it, a build can be
+    // taken off but not put on.
+    const unlocked = attachmentsUnlocked(levelFromXp(profile.xp));
     for (const [weaponId, build] of Object.entries(builds).slice(0, 40)) {
-      if (!WEAPONS[weaponId] || WEAPONS[weaponId].melee) continue;
-      const clean = cleanBuild(weaponId, build);
+      if (!Object.hasOwn(WEAPONS, weaponId) || WEAPONS[weaponId].melee) continue;
+      const clean = unlocked ? cleanBuild(weaponId, build) : {};
       if (isEmptyBuild(clean)) delete profile.builds[weaponId]; else profile.builds[weaponId] = clean;
     }
     this.scheduleSave();
@@ -292,7 +309,7 @@ export class ProfileStore {
     clean.skins = {};
     if (look.skins && typeof look.skins === 'object') {
       // A finish you own goes on any gun. Dev finishes need the account.
-      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (WEAPONS[weapon] && finishInfo(finish) && (devFinish(finish) ? dev : profile.finishes?.includes(finish))) clean.skins[weapon] = finish;
+      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (Object.hasOwn(WEAPONS, weapon) && finishInfo(finish) && (devFinish(finish) ? dev : profile.finishes?.includes(finish))) clean.skins[weapon] = finish;
     }
     return clean;
   }
@@ -320,8 +337,11 @@ export class ProfileStore {
     const profile = this.get(token);
     const before = levelFromXp(profile.xp);
     const s = profile.stats;
+    // `short`: joined too late to have played much of it. The result is still what it was; the win's
+    // rewards are not paid for it.
+    const credited = Boolean(summary.won) && !summary.short;
     s.matches += 1;
-    if (summary.won) s.wins += 1;
+    if (credited) s.wins += 1;
     for (const field of ['kills', 'playerKills', 'botKills', 'deaths', 'assists', 'headshots', 'damage', 'shots', 'hits', 'roundsWon', 'roundsPlayed', 'clutches', 'wallbangs']) s[field] = (s[field] || 0) + (summary[field] || 0);
     if (summary.mvp) s.mvps += 1;
     s.longest = Math.max(s.longest, Math.round(summary.longest || 0));
@@ -332,9 +352,9 @@ export class ProfileStore {
       record.kills += entry.kills; record.headshots += entry.headshots;
     });
     // Bots are worth less than people.
-    let xp = 100 + (summary.playerKills || 0) * 25 + (summary.botKills || 0) * 10 + (summary.headshots || 0) * 10 + (summary.roundsWon || 0) * 30 + (summary.assists || 0) * 10 + (summary.won ? 200 : 0) + (summary.mvp ? 75 : 0);
+    let xp = 100 + (summary.playerKills || 0) * 25 + (summary.botKills || 0) * 10 + (summary.headshots || 0) * 10 + (summary.roundsWon || 0) * 30 + (summary.assists || 0) * 10 + (credited ? 200 : 0) + (summary.mvp ? 75 : 0);
     const progress = {
-      kills: summary.kills, headshots: summary.headshotKills || 0, rounds: summary.roundsWon || 0, wins: summary.won ? 1 : 0,
+      kills: summary.kills, headshots: summary.headshotKills || 0, rounds: summary.roundsWon || 0, wins: credited ? 1 : 0,
       damage: Math.round(summary.damage || 0), longshots: summary.longshots || 0, wallbangs: summary.wallbangs || 0,
       knife: summary.knifeKills || 0, sidearm: summary.sidearmKills || 0, gadgets: summary.gadgets || 0,
       clutches: summary.clutches || 0, matches: 1,
@@ -350,7 +370,7 @@ export class ProfileStore {
       }
     }
     profile.xp += xp;
-    const coins = this.matchCoins(token, summary, completed.length);
+    const coins = this.matchCoins(token, { ...summary, won: credited }, completed.length);
     const ratingBefore = Math.round(profile.rating), rankedBefore = profile.rankedMatches;
     if (summary.ranked) { profile.rating = Math.max(100, profile.rating + summary.ratingDelta); profile.rankedMatches += 1; }
     profile.history.unshift({

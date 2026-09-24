@@ -67,7 +67,7 @@ export function buyItemShop(profiles, token, setId, kind, id) {
 }
 
 export function buyGear(profiles, token, kind, id) {
-  const item = COSMETICS[kind]?.find((entry) => entry.id === id);
+  const item = typeof kind === 'string' && Object.hasOwn(COSMETICS, kind) ? COSMETICS[kind].find((entry) => entry.id === id) : null;
   if (!item?.price || item.shop === 'item') return { error: 'Not in the shop.' };
   const profile = profiles.wallet(token);
   if (profile.owned.includes(`${kind}:${id}`)) return { error: 'Already yours.' };

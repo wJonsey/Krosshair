@@ -2,7 +2,7 @@
 // end-of-match report, share card, tutorial checklist, toasts.
 import { initPadMenu } from './padmenu.js';
 import * as THREE from 'three';
-import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, RANK_TIERS, TEAM_MODES, TEAM_MODE_IDS, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
+import { BOT_DIFFICULTY, BOT_TYPES, COSMETICS, MASTERY_TIERS, MODIFIERS, RANKED_SIZES, RANK_TIERS, TEAM_MODES, TEAM_MODE_IDS, cosmeticUnlocked, isRanked, VARIANT_NAMES, WEAPONS, levelFromXp, masteryTier, rankInfo, xpForLevel } from '../shared/constants.js';
 import { bus, game, graphics, migrateSettings, saveSettings, store, tabStore, DEFAULT_SETTINGS } from './state.js';
 import { ACCOUNTS_ENABLED, DISCORD_INVITE, TIKTOK_URL } from '../shared/constants.js';
 import { rankBadge, rankChip } from './ranks.js';
@@ -84,6 +84,9 @@ let applyingPrefs = false;
 let prefsTimer = null;
 
 let pendingPlay = null;
+// Refused (a callsign that belongs to an account, say): the Play it was waiting on is off, or it would fire
+// by itself the next time the name was changed.
+net.on('error', () => { pendingPlay = null; });
 const DISCORD_MARK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M19.6 5.2A17 17 0 0 0 15.4 4l-.5 1a15.700 15.700 0 0 0-5.800 0L8.600 4a17 17 0 0 0-4.200 1.200C1.700 9.200 1 13.100 1.300 17a17.100 17.100 0 0 0 5.200 2.600l1.100-1.800a11 11 0 0 1-1.700-.8l.4-.3a12.200 12.200 0 0 0 11.400 0l.4.3c-.5.300-1.100.600-1.700.8l1.100 1.800a17 17 0 0 0 5.200-2.600c.4-4.500-.7-8.400-3.100-11.800ZM8.700 14.600c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Zm6.600 0c-1 0-1.900-.9-1.900-2.100s.8-2.100 1.900-2.100 1.900.9 1.900 2.100-.8 2.100-1.900 2.100Z"/></svg>';
 const GEAR_MARK = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.400 1a7.500 7.500 0 0 0-1.700-1L15 3.500h-4l-.4 2.500a7.500 7.500 0 0 0-1.700 1l-2.400-1-2 3.400L6.600 11a7.600 7.600 0 0 0 0 2l-2 1.600 2 3.400 2.400-1c.5.4 1.100.7 1.700 1l.4 2.500h4l.4-2.500c.6-.3 1.200-.6 1.700-1l2.400 1 2-3.400-2-1.600ZM13 15.500a3.500 3.500 0 1 1 0-7 3.500 3.500 0 0 1 0 7Z"/></svg>';
 const TIKTOK_MARK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12.53.02C13.84 0 15.14.01 16.44 0c.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07Z"/></svg>';
@@ -226,11 +229,13 @@ const titleHtml = (title) => (DEV_TITLES.has(title) ? `<span class="dev-title">$
 
 // ------------------------------------------------------------------ home
 // Colour swatches: level ones show the level they need, coin ones show a coin until bought.
+// Item Shop pieces only show once owned: nothing on this page can buy one.
+const shownGear = (kind, owned) => (item) => !item.dev && (item.shop !== 'item' || owned.includes(`${kind}:${item.id}`));
 function swatchRow(kind, key, level) {
   const owned = game.profile?.owned || [];
-  return COSMETICS[kind].filter((item) => !item.dev).map((item) => {
+  return COSMETICS[kind].filter(shownGear(kind, owned)).map((item) => {
     const forSale = item.price && !owned.includes(`${kind}:${item.id}`);
-    const locked = forSale || (!item.price && level < item.level);
+    const locked = !cosmeticUnlocked(kind, item.id, level, owned);
     const selected = game.look[key] === item.id;
     const armed = armedGear === `gear:${kind}:${item.id}`;
     const label = forSale ? `${item.name} · ${item.price.toLocaleString('en')} coins` : `${item.name}${locked ? ` · level ${item.level}` : ''}`;
@@ -610,9 +615,9 @@ function operatorPageHtml(level) {
   const group = (label, kind, key) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, key))}</small></p><div class="swatches">${swatchRow(kind, key, level)}</div></div>`;
   // Gear: level items unlock with XP, priced ones are bought once with coins (click twice to confirm).
   const owned = game.profile?.owned || [];
-  const gear = (label, kind) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, kind))}</small></p><div class="gear-options">${COSMETICS[kind].filter((item) => !item.dev).map((item) => {
+  const gear = (label, kind) => `<div class="panel look-group"><p class="eyebrow">${label} <small>${escapeHtml(nameOfLook(kind, kind))}</small></p><div class="gear-options">${COSMETICS[kind].filter(shownGear(kind, owned)).map((item) => {
     const bought = owned.includes(`${kind}:${item.id}`), key = `gear:${kind}:${item.id}`;
-    const locked = item.price ? !bought : level < item.level;
+    const locked = !cosmeticUnlocked(kind, item.id, level, owned);
     const tag = item.price && !bought ? `${armedGear === key ? 'Confirm ' : ''}${coins(item.price)}` : locked ? `LV ${item.level}` : '';
     const swatch = kind === 'pattern' ? `<i class="pattern-swatch" style="background-color:${game.look.color};${item.id === 'solid' ? '' : `background-image:url(${patternSwatch(item.id)})`}"></i>` : '';
     return `<button type="button" class="gear-option${game.look[kind] === item.id ? ' selected' : ''}${locked ? ' locked' : ''}${armedGear === key ? ' armed' : ''}" data-gear-kind="${kind}" data-gear="${item.id}">${swatch}<span>${item.name}</span>${tag ? `<small>${tag}</small>` : ''}</button>`;
@@ -712,7 +717,7 @@ function chooseGear(kind, id, key = kind) {
     net.send({ type: 'shop', action: 'gear', kind, id });
     return;
   }
-  if (!item.price && (game.profile?.level || 1) < item.level) { toast(`Unlocks at level ${item.level}.`, 'warn'); play('deny'); return; }
+  if (!cosmeticUnlocked(kind, id, game.profile?.level || 1, game.profile?.owned || [], Boolean(game.profile?.dev))) { toast(item.shop === 'item' ? 'Item Shop only.' : `Unlocks at level ${item.level}.`, 'warn'); play('deny'); return; }
   armedGear = null;
   game.look[key] = id; saveLook(); play('ui'); renderHome();
 }
@@ -720,7 +725,7 @@ const LOOK_KEY = { suit: 'color', visor: 'accent' };
 function refreshCoins() { const chip = $('.coin-chip'); if (chip && game.profile) chip.innerHTML = coins(game.profile.coins); }
 initShop({
   rerender: () => renderHome(), onShop: () => game.screen === 'home' && SHOP_PAGES.includes(homePage), goto: (page) => { if (game.screen === 'home') setHomePage(page); }, toast, saveLook, refreshCoins,
-  onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind].find((item) => item.id === id).name} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
+  onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind]?.find((item) => item.id === id)?.name || 'Gear'} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
 });
 home.addEventListener('input', (event) => { if (!SHOP_PAGES.includes(homePage)) return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
 
