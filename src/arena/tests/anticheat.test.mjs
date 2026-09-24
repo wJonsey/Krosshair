@@ -14,11 +14,11 @@ const { ProfileStore } = await import('../server/profiles.js');
 const { Room } = await import('../server/room.js');
 const { RoyaleRoom } = await import('../server/royale.js');
 const { setRoomMap } = await import('../server/mapflow.js');
-const { BODY } = await import('../shared/constants.js');
+const { BODY, FLAG } = await import('../shared/constants.js');
 const { MAP_IDS } = await import('../shared/map.js');
 const { World, makeBody } = await import('../shared/physics.js');
 const { mulberry32 } = await import('../shared/combat.js');
-const { DROP } = await import('../shared/royale.js');
+const { DEPLOY, descentStep } = await import('../shared/royale.js');
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const socket = () => ({ readyState: 1, sent: [], send(raw) { const message = JSON.parse(raw); if (message.type !== 's') this.sent.push(message); } });
@@ -177,42 +177,78 @@ test('nobody gets under the floor', async () => {
   room.close();
 });
 
-test('the royale drop cannot be skipped, and an honest fall is never refused', async () => {
+// Off the ramp the fall is the pilot's own movement, so the server holds it to the free fall and chute
+// speeds. Each honest way down is flown with the browser's own descent code (descentStep).
+async function freshDrop() {
   const profiles = new ProfileStore(path.join(await mkdtemp(path.join(tmpdir(), 'krosshair-drop-')), 'profiles.json'));
-  const make = () => {
-    const room = new RoyaleRoom({ name: `drop-${Math.random()}`, profiles, onEmpty: () => {} });
-    clearInterval(room.interval);
-    const player = room.join(socket(), { token: ProfileStore.newToken(), session: 'd', name: 'Faller' }, look);
-    room.phase = 'live';
-    room.spawn(player, 0, { x: 0, y: DROP.height, z: 0 });
-    player.inDrop = true;
-    return { room, player };
-  };
-  // Cheat: one message from the sky to the ground.
-  const cheat = make();
-  const ground = cheat.room.world.groundBelow(0, DROP.height, 0);
-  tick(1 / 30);
-  state(cheat.room, cheat.player, 0, ground, 0);
-  assert.ok(cheat.player.y > DROP.height - 20, 'landed from the sky in one message');
-  cheat.room.close();
-  // Honest: free fall, the chute opens itself, glide down. Exactly the browser's numbers.
-  const { room, player } = make();
+  const room = new RoyaleRoom({ name: `drop-${Math.random()}`, profiles, onEmpty: () => {} });
+  clearInterval(room.interval);
+  const player = room.join(socket(), { token: ProfileStore.newToken(), session: 'd', name: 'Faller' }, look);
+  room.startMatch(); room.deploy();
+  clock = room.flight.doorsAt * 1000 + 100;
+  room.handle(player, { type: 'royale-jump' });
+  assert.ok(!player.inPlane, 'the jump was refused');
+  return { room, player };
+}
+function flyDown(room, player, { pitch = -0.2, forward = 0, openAt = null } = {}) {
   const world = new World(room.map.boxes);
-  const body = makeBody(0, DROP.height, 0);
-  let chute = false, refused = 0;
-  for (let frame = 0; frame < 60 * 40 && !body.onGround; frame += 1) {
+  const body = makeBody(player.x, player.y, player.z);
+  let stage = 'freefall', vy = 0, since = 0, refused = 0, yaw = player.yaw;
+  for (let frame = 0; frame < 60 * 60 && !body.onGround; frame += 1) {
     const dt = 1 / 60;
-    tick(dt);
-    if (!chute && body.y < DROP.chuteAt) chute = true;
-    const fall = chute ? -DROP.chuteFall : -DROP.fall;
-    body.vy += (fall - body.vy) * Math.min(1, dt * (chute ? 2.6 : 1.4));
-    world.moveBody(body, (chute ? DROP.chuteGlide : DROP.glide) * dt, body.vy * dt, 0);
+    tick(dt); since += dt;
+    const above = body.y - world.groundBelow(body.x, body.y + 0.2, body.z);
+    if (stage === 'freefall' && (above < DEPLOY.autoDeploy || (openAt !== null && since >= openAt))) stage = 'chute';
+    const step = descentStep(stage, vy, forward, stage === 'chute' ? 0 : pitch, dt);
+    vy = step.vy;
+    world.moveBody(body, -Math.sin(yaw) * step.glide * dt, vy * dt, -Math.cos(yaw) * step.glide * dt);
+    // The browser holds a pilot inside the island's bounds (player.js); gliding off the edge stops there.
+    const edge = room.map.bounds.maxX - 0.4;
+    body.x = Math.max(-edge, Math.min(edge, body.x)); body.z = Math.max(-edge, Math.min(edge, body.z));
     if (frame % 2) continue;
-    state(room, player, round(body.x), round(body.y), round(body.z));
+    state(room, player, round(body.x), round(body.y), round(body.z), { f: stage === 'chute' ? FLAG.chute : 0 });
     if (!at(player, round(body.x), round(body.y), round(body.z))) refused += 1;
   }
-  assert.ok(body.onGround, 'the honest pilot never landed');
-  assert.equal(refused, 0, `${refused} honest drop updates refused`);
+  // A browser keeps sending once it is down, which is how the server hears it landed.
+  tick(1 / 30);
+  state(room, player, round(body.x), round(body.y), round(body.z));
+  return { landed: body.onGround, refused };
+}
+
+test('the royale drop cannot be skipped, and every honest way down is taken', async () => {
+  // Cheat: one message from the ramp to the ground.
+  const cheat = await freshDrop();
+  const top = cheat.player.y, ground = cheat.room.world.groundBelow(cheat.player.x, top, cheat.player.z);
+  tick(1 / 30);
+  state(cheat.room, cheat.player, cheat.player.x, ground, cheat.player.z);
+  assert.ok(cheat.player.y > top - 20, 'landed from the aircraft in one message');
+  // Cheat: the chute says open, then falls at free fall speed anyway.
+  tick(1.5);
+  for (let i = 0; i < 30; i += 1) { tick(1 / 30); state(cheat.room, cheat.player, cheat.player.x, cheat.player.y - 0.3, cheat.player.z, { f: FLAG.chute }); }
+  const at1 = cheat.player.y;
+  tick(DEPLOY.parachute.open + 1);
+  for (let i = 0; i < 30; i += 1) { tick(1 / 30); state(cheat.room, cheat.player, cheat.player.x, cheat.player.y - 1.2, cheat.player.z, { f: FLAG.chute }); }
+  assert.ok(at1 - cheat.player.y < DEPLOY.parachute.dive * 1.3 * 1.3 + 5, `fell ${(at1 - cheat.player.y).toFixed(1)} m in a second under an open chute`);
+  cheat.room.close();
+  // Honest: level, diving, opening early, diving under the chute, braking under it.
+  for (const way of [{}, { pitch: -1.4 }, { openAt: 2 }, { openAt: 2, forward: 1 }, { openAt: 3, forward: -1 }]) {
+    const { room, player } = await freshDrop();
+    const { landed, refused } = flyDown(room, player, way);
+    assert.ok(landed, `${JSON.stringify(way)}: never landed`);
+    assert.equal(refused, 0, `${JSON.stringify(way)}: ${refused} honest updates refused`);
+    assert.ok(!player.inDrop, `${JSON.stringify(way)}: still deploying after landing`);
+    room.close();
+  }
+});
+
+test('nothing is fired, swung or thrown on the way down', async () => {
+  const { room, player } = await freshDrop();
+  player.weapons.sidearm = 'p9'; player.active = 'sidearm'; player.ammo.sidearm = { mag: 10, reserve: 10 }; player.gadgets = ['stim'];
+  player.hp = 50;
+  room.onFire(player, { o: room.eyeOf(player), d: [0, -1, 0], t: performance.now() / 1000, seq: 1 });
+  assert.equal(player.ammo.sidearm.mag, 10, 'fired during the deployment');
+  room.handle(player, { type: 'gadget', slot: 0 });
+  assert.deepEqual(player.gadgets, ['stim'], 'a gadget went off during the deployment');
   room.close();
 });
 
@@ -459,7 +495,8 @@ test('loot is taken only in sight, not through a wall or a floor', async () => {
   // Somewhere open on the ground.
   const spot = room.map.places?.[0] || { x: 0, z: 0 };
   const ground = room.world.groundBelow(spot.x, 60, spot.z);
-  Object.assign(me, { x: spot.x, y: ground, z: spot.z, alive: true });
+  room.exit(me);
+  Object.assign(me, { x: spot.x, y: ground, z: spot.z, alive: true, inDrop: false });
   room.phase = 'live';
   const behind = room.addLoot(me.x + 2.5, ground, me.z, { kind: 'helmet' });
   room.world.addDynamic({ id: 'test-wall', mat: 'concrete', min: [me.x + 1.2, ground - 1, me.z - 3], max: [me.x + 1.5, ground + 4, me.z + 3] });
@@ -551,7 +588,6 @@ async function sightRoom() {
   const snap = () => { tick(0.2); room.snapshot(performance.now() / 1000); return sent(); };
   return { room, viewer, enemy, mate, ground, place, snap };
 }
-const { FLAG } = await import('../shared/constants.js');
 
 test('an enemy behind a wall is not sent; a team mate always is; a developer gets everyone', async () => {
   const { room, viewer, enemy, mate, snap } = await sightRoom();

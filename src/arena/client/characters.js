@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { BODY, FLAG, INTERP_DELAY, MATERIALS, WEAPONS } from '../shared/constants.js';
 import { bus, game, isEnemy } from './state.js';
 import { playFootstep, startLoop, loop } from './audio.js';
-import { TEAM_COLORS, animateOperator, buildOperator, operatorAction, styleOperator } from './operator.js';
+import { TEAM_COLORS, animateOperator, buildChute, buildOperator, operatorAction, styleOperator } from './operator.js';
 
 export { animateOperator, buildOperator, styleOperator };
 
@@ -144,18 +144,25 @@ class Entity {
       this.move[1] += (-(vx * sin + vz * cos) - this.move[1]) * k;
     }
     this.last.x = sample.x; this.last.z = sample.z;
-    animateOperator(this.model, { speed: s.speed, crouch: Boolean(s.flags & FLAG.crouch), pitch: s.pitch, weapon: s.weapon, dt, move: this.move, air: !(s.flags & FLAG.ground), scoped: Boolean(s.flags & FLAG.scoped), reloading: Boolean(s.flags & FLAG.reloading) });
-    // High in the air means the royale drop: they come down under a canopy.
-    const dropping = !(s.flags & FLAG.ground) && s.y > 14;
-    if (dropping && !this.chute) {
-      this.chute = new THREE.Group();
-      const canopy = new THREE.Mesh(new THREE.SphereGeometry(2.3, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.42), new THREE.MeshStandardMaterial({ color: game.roster.get(this.id)?.color || '#e6edf1', roughness: 0.9, side: THREE.DoubleSide, flatShading: true }));
-      canopy.position.y = 3.4; canopy.scale.y = 0.75;
-      this.chute.add(canopy);
-      for (const [x, z] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) { const line = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 3.4, 4), new THREE.MeshBasicMaterial({ color: '#0b0f13' })); line.position.set(x * 0.5, 3.1, z * 0.5); line.rotation.set(z * 0.27, 0, -x * 0.27); this.chute.add(line); }
+    // The royale deployment: high up and off the ground is free fall, and the chute flag is the canopy.
+    const chuting = Boolean(s.flags & FLAG.chute), falling = !(s.flags & FLAG.ground) && s.y > 14 && !chuting;
+    const yawRate = dt > 0 ? Math.atan2(Math.sin(s.yaw - (this.lastYaw ?? s.yaw)), Math.cos(s.yaw - (this.lastYaw ?? s.yaw))) / dt : 0;
+    this.lastYaw = s.yaw;
+    const deploy = falling || chuting ? { sky: falling ? 1 : 0, chute: chuting ? 1 : 0, lean: THREE.MathUtils.clamp(yawRate / 2.5, -1, 1) } : null;
+    animateOperator(this.model, { speed: falling || chuting ? 0 : s.speed, crouch: Boolean(s.flags & FLAG.crouch), pitch: s.pitch, weapon: s.weapon, dt, move: this.move, air: !(s.flags & FLAG.ground), scoped: Boolean(s.flags & FLAG.scoped), reloading: Boolean(s.flags & FLAG.reloading), deploy });
+    if (chuting && !this.chute) {
+      this.chute = buildChute(game.roster.get(this.id)?.color || '#e6edf1');
+      this.chute.userData.open = 0;
       this.root.add(this.chute);
     }
-    if (this.chute) this.chute.visible = dropping && s.y < 75;
+    if (this.chute) {
+      // Opens out over about a second, with a little overshoot, then breathes.
+      const open = this.chute.userData.open = chuting ? Math.min(1, this.chute.userData.open + dt / 0.9) : 0;
+      const k = 1 - (1 - open) ** 3, puff = 1 + Math.sin(open * Math.PI) * 0.12;
+      this.chute.userData.canopy.scale.set(Math.max(0.05, k * puff), Math.max(0.05, k), Math.max(0.05, k * puff));
+      this.chute.rotation.y = s.yaw;
+      this.chute.visible = chuting;
+    }
     const loud = s.speed > 3.6 && (s.flags & FLAG.ground) && !(s.flags & (FLAG.crouch | FLAG.ghost | FLAG.walking));
     if (footsteps && loud) {
       this.stride += moved;

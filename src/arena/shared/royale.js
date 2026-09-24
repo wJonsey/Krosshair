@@ -65,10 +65,81 @@ export function royaleWeapon(weapon, rarity) {
     mag: Math.max(1, Math.round(weapon.mag * tier.mag)), reload: weapon.reload * tier.reload, rarity };
 }
 
-// The drop: everyone starts this high above the spot they picked and comes down under a parachute.
-// botChuteAt/botChuteFall: nobody is flying a bot, so it dives deep and pulls late instead of drifting
-// down from 70m at walking pace. That halves the wait for the match to start without it looking wrong.
-export const DROP = { height: 190, offset: 45, fall: 32, chuteFall: 8, chuteAt: 70, glide: 11, chuteGlide: 9, botChuteAt: 24, botChuteFall: 10 };
+// ------------------------------------------------------------------ deployment
+// The opening of a royale: a countdown, a transport flying one line across the island, and everyone
+// choosing their moment to go off the back ramp, fall, open a chute and land. Everything to tune is here.
+// The server owns who is aboard, when they left and how fast they may come down; the browser draws the
+// aircraft from `aircraftAt` on its own clock, so nothing about it is sent frame by frame.
+export const DEPLOY = {
+  countdown: 4,            // DEPLOYMENT_COUNTDOWN: seconds of 3, 2, 1 before the match goes live
+  altitude: 210,           // AIRCRAFT_ALTITUDE, metres
+  speed: 24,               // AIRCRAFT_SPEED, metres a second
+  // AIRCRAFT_ROUTE: give start and end as [x, z] to fly a fixed line. Left null, each match flies a
+  // random line through the island, up to `offset` from its centre, timed so the ramp opens `lead`
+  // metres in from the coast (the sea is outside the world), and flying on `overhang` metres past the
+  // far coast before it leaves.
+  route: { start: null, end: null, lead: 22, overhang: 120, offset: 120 },
+  doors: 2,                // JUMP_COOLDOWN: seconds after going live before the ramp opens
+  maxTime: 45,             // MAX_DEPLOYMENT_TIME: nobody is aboard longer than this after going live
+  coast: 25,               // and nobody is carried further than this inside the far coast
+  exit: [0, -3, 12.6],     // where a pilot leaves the ramp, on the aircraft: right, up, back
+  // FREEFALL_SPEED. Level, you drift further; nose down, you fall faster and travel less.
+  freefall: { fall: 30, dive: 40, glide: 11, diveGlide: 6, accel: 1.6 },
+  // PARACHUTE_SPEED. Forward dives, back brakes. `open` is how long the canopy takes to slow you.
+  parachute: { fall: 8, dive: 11, brake: 5, glide: 9, diveGlide: 12.5, brakeGlide: 4.5, open: 1.1, accel: 3.5, minFreefall: 0.8 },
+  autoDeploy: 45,          // AUTO_DEPLOY_ALTITUDE: the chute opens itself this high above the ground
+  landing: 0.55,           // LANDING_DURATION: touchdown and back on your feet, before control returns
+  blend: 0.45,             // how long the camera takes to come back into your eyes after that
+  // Nobody is flying a bot, so it dives deep and pulls late, and glides straight for its spot.
+  bot: { chuteAt: 24, chuteFall: 10, glide: 12, reach: 90 },
+  // Third person, only for the deployment. Distances in metres, angles in radians, FOV in degrees added.
+  camera: {
+    ramp: { distance: 6.4, height: 0.6, arc: 1.2, pitchLow: -0.75, pitchHigh: 0.3, shake: 0.012 },
+    freefall: { distance: 6.2, height: 1.6, fov: 10, shake: 0.02 },
+    parachute: { distance: 9, height: 3.4, fov: 3, shake: 0.006 },
+    follow: 7,             // how hard the camera chases its target: higher is tighter
+    turn: 5,               // how fast it swings round behind a turn
+  },
+};
+
+// A line across the island for the aircraft. `random` returns 0..1.
+export function flightRoute(half, random = Math.random) {
+  const { start, end, lead, overhang, offset } = DEPLOY.route;
+  if (start && end) return { from: [...start], to: [...end] };
+  const angle = random() * Math.PI * 2, side = (random() - 0.5) * 2 * offset;
+  const dx = Math.cos(angle), dz = Math.sin(angle), cx = -dz * side, cz = dx * side;
+  // Where the line crosses the coast, both ways: the aircraft starts far enough back to fly the countdown
+  // and the doors before it reaches land.
+  const cross = (c, d) => (Math.abs(d) < 1e-9 ? [-Infinity, Infinity] : [(-half - c) / d, (half - c) / d].sort((a, b) => a - b));
+  const [ax, bx] = cross(cx, dx), [az, bz] = cross(cz, dz);
+  const enter = Math.max(ax, az), leave = Math.min(bx, bz);
+  const back = enter + lead - DEPLOY.speed * (DEPLOY.countdown + DEPLOY.doors), on = leave + overhang;
+  return { from: [cx + dx * back, cz + dz * back], to: [cx + dx * on, cz + dz * on] };
+}
+// The whole flight, timed from `launchAt`: the countdown is flown too, so the aircraft is already on its
+// way in when the doors open. `ejectAt` is when anyone still aboard is sent out, over land.
+export function flightPlan(route, launchAt, half) {
+  const [x0, z0] = route.from, [x1, z1] = route.to;
+  const length = Math.hypot(x1 - x0, z1 - z0) || 1, dir = [(x1 - x0) / length, (z1 - z0) / length];
+  const liveAt = launchAt + DEPLOY.countdown, doorsAt = liveAt + DEPLOY.doors;
+  // The last stretch still over the island, minus a margin, so nobody is thrown out over the sea.
+  const inside = (d) => Math.abs(x0 + dir[0] * d) < half - DEPLOY.coast && Math.abs(z0 + dir[1] * d) < half - DEPLOY.coast;
+  let last = 0;
+  for (let d = 0; d <= length; d += 2) if (inside(d)) last = d;
+  const ejectAt = Math.max(doorsAt + 1, Math.min(launchAt + last / DEPLOY.speed, liveAt + DEPLOY.maxTime));
+  return { from: [x0, z0], to: [x1, z1], dir, heading: Math.atan2(-dir[0], -dir[1]), y: DEPLOY.altitude, speed: DEPLOY.speed, launchAt, liveAt, doorsAt, ejectAt, endAt: launchAt + length / DEPLOY.speed };
+}
+// Where the aircraft is at time t: the same answer on the server and in every browser.
+export function aircraftAt(flight, t) {
+  const d = Math.max(0, t - flight.launchAt) * flight.speed;
+  return { x: flight.from[0] + flight.dir[0] * d, y: flight.y, z: flight.from[1] + flight.dir[1] * d, heading: flight.heading };
+}
+// The ramp's edge in the world, for an aircraft where `aircraftAt` says.
+export function rampAt(plane) {
+  const [right, up, back] = DEPLOY.exit, sin = Math.sin(plane.heading), cos = Math.cos(plane.heading);
+  // Forward is (-sin, -cos); right is (cos, -sin).
+  return { x: plane.x + cos * right + sin * back, y: plane.y + up, z: plane.z - sin * right + cos * back };
+}
 // Pickups that change how you move for a while.
 export const POWERS = {
   jump: { name: 'Spring Boots', desc: 'Jump three times as high.', seconds: 40, jump: 1.75 },
@@ -81,4 +152,20 @@ export const PAD_LAUNCH = 15.5;
 // browser asks the same question before it offers the pickup, so it never offers one the server refuses.
 export function lootInSight(world, eye, loot) {
   return world.lineOfSight(eye[0], eye[1], eye[2], loot.x, loot.y + 0.35, loot.z) || world.lineOfSight(eye[0], eye[1], eye[2], loot.x, loot.y + 0.9, loot.z);
+}
+
+// One frame of a pilot coming down, as the browser flies it (and the tests fly it, so an honest descent is
+// checked against the real thing). stage: 'freefall' or 'chute'. `forward` is the move key's -1..1 (back to
+// forward); `pitch` is where the pilot looks, negative down. Returns the new vertical speed and how fast
+// the pilot may travel across the ground, and whether that travel is carried forward on its own.
+export function descentStep(stage, vy, forward, pitch, dt) {
+  const lerp = (a, b, k) => a + (b - a) * k;
+  if (stage === 'chute') {
+    const p = DEPLOY.parachute, dive = Math.max(0, forward), brake = Math.max(0, -forward);
+    const fall = dive ? lerp(p.fall, p.dive, dive) : lerp(p.fall, p.brake, brake);
+    const glide = dive ? lerp(p.glide, p.diveGlide, dive) : lerp(p.glide, p.brakeGlide, brake);
+    return { vy: vy + (-fall - vy) * Math.min(1, dt * p.accel), glide, carried: true };
+  }
+  const f = DEPLOY.freefall, dive = Math.max(0, Math.min(1, (-pitch - 0.35) / 0.8));
+  return { vy: vy + (-lerp(f.fall, f.dive, dive) - vy) * Math.min(1, dt * f.accel), glide: lerp(f.glide, f.diveGlide, dive), carried: false };
 }

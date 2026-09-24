@@ -6,7 +6,7 @@ import { performance } from 'node:perf_hooks';
 let clock = performance.now();
 performance.now = () => clock;
 const { RoyaleRoom } = await import('../server/royale.js');
-const { AIRDROP_LOOT, LOOT_TABLE, POWERS, ROYALE, ROYALE_LOADOUT } = await import('../shared/royale.js');
+const { AIRDROP_LOOT, DEPLOY, LOOT_TABLE, POWERS, ROYALE, ROYALE_LOADOUT, aircraftAt } = await import('../shared/royale.js');
 const { MAP_IDS } = await import('../shared/map.js');
 const { WEAPONS, GADGETS } = await import('../shared/constants.js');
 const { ProfileStore } = await import('../server/profiles.js');
@@ -24,6 +24,8 @@ function makeRoom() {
   return room;
 }
 const step = (room, seconds) => { for (let i = 0; i < seconds * 30 && room.phase === 'live'; i += 1) { clock += 1000 / 30; room.tick(); } };
+// Straight off the ramp and on the ground, for tests about what happens after the deployment.
+const offRamp = (room, player) => { room.exit(player); player.inDrop = false; player.dropping = false; };
 
 test('the island never shows up in the map vote', () => {
   assert.ok(!MAP_IDS.includes('island'));
@@ -54,6 +56,7 @@ test('a pilot picks up what they choose: look, press, and the old gun is left be
   room.startMatch(); room.deploy();
   assert.equal(me.active, 'melee');
   assert.ok(me.y > 150, 'pilots start in the sky');
+  offRamp(room, me);
   me.y = 0;
   const gun = room.addLoot(me.x, me.y, me.z, { kind: 'weapon', id: 'recon' });
   step(room, 0.5);
@@ -81,6 +84,7 @@ test('the storm hurts pilots outside the circle and can kill them', () => {
   room.startMatch(); room.deploy();
   // Close the circle to nothing, far from the pilot.
   Object.assign(room.storm, { from: { x: 250, z: 250, r: 1 }, to: { x: 250, z: 250, r: 1 }, shrinkStart: 0, shrinkEnd: 0, damage: 40, nextAt: Infinity });
+  offRamp(room, me);
   me.x = -200; me.z = -200;
   const hp = me.hp;
   step(room, 1);
@@ -106,19 +110,48 @@ test('a full match of bots ends with one winner and a placement for everyone', (
   room.close();
 });
 
-test('the drop: pilots land where they pointed, bots pick a place, then the match goes live', () => {
+test('the deployment: everyone boards, the countdown runs, and each pilot leaves the ramp when they choose', () => {
   const room = makeRoom();
-  const me = room.join(fakeSocket(), { token: 'tok-royale-000000009', session: 's9', name: 'Dropper' }, look);
+  const socket = fakeSocket();
+  const me = room.join(socket, { token: 'tok-royale-000000009', session: 's9', name: 'Dropper' }, look);
   room.startMatch();
   assert.equal(room.phase, 'drop');
-  assert.ok(!me.alive);
+  assert.ok(me.alive && me.inPlane, 'not aboard the aircraft');
+  assert.ok(socket.sent.some((m) => m.type === 'royale-flight' && m.flight.speed === DEPLOY.speed), 'the flight plan was never sent');
+  assert.ok(socket.sent.some((m) => m.type === 'you' && m.inPlane), 'the pilot was never told they are aboard');
+  // A marker is navigation only: it moves nobody.
+  const at = { x: me.x, z: me.z };
   room.handle(me, { type: 'royale-drop', x: 100, z: -120 });
-  clock += (ROYALE.dropTime + 1) * 1000;
-  room.tick();
+  assert.deepEqual(room.drops.get(me.id), { x: 100, z: -120 });
+  assert.deepEqual({ x: me.x, z: me.z }, at);
+  // Nobody jumps during the countdown, or before the ramp is open.
+  room.handle(me, { type: 'royale-jump' });
+  assert.ok(me.inPlane, 'jumped during the countdown');
+  clock += (DEPLOY.countdown + 0.1) * 1000; room.tick();
   assert.equal(room.phase, 'live');
-  assert.ok(me.alive);
-  assert.ok(Math.hypot(me.x - 100, me.z + 120) < 100, `dropped ${Math.round(Math.hypot(me.x - 100, me.z + 120))} m from the mark`);
-  assert.ok(me.y > 150);
+  room.handle(me, { type: 'royale-jump' });
+  assert.ok(me.inPlane, 'jumped before the ramp opened');
+  // Aboard, the aircraft decides where you are: a rider's own position is not taken.
+  room.onState(me, { e: me.epoch, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, f: 4 });
+  assert.ok(me.y > 150, 'a rider moved themselves out of the aircraft');
+  // Nobody can see, shoot or storm a rider.
+  assert.ok(!room.enemiesOf([...room.players.values()].find((p) => p.bot)).includes(me), 'a rider can be targeted');
+  clock = room.flight.doorsAt * 1000 + 50; room.tick();
+  const plane = aircraftAt(room.flight, clock / 1000);
+  room.handle(me, { type: 'royale-jump' });
+  assert.ok(!me.inPlane && me.alive && me.inDrop, 'the jump was refused with the ramp open');
+  assert.ok(Math.hypot(me.x - plane.x, me.z - plane.z) < 15 && me.y > DEPLOY.altitude - 5, 'left from somewhere other than the ramp');
+  assert.ok(socket.sent.some((m) => m.type === 'spawn' && m.y > 150), 'the pilot was not told where they left from');
+  const epoch = me.epoch;
+  room.handle(me, { type: 'royale-jump' });
+  assert.equal(me.epoch, epoch, 'a second jump put them back in the air');
+  // Bots go near where the line passes their spot; anyone left aboard goes at the far coast, over land.
+  step(room, room.flight.ejectAt - clock / 1000 + 0.2);
+  const aboard = [...room.players.values()].filter((p) => p.inPlane);
+  assert.equal(aboard.length, 0, `${aboard.length} still aboard after the far coast`);
+  const half = room.map.bounds.maxX;
+  const eject = aircraftAt(room.flight, room.flight.ejectAt);
+  assert.ok(Math.abs(eject.x) < half && Math.abs(eject.z) < half, 'the last pilots were thrown out over the sea');
   room.close?.();
 });
 

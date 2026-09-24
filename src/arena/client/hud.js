@@ -652,7 +652,8 @@ export class Hud {
     // early, but an open sight only shows its dot once the eye is properly behind it, so the crosshair
     // holds on almost to the end: the Anvil's slow 0.28 s aim used to leave you with nothing to aim with.
     const lens = Boolean(this.player.viewmodel?.current?.userData.lens);
-    const showCross = (player.mode === 'play' || Boolean(pov)) && aim < (lens ? 0.55 : 0.92) && !this.buyOpen;
+    // Not during the royale deployment: the camera is behind you then, and there is nothing to aim.
+    const showCross = (player.mode === 'play' || Boolean(pov)) && aim < (lens ? 0.55 : 0.92) && !this.buyOpen && !player.deploying?.();
     dom.crosshair.classList.toggle('hidden', !showCross);
     if (showCross) {
       const spread = weapon.melee ? 0 : pov ? (pov.scope > 0.9 ? weapon.spread.ads : weapon.spread.hip) : (player.scopeAmount > 0.9 ? weapon.spread.ads : weapon.spread.hip) + weapon.spread.move * Math.min(1, player.speed / 6) + (player.body.onGround ? 0 : weapon.spread.air);

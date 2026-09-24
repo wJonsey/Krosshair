@@ -679,6 +679,7 @@ export function dailyModifier(dateKey) {
 export function dateKey(now = Date.now()) { return new Date(now).toISOString().slice(0, 10); }
 
 // Flags packed into snapshots.
-export const FLAG = { crouch: 1, scoped: 2, ground: 4, ghost: 8, reloading: 16, walking: 32, piloting: 64 };
+// chute: a royale pilot under an open parachute (drawn with a canopy, and held to its descent).
+export const FLAG = { crouch: 1, scoped: 2, ground: 4, ghost: 8, reloading: 16, walking: 32, piloting: 64, chute: 128 };
 
 export function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }

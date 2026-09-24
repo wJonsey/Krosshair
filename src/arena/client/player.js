@@ -10,7 +10,7 @@ import { devState } from './devtools.js';
 import { DEV_FLY_LIFT, DEV_FLY_SPEED, DEV_SPEED } from '../shared/devtools.js';
 import { PAD_TAP_HOLD, WHEEL_HOLD, actionsFor, bindsFor, held, mouseCode, padBindFor, padHeld, setInputMode, wheelCode } from './input.js';
 import { net } from './net.js';
-import { DROP, PAD_LAUNCH } from '../shared/royale.js';
+import { DEPLOY, PAD_LAUNCH, descentStep } from '../shared/royale.js';
 import { play, playShot, playImpact, playFootstep, startLoop, loop } from './audio.js';
 
 const SLOTS = ['primary', 'sidearm', 'melee'];
@@ -26,7 +26,7 @@ export class LocalPlayer {
     this.body = makeBody();
     this.vel = { x: 0, z: 0 };
     this.yaw = 0; this.pitch = 0;
-    this.mode = 'idle'; // idle | play | dead | killcam | spectate | replay | drone
+    this.mode = 'idle'; // idle | play | dead | killcam | spectate | replay | drone | plane
     this.alive = false;
     this.epoch = 0;
     this.keys = new Set();
@@ -51,7 +51,10 @@ export class LocalPlayer {
     this.uiBlocked = () => false;
     this.gravityScale = 1;
     this.wallCheck = 0; this.wallAmount = 0;
-    this.drop = null;                 // royale: { chute } while coming down from the sky
+    this.drop = null;                 // royale: { chute, since, vy } while coming down from the aircraft
+    this.landUntil = 0;               // royale: back on your feet at this time (performance.now() seconds)
+    // Set by main.js: whether the royale deployment has the camera, and whether it is holding movement.
+    this.deploying = () => false; this.deployLock = () => false;
     this.boost = { speed: 1, speedUntil: 0, jump: 1, jumpUntil: 0 }; // timed pickups, performance.now() clock
     this.bind();
   }
@@ -160,9 +163,10 @@ export class LocalPlayer {
       this.everSpawned = true;
       Object.assign(this.body, { x: message.x, y: message.y, z: message.z, vy: 0, onGround: true, height: BODY.height });
       this.yaw = message.yaw; this.pitch = 0;
-      // High above the island: this is the royale drop. Look down and steer.
-      this.drop = message.y > 60 ? { chute: false } : null;
-      if (this.drop) { this.body.onGround = false; this.body.vy = -12; this.pitch = -0.9; }
+      // High above the island: off the aircraft's ramp. The fall starts from still, looking ahead and down.
+      this.drop = message.y > 60 ? { chute: false, since: performance.now() / 1000, vy: 0, jumpHeld: true } : null;
+      if (this.drop) { this.body.onGround = false; this.body.vy = 0; this.pitch = -0.45; }
+      this.landUntil = 0;
       this.boost.speedUntil = 0; this.boost.jumpUntil = 0;
       this.vel.x = 0; this.vel.z = 0;
     }
@@ -180,6 +184,15 @@ export class LocalPlayer {
     this.viewmodel.hidden = false;
     this.viewmodel.setWeapon(this.weapon.id, false);
     bus.emit('spawned');
+  }
+
+  // Aboard the royale transport: no body in the world yet, and the deployment camera shows you on the
+  // ramp. Facing out of the back, looking a little down.
+  boardPlane(heading) {
+    this.alive = false; this.mode = 'plane'; this.drop = null; this.landUntil = 0;
+    this.scopeAmount = 0; this.releaseTriggers(); this.viewmodel.hidden = true;
+    this.yaw = heading + Math.PI; this.pitch = -0.15;
+    this.spectateId = null; this.operators.hidden = null; this.endPov(); this.endDrone();
   }
 
   onYou(previous) {
@@ -351,7 +364,8 @@ export class LocalPlayer {
   }
 
   ping() {
-    if (!this.alive || game.screen !== 'game') return;
+    // Coming down, the same key marks the ground instead (client/deploy.js).
+    if (!this.alive || game.screen !== 'game' || this.deploying()) return;
     this.camera.getWorldDirection(forward);
     const origin = [this.camera.position.x, this.camera.position.y, this.camera.position.z];
     const dir = [forward.x, forward.y, forward.z];
@@ -618,6 +632,9 @@ export class LocalPlayer {
     // --- movement
     let mx = pad.mx, mz = pad.mz;
     if (held(keys, 'forward')) mz -= 1; if (held(keys, 'back')) mz += 1; if (held(keys, 'left')) mx -= 1; if (held(keys, 'right')) mx += 1;
+    // Just landed from the deployment: the knees take it before you can go anywhere.
+    const landing = now < this.landUntil;
+    if (landing) { mx = 0; mz = 0; }
     const length = Math.hypot(mx, mz);
     if (length > 1) { mx /= length; mz /= length; }
     let maxSpeed = (sprintKey ? BODY.sprintSpeed : BODY.runSpeed) * (weapon.speed || 1);
@@ -635,15 +652,27 @@ export class LocalPlayer {
     const clock = performance.now();
     if (clock < this.boost.speedUntil) maxSpeed *= this.boost.speed;
     const jumpKey = !blocked && (held(keys, 'jump') || this.pad.jump);
+    let carried = 0;
     if (this.drop) {
-      if (body.onGround) { this.drop = null; bus.emit('royale-landed'); }
+      if (body.onGround) { this.drop = null; this.landUntil = now + DEPLOY.landing; bus.emit('royale-landed'); }
       else {
-        if (!this.drop.chute && (body.y < DROP.chuteAt || (jumpKey && body.y < DROP.height - 25))) { this.drop.chute = true; play('equip', { volume: 0.9 }); }
-        maxSpeed = this.drop.chute ? DROP.chuteGlide : DROP.glide;
+        // The chute: a fresh press of Jump after a moment of free fall, or by itself near the ground.
+        // The press that took you off the ramp does not count, so nobody opens it by accident.
+        const above = body.y - this.arena.physics.groundBelow(body.x, body.y + 0.2, body.z);
+        const pressed = jumpKey && !this.drop.jumpHeld && now - this.drop.since >= DEPLOY.parachute.minFreefall;
+        if (!this.drop.chute && (pressed || above < DEPLOY.autoDeploy)) { this.drop.chute = true; play('equip', { volume: 0.9 }); }
+        this.drop.jumpHeld = jumpKey;
+        // Free fall dives with the nose down; under the canopy forward dives and back brakes.
+        const step = descentStep(this.drop.chute ? 'chute' : 'freefall', body.vy, -mz, this.pitch, dt);
+        this.drop.vy = step.vy;
+        maxSpeed = step.glide;
+        if (step.carried) carried = step.glide;
       }
     }
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
-    const wishX = (mx * cos + mz * sin) * maxSpeed, wishZ = (-mx * sin + mz * cos) * maxSpeed;
+    // Under a canopy you glide forward whatever you press; the keys only steer and trim it.
+    const wishX = carried ? (-sin * carried + mx * cos * carried * 0.5) : (mx * cos + mz * sin) * maxSpeed;
+    const wishZ = carried ? (-cos * carried - mx * sin * carried * 0.5) : (-mx * sin + mz * cos) * maxSpeed;
     if (body.onGround && this.slide.since >= 0 && !this.drop) {
       // A slide is a shove, not a speed to accelerate into. Left to the ground acceleration the burst
       // was never reached: the curve had already bled below a sprint by the time the legs caught up, so
@@ -669,7 +698,7 @@ export class LocalPlayer {
     }
     // What the chain is worth now follows the real velocity, so air strafing feeds the next slide.
     if (!body.onGround && this.flow > 0) this.flow = Math.max(this.flow, Math.min(BODY.flowMax, Math.hypot(this.vel.x, this.vel.z)));
-    const jump = !blocked && (held(keys, 'jump') || this.pad.jump);
+    const jump = !blocked && !landing && !this.drop && (held(keys, 'jump') || this.pad.jump);
     // Jumping out of a slide is the whole point of one, so crouch no longer blocks it. Leave it late
     // and there is nothing left to carry, which is what makes the timing worth learning.
     const sliding = this.slide.since >= 0;
@@ -696,7 +725,7 @@ export class LocalPlayer {
     }
     const gravity = this.drop || devState.fly ? 0 : BODY.gravity * this.gravityScale; // the drop sets its own fall speed
     body.vy = Math.max(-40, body.vy - gravity * dt);
-    if (this.drop) { const fall = this.drop.chute ? -DROP.chuteFall : -DROP.fall; body.vy += (fall - body.vy) * Math.min(1, dt * (this.drop.chute ? 2.6 : 1.4)); }
+    if (this.drop) body.vy = this.drop.vy;
     const fallSpeed = body.vy;
     const beforeX = body.x, beforeZ = body.z, wasGrounded = body.onGround;
     if (devState.fly) {
@@ -732,7 +761,8 @@ export class LocalPlayer {
         play('reloadDone');
       }
     }
-    const firing = (held(this.keys, 'fire') || this.pad.fire) && !blocked;
+    // Weapons stay away until the deployment has handed the camera back.
+    const firing = (held(this.keys, 'fire') || this.pad.fire) && !blocked && !this.drop && !this.deploying();
     if (firing) this.tryFire(now); else this.fireHeld = false;
 
     // --- camera
@@ -914,6 +944,7 @@ export class LocalPlayer {
     if (this.crouching) flags |= FLAG.crouch;
     if (this.scopeAmount > 0.05 && this.mode === 'play') flags |= FLAG.scoped;
     if (this.body.onGround) flags |= FLAG.ground;
+    if (this.drop?.chute) flags |= FLAG.chute;
     if (this.speed < 3.6) flags |= FLAG.walking;
     const view = this.mode === 'drone' && this.savedView ? this.savedView : this;
     const message = { type: 'state', e: this.epoch, x: round(this.body.x), y: round(this.body.y), z: round(this.body.z), yaw: round3(view.yaw), pitch: round3(view.pitch), f: flags };

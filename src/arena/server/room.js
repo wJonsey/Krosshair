@@ -126,7 +126,8 @@ export class Room {
   connectedHumans() { return this.humans().filter((player) => player.connected); }
   team(team) { return [...this.players.values()].filter((player) => player.team === team && !player.dummy && !player.watching); }
   aliveOn(team) { return this.team(team).filter((player) => player.alive); }
-  enemiesOf(player) { return [...this.players.values()].filter((other) => other.team !== player.team && other.alive && !other.devTools?.ghost); }
+  // A royale pilot still aboard the aircraft is alive but not anywhere yet: nobody can see or shoot them.
+  enemiesOf(player) { return [...this.players.values()].filter((other) => other.team !== player.team && other.alive && !other.inPlane && !other.devTools?.ghost); }
   get live() { return this.phase === 'live' || this.phase === 'overtime' || this.phase === 'range'; }
 
   info() {
@@ -500,7 +501,7 @@ export class Room {
   // at: an exact spot, for modes that choose their own (the royale drop).
   spawn(player, index = 0, at = null) {
     const point = at || (player.dummy ? player.home : this.spawnPoint(player, index));
-    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, footing: point.y, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0, lastStateAt: now(), moveBank: 0, fallBank: 0, inDrop: false });
+    Object.assign(player, { x: point.x, y: point.y, z: point.z, yaw: point.yaw || 0, pitch: 0, alive: true, hp: 100, footing: point.y, flags: FLAG.ground | (player.dummy && player.home.crouch ? FLAG.crouch : 0), speed: 0, lastStateAt: now(), moveBank: 0, fallBank: 0, inDrop: false, inPlane: false, chuteSince: 0, lowSince: 0, jumpedAt: 0 });
     player.epoch += 1;
     player.history = [];
     player.active = player.weapons.primary ? 'primary' : player.weapons.sidearm ? 'sidearm' : 'melee';
@@ -849,7 +850,7 @@ export class Room {
   snapshot(t) {
     const rows = [];
     for (const player of this.players.values()) {
-      if (!player.alive) continue;
+      if (!player.alive || player.inPlane) continue;
       let flags = player.flags & ~(FLAG.ghost | FLAG.reloading | FLAG.piloting);
       if (player.ghostUntil > t) flags |= FLAG.ghost;
       if (player.reloadEnd) flags |= FLAG.reloading;
@@ -1094,7 +1095,7 @@ export class Room {
     if (y > player.footing + this.hopHeight()) return false;
     const footed = y - this.world.groundBelow(x, y + 0.2, z) < 0.4;
     if (footed || !(y > player.footing)) player.footing = y;
-    if (footed) player.inDrop = false;
+    if (footed && player.inDrop) { player.inDrop = false; player.chuteSince = 0; player.lowSince = 0; player.flags &= ~FLAG.chute; }
     return true;
   }
   // How fast this pilot may come down. The royale drop has its own, slower, rule.
@@ -1147,7 +1148,7 @@ export class Room {
     player.speed = player.speed * 0.5 + Math.min(speed, 9) * 0.5;
     player.x = x; player.y = y; player.z = z;
     player.yaw = m.yaw; player.pitch = clamp(m.pitch, -1.5, 1.5);
-    const flags = (m.f | 0) & (FLAG.crouch | FLAG.scoped | FLAG.ground | FLAG.walking);
+    const flags = (m.f | 0) & (FLAG.crouch | FLAG.scoped | FLAG.ground | FLAG.walking | (player.inDrop ? FLAG.chute : 0));
     if ((flags & FLAG.scoped) && !(player.flags & FLAG.scoped)) player.scopedSince = t;
     player.flags = flags;
     // The drone on the same terms: its own budget, the whole path clear, inside the map. It used to take
@@ -1268,7 +1269,8 @@ export class Room {
   fire(player, origin, dir, rewindTo, seq, seed = seq) {
     const t = now();
     const weapon = this.currentWeapon(player);
-    if (!this.live || !player.alive || !weapon || weapon.melee || player.drone) return false;
+    // Nothing is fired on the way down: weapons come out once a deployment has landed.
+    if (!this.live || !player.alive || !weapon || weapon.melee || player.drone || player.inPlane || player.inDrop) return false;
     const ammo = player.ammo[player.active];
     if (t < player.nextFire - 0.035 || t < player.equipUntil || player.reloadEnd || !ammo || ammo.mag <= 0) { this.pushYou(player); return false; }
     if (!player.devTools?.ammo) ammo.mag -= 1;
@@ -1343,7 +1345,7 @@ export class Room {
   onMelee(player, m) {
     const t = now();
     const weapon = this.currentWeapon(player);
-    if (!this.live || !player.alive || !weapon?.melee || t < player.nextFire - 0.03 || t < player.equipUntil || player.drone) return;
+    if (!this.live || !player.alive || !weapon?.melee || t < player.nextFire - 0.03 || t < player.equipUntil || player.drone || player.inPlane || player.inDrop) return;
     player.nextFire = t + weapon.cooldown;
     this.meleeSwing(player, weapon, clamp(Number(m.t) || t, t - MAX_REWIND, t));
   }
@@ -1442,7 +1444,7 @@ export class Room {
   }
 
   applyDamage(victim, attacker, amount, zone, weapon, meta = {}) {
-    if (!victim.alive || !this.live) return;
+    if (!victim.alive || !this.live || victim.inPlane) return;
     if (victim.devTools?.god) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
     const modifier = this.rules.modifier;
     if (modifier === 'headhunter' && zone !== 'head' && !weapon.melee) { this.send(attacker, { type: 'hit', target: victim.id, zone, damage: 0, blocked: true }); return; }
@@ -1697,7 +1699,7 @@ export class Room {
   useGadget(player, m) {
     const id = player.gadgets[m.slot | 0];
     const gadget = GADGETS[id];
-    if (!gadget || !player.alive || !this.live || player.drone) return;
+    if (!gadget || !player.alive || !this.live || player.drone || player.inPlane || player.inDrop) return;
     const t = now();
     if (id === 'stim') { if (player.hp >= 100) return this.notice(player, 'Full health.', 'warn'); player.stimUntil = t + gadget.duration; }
     if (id === 'ghost') player.ghostUntil = t + gadget.duration;

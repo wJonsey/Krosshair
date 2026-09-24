@@ -7,7 +7,7 @@ import { randomInt } from 'node:crypto';
 import { ARMOR, FLAG, GADGETS, GADGET_SLOTS, WEAPONS } from '../shared/constants.js';
 import { ROYALE_MAP } from '../shared/map.js';
 import { mapFingerprint } from '../shared/version.js';
-import { AIRDROP_LOOT, AIRDROP_STAGES, DROP, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, lootInSight, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
+import { AIRDROP_LOOT, AIRDROP_STAGES, DEPLOY, LOOT_CHANCE, POWERS, LOOT_TABLE, ROYALE, ROYALE_LOADOUT, STORM, aircraftAt, flightPlan, flightRoute, lootInSight, rampAt, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { setRoomMap } from './mapflow.js';
 import { Room, freshMatchStats, now } from './room.js';
 
@@ -29,8 +29,9 @@ export class RoyaleRoom extends Room {
     this.placements = [];
     this.nextPickup = 0;
     this.nextStormTick = 0;
-    this.drops = new Map();      // pilot id → the landing spot they chose
+    this.drops = new Map();      // pilot id → the landing spot they marked (navigation, and where bots head)
     this.airdrops = [];          // { id, x, z, landAt } still in the air
+    this.flight = null;          // the transport's plan for this match (shared/royale.js flightPlan)
   }
 
   // Lobby: everyone waits in one list; teams only mean anything once the match starts.
@@ -93,36 +94,105 @@ export class RoyaleRoom extends Room {
     this.storm = null;
     this.airdrops = [];
     this.drops = new Map();
-    // First the drop map: everyone picks where to land. Bots pick a named place.
+    // Everyone boards one transport, flying a line across the island. The countdown is flown too, so
+    // it is already on its way in when the match goes live and the ramp opens a moment after.
+    const half = this.map.bounds.maxX;
+    this.flight = flightPlan(flightRoute(half, random), now(), half);
+    const plane = aircraftAt(this.flight, now());
     for (const player of this.players.values()) {
-      player.alive = false;
-      // Bots: most head for a named place, the rest land out in the countryside.
-      if (player.bot) { const place = pick(this.map.places), wild = random() < 0.4; this.drops.set(player.id, wild ? { x: (random() - 0.5) * 520, z: (random() - 0.5) * 520 } : { x: place.x + (random() - 0.5) * 90, z: place.z + (random() - 0.5) * 90 }); }
+      if (player.watching) continue;
+      if (!(player.bot || player.connected)) { player.alive = false; continue; }
+      this.board(player, plane);
+      // Bots: most head for a named place, the rest land out in the countryside, and each goes off the
+      // ramp near where the line passes closest to it.
+      if (player.bot) {
+        const place = pick(this.map.places), wild = random() < 0.4;
+        const target = wild ? { x: (random() - 0.5) * 520, z: (random() - 0.5) * 520 } : { x: place.x + (random() - 0.5) * 90, z: place.z + (random() - 0.5) * 90 };
+        this.drops.set(player.id, target);
+        player.jumpAt = this.nearestPass(target) + random() * 1.5;
+      }
     }
     this.phase = 'drop';
-    this.phaseEnds = now() + ROYALE.dropTime;
+    this.phaseEnds = this.flight.liveAt;
     this.broadcast({ type: 'match-start', variant: this.variant, rules: this.rules, map: this.map.id, mapTitle: this.map.title, mapPrint: mapFingerprint(this.map) });
     this.broadcast({ type: 'phase', phase: 'drop', phaseEnds: this.phaseEnds });
+    this.broadcast({ type: 'royale-flight', flight: this.flight });
+    for (const player of this.humans()) this.pushYou(player);
     this.pushRoom();
   }
-  // The sky is part of the map here: pilots come down from DROP.height.
+  // Aboard: alive and in the match, but nowhere anyone can reach. No snapshot, no damage, no storm.
+  board(player, plane) {
+    Object.assign(player, { alive: true, inPlane: true, inDrop: false, hp: 100, x: plane.x, y: plane.y, z: plane.z, yaw: plane.heading, pitch: 0, flags: 0, speed: 0, history: [], footing: plane.y, active: 'melee' });
+    player.epoch += 1;          // anything sent from before boarding is old news
+    player.dropping = Boolean(player.bot);
+    player.match.roundsPlayed = 1;
+    this.refillAmmo(player);
+  }
+  // When the aircraft is nearest a spot: when a bot heading there goes off the ramp.
+  nearestPass(target) {
+    const f = this.flight, along = (target.x - f.from[0]) * f.dir[0] + (target.z - f.from[1]) * f.dir[1];
+    return Math.max(f.doorsAt + 0.5, Math.min(f.ejectAt, f.launchAt + along / f.speed));
+  }
+  // Off the ramp: the pilot is placed at the ramp's edge, where the aircraft is right now, and falls.
+  exit(player, t = now()) {
+    const ramp = rampAt(aircraftAt(this.flight, t)), edge = this.map.bounds.maxX - 2;
+    ramp.x = Math.max(-edge, Math.min(edge, ramp.x)); ramp.z = Math.max(-edge, Math.min(edge, ramp.z));
+    this.spawn(player, 0, { x: ramp.x, y: ramp.y, z: ramp.z, yaw: this.flight.heading });
+    player.flags &= ~FLAG.ground;
+    player.jumpedAt = t;
+    player.match.roundsPlayed = 1;
+    if (player.bot) {
+      // A bot glides for its spot, so the spot has to be within a glide of the line it left from.
+      const aim = this.drops.get(player.id) || { x: ramp.x, z: ramp.z };
+      const gap = Math.hypot(aim.x - ramp.x, aim.z - ramp.z), k = gap > DEPLOY.bot.reach ? DEPLOY.bot.reach / gap : 1;
+      player.dropping = true;
+      player.landAt = this.landingPoint({ x: ramp.x + (aim.x - ramp.x) * k, z: ramp.z + (aim.z - ramp.z) * k }, []);
+    } else player.inDrop = true;
+  }
+  // The pilot asked to go. Only from aboard, only once, only with the ramp open.
+  jump(player) {
+    const t = now();
+    if (this.phase !== 'live' || !this.flight || !player.alive || !player.inPlane || t < this.flight.doorsAt) return;
+    this.exit(player, t);
+  }
+  // Riders move with the aircraft; anyone still aboard at the far coast goes anyway.
+  fly(t) {
+    if (!this.flight) return;
+    const plane = aircraftAt(this.flight, t);
+    for (const player of this.players.values()) {
+      if (!player.inPlane) continue;
+      player.x = plane.x; player.y = plane.y; player.z = plane.z;
+      if (this.phase === 'live' && (t >= this.flight.ejectAt || (player.bot && t >= player.jumpAt))) this.exit(player, t);
+    }
+  }
+  youState(player) { return { ...super.youState(player), inPlane: Boolean(player.inPlane) }; }
+  // The sky is part of the map here: pilots come down from the aircraft. Aboard, the aircraft decides
+  // where you are, so nothing a rider says about their position is taken.
   onState(player, m) {
+    if (player.inPlane) return;
     const { bounds } = this.map;
     const roof = bounds.maxY;
     bounds.maxY = bounds.ceiling || roof;
     try { super.onState(player, m); } finally { bounds.maxY = roof; }
+    // The chute counts from when the server first heard it was open, and never before a moment of free
+    // fall. Once open it stays open as far as the descent limit is concerned.
+    if (player.inDrop && (m.f & FLAG.chute) && !player.chuteSince && now() - player.jumpedAt >= DEPLOY.parachute.minFreefall) player.chuteSince = now();
   }
-  // The fall is the pilot's own movement, so one message used to land them from 190 m, looting before
-  // anyone else was down. Free fall, then the chute, which opens by itself under DROP.chuteAt and takes
-  // a second or so to slow you: by 25 m under it an honest pilot is down to chute speed.
+  // The fall is the pilot's own movement, so one message used to land them from the sky, looting before
+  // anyone else was down. Free fall until the chute has had time to open, whether they opened it or it
+  // opened itself near the ground, then chute speed.
   fallLimit(player) {
     if (!player.inDrop) return super.fallLimit(player);
-    return player.y > DROP.chuteAt - 25 ? DROP.fall * 1.15 : DROP.chuteFall * 1.4;
+    const t = now();
+    const above = player.y - this.world.groundBelow(player.x, player.y + 0.2, player.z);
+    if (above < DEPLOY.autoDeploy && !player.lowSince) player.lowSince = t;
+    const slowed = (since) => since && t - since > DEPLOY.parachute.open + 0.4;
+    return slowed(player.chuteSince) || slowed(player.lowSince) ? DEPLOY.parachute.dive * 1.3 : DEPLOY.freefall.dive * 1.12;
   }
   // Look at it, press the key: a pilot picks up one thing, swapping a gun for the one in that slot.
   takeLoot(player, message) {
     const loot = this.loot.get(String(message.id));
-    if (!player.alive || this.phase !== 'live' || !loot) return;
+    if (!player.alive || player.inPlane || this.phase !== 'live' || !loot) return;
     if (Math.hypot(loot.x - player.x, loot.z - player.z) > ROYALE.reach + 1 || Math.abs(loot.y - player.y) > 3) return;
     if (!lootInSight(this.world, this.eyeOf(player), loot)) return;
     const text = this.take(player, loot.item, true);
@@ -133,8 +203,9 @@ export class RoyaleRoom extends Room {
     this.send(player, { type: 'pickup', text, ...power });
     this.pushYou(player);
   }
+  // A marker to steer by. It moves nobody: bots head for theirs, pilots fly to theirs themselves.
   chooseDrop(player, message) {
-    if (this.phase !== 'drop') return;
+    if (this.phase !== 'drop' && !(this.phase === 'live' && (player.inPlane || player.inDrop))) return;
     const x = Number(message.x), z = Number(message.z), limit = this.map.bounds.maxX - 24;
     if (!Number.isFinite(x) || !Number.isFinite(z)) return;
     this.drops.set(player.id, { x: Math.max(-limit, Math.min(limit, x)), z: Math.max(-limit, Math.min(limit, z)) });
@@ -143,6 +214,7 @@ export class RoyaleRoom extends Room {
     // Before royale's own messages, or a watcher could pick a drop, take loot and throw it about.
     if (player.watching) return super.handle(player, message);
     if (message.type === 'royale-drop') return this.chooseDrop(player, message);
+    if (message.type === 'royale-jump') return this.jump(player);
     if (message.type === 'royale-take') return this.takeLoot(player, message);
     if (message.type === 'royale-toss') return this.toss(player, message);
     return super.handle(player, message);
@@ -175,24 +247,12 @@ export class RoyaleRoom extends Room {
     put({ kind: 'gadget', id: gadget });
     this.pushYou(player);
   }
-  // Everyone lands: on the spot they chose, or somewhere with loot if they chose nothing.
+  // The countdown is over: the match is live and the ramp opens shortly. Nobody is placed here any
+  // more; everyone leaves the aircraft when they choose, or at the far coast.
   deploy() {
     this.startStorm();
     this.phase = 'live';
     this.phaseEnds = now() + 3600;
-    const taken = [];
-    for (const player of this.players.values()) {
-      if (player.watching || !(player.bot || player.connected)) { player.alive = false; continue; }
-      const point = this.landingPoint(this.drops.get(player.id), taken);
-      taken.push(point);
-      // Bots ride the parachute straight down to their spot; pilots start a little off theirs and steer.
-      const angle = random() * Math.PI * 2, off = player.bot ? 0 : DROP.offset, limit = this.map.bounds.maxX - 12;
-      const start = { x: Math.max(-limit, Math.min(limit, point.x + Math.cos(angle) * off)), y: DROP.height + random() * 12, z: Math.max(-limit, Math.min(limit, point.z + Math.sin(angle) * off)), yaw: Math.atan2(Math.cos(angle), Math.sin(angle)) };
-      this.spawn(player, 0, start);
-      player.flags &= ~FLAG.ground;
-      if (player.bot) { player.dropping = true; player.landAt = point; } else player.inDrop = true;
-      player.match.roundsPlayed = 1;
-    }
     this.broadcast({ type: 'phase', phase: 'live', phaseEnds: this.phaseEnds });
     this.sendStorm();
     for (const player of [...this.humans(), ...this.watchers()]) this.sendLoot(player);
@@ -251,7 +311,7 @@ export class RoyaleRoom extends Room {
     if (t < this.nextPickup) return;
     this.nextPickup = t + 0.15;
     for (const player of this.players.values()) {
-      if (!player.alive || player.dummy) continue;
+      if (!player.alive || player.dummy || player.inPlane) continue;
       for (const loot of this.loot.values()) {
         if (Math.abs(loot.x - player.x) > ROYALE.pickupRange || Math.abs(loot.z - player.z) > ROYALE.pickupRange || Math.abs(loot.y - player.y) > 1.6) continue;
         if (Math.hypot(loot.x - player.x, loot.z - player.z) > ROYALE.pickupRange) continue;
@@ -404,7 +464,7 @@ export class RoyaleRoom extends Room {
     if (t < this.nextStormTick) return;
     this.nextStormTick = t + 0.5;
     for (const player of this.players.values()) {
-      if (!player.alive || player.dummy || !this.outside(player, t)) continue;
+      if (!player.alive || player.dummy || player.inPlane || !this.outside(player, t)) continue;
       player.hp -= this.storm.damage * 0.5;
       if (player.hp <= 0) { player.hp = 0; this.kill(player, null, null, 'torso', { reason: 'storm' }); } else this.pushYou(player);
     }
@@ -418,6 +478,7 @@ export class RoyaleRoom extends Room {
   sendLoot(player) { this.send(player, { type: 'loot', loot: [...this.loot.values()] }); }
   welcome(player, reconnected) {
     super.welcome(player, reconnected);
+    if (this.flight && (this.phase === 'drop' || this.phase === 'live')) this.send(player, { type: 'royale-flight', flight: this.flight });
     if (this.phase === 'live') { this.send(player, { type: 'royale', alive: this.alivePilots().length, storm: this.stormState() }); this.sendLoot(player); for (const drop of this.airdrops) this.send(player, { type: 'airdrop', drop }); }
   }
 
@@ -425,8 +486,11 @@ export class RoyaleRoom extends Room {
   kill(victim, killer, weapon, zone, meta = {}) {
     if (!victim.alive) return;
     const place = this.alivePilots().length;
+    // Gone from the aircraft (a dropped connection): nothing of theirs falls out of the sky.
+    const aboard = victim.inPlane;
+    victim.inPlane = false;
     // What they carried lands where they fell.
-    if (!victim.dummy) {
+    if (!victim.dummy && !aboard) {
       const drops = [];
       if (victim.weapons.primary) drops.push({ kind: 'weapon', id: victim.weapons.primary });
       if (victim.weapons.sidearm) drops.push({ kind: 'weapon', id: victim.weapons.sidearm });
@@ -477,7 +541,8 @@ export class RoyaleRoom extends Room {
   toLobby() {
     this.loot.clear();
     this.storm = null;
-    for (const player of this.players.values()) if (!player.watching) player.team = 'A';
+    this.flight = null;
+    for (const player of this.players.values()) { player.inPlane = false; player.inDrop = false; if (!player.watching) player.team = 'A'; }
     super.toLobby();
   }
 
@@ -486,14 +551,18 @@ export class RoyaleRoom extends Room {
     super.tick();
     if (this.closed) return;
     if (this.phase === 'drop' && now() >= this.phaseEnds) this.deploy();
+    if (this.phase === 'drop' || this.phase === 'live') this.fly(now());
     if (this.phase !== 'live') return;
     const t = now();
+    // Bots off the ramp: a straight dive, a late chute, a glide for their spot.
     for (const bot of this.players.values()) {
-      if (!bot.dropping || !bot.alive) continue;
-      const dt = 1 / 30;
-      bot.y -= (bot.y > DROP.botChuteAt ? DROP.fall : DROP.botChuteFall) * dt;
-      bot.x += (bot.landAt.x - bot.x) * Math.min(1, dt * 0.8); bot.z += (bot.landAt.z - bot.z) * Math.min(1, dt * 0.8);
-      if (bot.y <= bot.landAt.y) { Object.assign(bot, { x: bot.landAt.x, y: bot.landAt.y, z: bot.landAt.z, dropping: false }); bot.flags |= FLAG.ground; }
+      if (!bot.dropping || !bot.alive || bot.inPlane || !bot.landAt) continue;
+      const dt = 1 / 30, above = bot.y - bot.landAt.y, chute = above < DEPLOY.bot.chuteAt;
+      bot.y -= (chute ? DEPLOY.bot.chuteFall : DEPLOY.freefall.fall) * dt;
+      if (chute) bot.flags |= FLAG.chute;
+      const dx = bot.landAt.x - bot.x, dz = bot.landAt.z - bot.z, gap = Math.hypot(dx, dz), step = Math.min(gap, DEPLOY.bot.glide * dt);
+      if (gap > 0.01) { bot.x += (dx / gap) * step; bot.z += (dz / gap) * step; bot.yaw = Math.atan2(-dx, -dz); }
+      if (bot.y <= bot.landAt.y) { Object.assign(bot, { x: bot.landAt.x, y: bot.landAt.y, z: bot.landAt.z, dropping: false }); bot.flags = (bot.flags | FLAG.ground) & ~FLAG.chute; }
     }
     this.tickStorm(t);
     this.landAirdrops(t);
@@ -580,7 +649,7 @@ export class RoyaleRoom extends Room {
   snapshot(t) {
     const rows = [];
     for (const player of this.players.values()) {
-      if (!player.alive) continue;
+      if (!player.alive || player.inPlane) continue;
       let flags = player.flags & ~(FLAG.ghost | FLAG.reloading | FLAG.piloting);
       if (player.ghostUntil > t) flags |= FLAG.ghost;
       if (player.reloadEnd) flags |= FLAG.reloading;
@@ -589,11 +658,14 @@ export class RoyaleRoom extends Room {
       if (player.history.length > 110) player.history.shift();
       rows.push({ player, row: [player.id, round2(player.x), round2(player.y), round2(player.z), round3(player.yaw), round3(player.pitch), flags, player.weapons[player.active] || 'knife', 0] });
     }
-    const range = ROYALE.viewRange;
+    const range = ROYALE.viewRange, sets = new Map();
     for (const viewer of [...this.humans(), ...this.watchers()]) {
       if (!viewer.connected || !viewer.socket) continue;
       // Dead pilots watch someone else, so they see around whoever they last followed: the whole field.
-      const near = viewer.alive ? rows.filter(({ player }) => player === viewer || (Math.abs(player.x - viewer.x) < range && Math.abs(player.z - viewer.z) < range)) : rows;
+      // Everyone else is sent what they could see or hear, the same rule as the arenas, so an ESP on the
+      // island has nothing to draw either. Riders look down from the aircraft like anyone else.
+      const seen = this.seesAll(viewer) || !this.culling() ? null : this.sightSet(viewer, t, sets);
+      const near = viewer.alive ? rows.filter(({ player }) => player === viewer || (Math.abs(player.x - viewer.x) < range && Math.abs(player.z - viewer.z) < range && (!seen || seen.has(player.id)))) : rows;
       this.send(viewer, { type: 's', t: round3(t), p: near.map(({ row }) => row) });
     }
   }

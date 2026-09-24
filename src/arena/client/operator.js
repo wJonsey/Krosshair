@@ -109,6 +109,8 @@ function holdOf(weapon) {
 
 export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const root = new THREE.Group();
+  // Yaw first, then any tilt: a pilot in free fall pitches face down about their own shoulders' line.
+  root.rotation.order = 'YXZ';
   const suit = mat(color, { rough: 0.55 });
   const dark = mat('#20262d', { rough: 0.9 });
   const gear = mat('#38424c', { rough: 0.6, metal: 0.2 });
@@ -758,7 +760,7 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   root.userData = {
     hips, spine, chest, head, jaw, aim, legs, arms, gun, flames, suit, visorMat, teamMat, headgear, faces, packs, accent,
     guns: new Map(), held: null, skins: {}, builds: {}, recoil: 0, swing: -1, swingDir: 1, reload: 0, reloadK: 0, ads: 0, swap: 0, lastWeapon: null, landDip: 0, wasAir: false, turn: 0, lastYaw: null, blade: 0.6, legYaw: 0, air: 0, gunPos: new THREE.Vector3(...HOLDS.long.gun), gunRot: new THREE.Vector3(),
-    charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0,
+    charm: 'none', phase: Math.random() * 6, idle: Math.random() * 6, crouch: 0, lean: 0, ride: 0, sky: 0, canopy: 0, bank: 0, deployed: false,
     materials: [suit, dark, gear, plate, skin, visorMat, teamMat, hairMat, metal, gold, socket, ruby, yellow, felt, silk, iron, bone, lacquer, white, red, leather, hide, lens, steel, shieldMat, starMat, haloMat, pixelMat, mirror, scanGlass, scanMat, orbitMat],
     beacon, halo: { group: halo, spin: haloSpin, orbit: haloOrbit, bits: haloBits, material: haloMat, glow: haloGlow, haze: haloHaze }, pixelFace, flag, cape: capeParts, wings, wingMats,
     devcrown: { group: rootCrown, shards: crownShards, material: haloMat, glow: crownGlow, haze: crownHaze },
@@ -771,6 +773,25 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
 // Faces that cover the chin: the jaw block would poke through them, so it hides.
 const CHIN_COVERED = new Set(['bandit', 'hockey', 'oni', 'plague', 'devmask', 'frostmask', 'shroud', 'rebreather']);
 // look: any of { color, accent, team, headgear, face, pack, pattern, skins, builds }; missing keys are left alone.
+// The canopy and its lines, one model for everyone. `canopy` is what opens; the caller scales it.
+export function buildChute(color = '#e6edf1') {
+  const chute = new THREE.Group();
+  const canopy = new THREE.Group();
+  const cloth = new THREE.Mesh(new THREE.SphereGeometry(2.3, 12, 5, 0, Math.PI * 2, 0, Math.PI * 0.42), new THREE.MeshStandardMaterial({ color, roughness: 0.9, side: THREE.DoubleSide, flatShading: true }));
+  cloth.scale.y = 0.75;
+  canopy.add(cloth);
+  canopy.position.y = 3.4;
+  chute.add(canopy);
+  const cord = new THREE.MeshBasicMaterial({ color: '#0b0f13' });
+  for (const [x, z] of [[-1.5, -1.5], [1.5, -1.5], [-1.5, 1.5], [1.5, 1.5]]) {
+    const line = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 3.4, 4), cord);
+    line.position.set(x * 0.5, 3.1, z * 0.5); line.rotation.set(z * 0.27, 0, -x * 0.27);
+    chute.add(line);
+  }
+  chute.userData = { canopy, cloth };
+  return chute;
+}
+
 export function styleOperator(root, look) {
   const data = root.userData;
   const { color, accent, team } = look;
@@ -901,7 +922,12 @@ function animateCosmetics(data, stride, sway) {
   }
 }
 
-const target = new THREE.Vector3(), shoulder = new THREE.Vector3(), grip = new THREE.Vector3(), euler = new THREE.Euler();
+const target = new THREE.Vector3(), shoulder = new THREE.Vector3(), grip = new THREE.Vector3(), euler = new THREE.Euler(), reach = new THREE.Vector3();
+// Where the hands go in each deployment pose, in the arms' own space: a hand on the strap on the ramp,
+// arms spread in free fall, both up on the toggles under the canopy.
+const DEPLOY_HANDS = { ride: { right: [0.2, 0.52, -0.08], left: [-0.14, -0.12, -0.16] }, sky: { right: [0.66, 0.2, -0.12], left: [-0.66, 0.2, -0.12] }, chute: { right: [0.3, 0.64, 0.04], left: [-0.3, 0.64, 0.04] } };
+const NO_DEPLOY = { ride: 0, sky: 0, chute: 0, lean: 0 };
+const mix = (from, to, w) => from + (to - from) * w;
 const POLE_R = new THREE.Vector3(0.75, -0.65, 0.25), POLE_L = new THREE.Vector3(-0.55, -0.8, 0.1);
 // pose: { speed, crouch, pitch, weapon, dt, move?: [right, forward] in the operator's own frame, air?, dead?: 0..1,
 //         scoped?, reloading? }. One-off actions come through operatorAction (a shot, a knife swing).
@@ -909,6 +935,14 @@ export function animateOperator(root, pose) {
   const data = root.userData;
   const dt = pose.dt, ease = (rate) => Math.min(1, dt * rate);
   const dead = pose.dead || 0;
+  // The royale deployment: on the ramp, in free fall, under the canopy. Each eases in and out over the
+  // normal pose, as crouch and air do, so a pilot never snaps from one to the next.
+  const dep = pose.deploy || NO_DEPLOY;
+  data.ride += ((dep.ride || 0) - data.ride) * ease(6);
+  data.sky += ((dep.sky || 0) - data.sky) * ease(4.5);
+  data.canopy += ((dep.chute || 0) - data.canopy) * ease(5);
+  data.bank += ((dep.lean || 0) - data.bank) * ease(4);
+  const ride = data.ride, sky = data.sky, can = data.canopy, deploying = ride + sky + can > 0.002;
   data.crouch += ((pose.crouch ? 1 : 0) - data.crouch) * ease(12);
   data.air += ((pose.air ? 1 : 0) - data.air) * ease(pose.air ? 9 : 14);
   const c = data.crouch, air = data.air;
@@ -958,6 +992,13 @@ export function animateOperator(root, pose) {
     knee.rotation.x = data.landDip * 0.45 * (1 - c) + Math.max(0, -s) * 1.1 + c * 1.9 + stride * 0.24 + Math.abs(stance) * 0.5 + air * (index === 0 ? 1.2 : 0.7) + dead * (index === 0 ? 1.1 : 0.3);
     // Heel strike and toe-off, flat on the ground when crouched, toes down in the air.
     foot.rotation.x = -(pivot.rotation.x + knee.rotation.x) * (c > 0.5 ? 1 : 0.4) * (1 - air) + Math.max(0, s) * 0.3 * stride + air * 0.5;
+    if (!deploying) return;
+    // Free fall: knees bent, legs apart, fluttering in the wind. Under the canopy: hanging, swinging a little.
+    const flutter = Math.sin(data.idle * 9 + index * 2) * 0.05;
+    pivot.rotation.x = mix(mix(pivot.rotation.x, 0.3 + flutter, sky), -0.12 + Math.sin(data.idle * 1.7 + index) * 0.1, can);
+    pivot.rotation.z = mix(pivot.rotation.z, (index === 0 ? -1 : 1) * 0.3, sky);
+    knee.rotation.x = mix(mix(knee.rotation.x, 1.05 + flutter, sky), 0.3 + index * 0.1, can);
+    foot.rotation.x = mix(foot.rotation.x, 0.4, Math.max(sky, can));
   });
 
   // The weapon and how it is held.
@@ -1001,6 +1042,22 @@ export function animateOperator(root, pose) {
   data.head.rotation.y = Math.sin(data.phase) * 0.08 * stride + sway * 0.06;
   data.head.rotation.z = dead * 0.4 - Math.max(0, data.blade) * (0.16 + data.ads * 0.12);
   data.head.rotation.x += rel * 0.28;
+  if (deploying) {
+    // Free fall arches the back and lifts the head to see ahead; on the ramp the head looks about.
+    data.spine.rotation.x = mix(mix(data.spine.rotation.x, -0.34, sky), 0.04, can) + ride * 0.05;
+    data.aim.rotation.x = mix(data.aim.rotation.x, 0, Math.max(sky, can, ride));
+    data.head.rotation.x = mix(mix(data.head.rotation.x, 0.8, sky), 0.25, can);
+    data.head.rotation.y = mix(data.head.rotation.y, Math.sin(data.idle * 0.45) * 0.55 + Math.sin(data.idle * 1.3) * 0.08, ride);
+    data.spine.rotation.z += -data.bank * 0.25 * sky;
+    data.gun.visible = !dead && ride + sky + can < 0.5;
+    // Face down in free fall, pivoting round the hips rather than the feet; a gentle pendulum under the canopy.
+    const tilt = -1.25 * sky + Math.sin(data.idle * 1.1) * 0.04 * can, h = 0.95;
+    root.rotation.x = tilt;
+    root.rotation.z = -data.bank * (0.5 * sky + 0.28 * can) + Math.sin(data.idle * 0.8) * 0.03 * can;
+    const out = h * Math.sin(tilt);
+    root.position.set(-Math.sin(yaw) * out, h - h * Math.cos(tilt), -Math.cos(yaw) * out);
+    data.deployed = true;
+  } else if (data.deployed) { root.rotation.x = 0; root.rotation.z = 0; root.position.set(0, 0, 0); data.deployed = false; }
   if (data.packs.jetpack.visible) for (const flame of data.flames) flame.scale.y = 0.8 + Math.sin(data.idle * 31 + flame.position.x * 40) * 0.25 + air * 1.2;
   // The charm swings off the gun for everyone watching, not just the pilot holding it.
   if (held.charm && dt > 0) updateCharm(held.charm, dt, { scale: GUN_SCALE });
@@ -1016,6 +1073,14 @@ export function animateOperator(root, pose) {
     else if (hold.support && rel > 0.05) { const beat = 0.5 + 0.5 * Math.sin(data.reloadK * 5.5); target.set(0, -0.03 - beat * 0.16, -0.12).applyEuler(euler).add(grip).lerp(shoulder.set(hold.support[0], hold.support[1], Math.max(hold.support[2], -held.reach * 0.62)).applyEuler(euler).add(grip), 1 - rel); }
     else if (hold.support) target.set(hold.support[0], hold.support[1], Math.max(hold.support[2], -held.reach * 0.62)).applyEuler(euler).add(grip);
     else target.set(...REST.left).setY(REST.left[1] + breath * 0.004);
+    if (deploying) {
+      const hand = (key) => reach.set(...DEPLOY_HANDS[key][right ? 'right' : 'left']);
+      const total = ride + sky + can;
+      // The strongest pose leads; a hand never goes through the chest getting there.
+      const mine = hand(sky >= can && sky >= ride ? 'sky' : can >= ride ? 'chute' : 'ride').clone();
+      if (sky > 0.05) mine.y += Math.sin(data.idle * 8 + arm.side) * 0.03 * sky;
+      target.lerp(mine, Math.min(1, total));
+    }
     arm.at.lerp(target, ease(dead ? 5 : 14));
     solveArm(arm, shoulderAt(arm.side, data.blade, shoulder), arm.at, right ? POLE_R : POLE_L);
   });

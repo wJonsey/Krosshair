@@ -4,7 +4,7 @@
 // when you are knocked out or win. It brings its own styles and HUD elements.
 import * as THREE from 'three';
 import { ARMOR, GADGETS, WEAPONS } from '../shared/constants.js';
-import { DROP, LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, lootInSight, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
+import { LOOT_TABLE, POWERS, ROYALE, ROYALE_RARITIES, STORM, aircraftAt, lootInSight, royaleWeapon, weaponRarity, weaponTier } from '../shared/royale.js';
 import { bus, game } from './state.js';
 import { net } from './net.js';
 import { bindLabel, held, isBound } from './input.js';
@@ -78,6 +78,10 @@ body.royale-mode .scorebar, body.royale-mode .minimap-wrap, body.royale-mode #sc
 .royale-kit .kit-ghost { position: fixed; z-index: 60; width: 72px; height: 72px; display: grid; place-items: center; padding: 6px; pointer-events: none; background: rgba(7, 9, 12, .9); border: 1px solid var(--tier, var(--frost)); transform: translate(-50%, -50%); }
 .royale-kit .kit-ghost img { width: 100%; }
 .royale-kit .kit-ghost i { font-style: normal; font-size: 26px; color: var(--tier, var(--frost)); }
+.royale-alt { position: absolute; right: 26px; top: 42%; display: none; min-width: 120px; padding: 10px 14px; background: var(--hud-glass); backdrop-filter: blur(8px); border-right: 3px solid var(--signal); text-align: right; }
+.royale-alt.on { display: block; }
+.royale-alt b { display: block; color: var(--frost); font: 400 30px/1 var(--display); }
+.royale-alt span { display: block; margin-top: 4px; color: var(--haze); font: 500 10px var(--mono); letter-spacing: .2em; text-transform: uppercase; }
 .royale-drop { position: absolute; inset: 0; display: none; grid-template-rows: auto 1fr auto; justify-items: center; gap: 12px; padding: 64px 16px 24px; background: rgba(6, 9, 12, .94); pointer-events: auto; cursor: crosshair; z-index: 30; }
 .royale-drop.on { display: grid; }
 .royale-drop header { text-align: center; }
@@ -365,6 +369,9 @@ export function initRoyale({ arena, hud, player }) {
   }
 
   // ---- messages
+  // The mark placed from the air (client/deploy.js): shown on the maps until the next match.
+  bus.on('royale-mark', (at) => { state.drop = { x: at.x, z: at.z }; });
+  net.on('royale-flight', (message) => { state.flight = message.flight || null; });
   net.on('royale', (message) => {
     if (message.storm) state.storm = message.storm;
     if (Number.isFinite(message.alive)) state.alive = message.alive;
@@ -503,10 +510,16 @@ export function initRoyale({ arena, hud, player }) {
     // Loot near you, on the radar only.
     if (!full) for (const loot of state.loot.values()) { const x = sx(loot.entry.x), z = sz(loot.entry.z); if (x < 0 || z < 0 || x > size || z > size) continue; c.fillStyle = LOOT_COLOURS[lootKind(loot.entry.item)]; c.fillRect(x - 2.5, z - 2.5, 5, 5); }
     for (const drop of state.airdrops.values()) { const x = sx(drop.x), z = sz(drop.z), r = full ? 13 : 9; c.fillStyle = '#ffb547'; c.strokeStyle = '#07090c'; c.lineWidth = 2; c.beginPath(); c.moveTo(x, z - r); c.lineTo(x + r, z); c.lineTo(x, z + r); c.lineTo(x - r, z); c.closePath(); c.fill(); c.stroke(); }
-    if (dropping) {
-      if (state.drop) { const x = sx(state.drop.x), z = sz(state.drop.z); c.strokeStyle = '#ffb547'; c.lineWidth = 4; c.beginPath(); c.arc(x, z, 20, 0, Math.PI * 2); c.moveTo(x - 32, z); c.lineTo(x + 32, z); c.moveTo(x, z - 32); c.lineTo(x, z + 32); c.stroke(); }
-      return;
+    // The aircraft's line and where it is now, while anyone could still be aboard.
+    const flight = state.flight;
+    if (flight && t < flight.ejectAt + 2) {
+      c.setLineDash([10, 8]); c.strokeStyle = 'rgba(230,237,241,.75)'; c.lineWidth = full ? 3 : 2;
+      c.beginPath(); c.moveTo(sx(flight.from[0]), sz(flight.from[1])); c.lineTo(sx(flight.to[0]), sz(flight.to[1])); c.stroke(); c.setLineDash([]);
+      const at = aircraftAt(flight, t);
+      c.fillStyle = '#e6edf1'; c.beginPath(); c.arc(sx(at.x), sz(at.z), full ? 9 : 6, 0, Math.PI * 2); c.fill();
     }
+    if (state.drop) { const x = sx(state.drop.x), z = sz(state.drop.z), r = full ? 20 : 9; c.strokeStyle = '#ffb547'; c.lineWidth = full ? 4 : 2; c.beginPath(); c.arc(x, z, r, 0, Math.PI * 2); c.moveTo(x - r * 1.6, z); c.lineTo(x + r * 1.6, z); c.moveTo(x, z - r * 1.6); c.lineTo(x, z + r * 1.6); c.stroke(); }
+    if (dropping) return;
     // You: an arrow pointing where you look.
     const yaw = player.yaw ?? 0;
     c.save(); c.translate(sx(me.x), sz(me.z)); c.rotate(-yaw);
@@ -545,21 +558,17 @@ export function initRoyale({ arena, hud, player }) {
       root.classList.toggle('hidden', !on || game.screen !== 'game');
       if (!on) { if (state.loot.size || beams.count) clearLoot(); if (state.airdrops.size) clearAirdrops(); if (state.wall) state.wall.visible = false; dropScreen.classList.remove('on'); card.classList.remove('on'); return; }
       if (game.room.phase !== lastPhase) {
-        if (game.room.phase === 'live' && !game.watching) hud.banner('KESTREL ISLAND', 'Steer to your mark. You land with a blade and nothing else.', 'ROYALE', 'go', 3600);
-        if (game.room.phase === 'drop') { state.powers.clear(); state.drop = null; state.storm = null; clearLoot(); clearAirdrops(); card.classList.remove('on'); document.exitPointerLock?.(); }
+        if (game.room.phase === 'drop') { state.powers.clear(); state.drop = null; state.storm = null; clearLoot(); clearAirdrops(); card.classList.remove('on'); }
         lastPhase = game.room.phase;
       }
-      // The drop map covers everything until the match goes live.
-      // A watcher has nowhere to drop: they see the island and follow whoever they like once it goes live.
-      const dropping = game.room.phase === 'drop' && !game.watching;
-      dropScreen.classList.toggle('on', dropping);
-      if (dropping) {
-        if (document.pointerLockElement) document.exitPointerLock?.();
-        put(dropClock, `${Math.max(0, Math.ceil(game.room.phaseEnds - net.time()))}s`);
-        const place = state.drop && [...(arena.map.places || [])].sort((m, n) => Math.hypot(m.x - state.drop.x, m.z - state.drop.z) - Math.hypot(n.x - state.drop.x, n.z - state.drop.z))[0];
-        putHtml(dropFoot, state.drop ? `Landing near <b>${place.name}</b>. Click again to change.` : 'Click the map. No pick, random drop.');
-        if (performance.now() - lastRadar > 80) { lastRadar = performance.now(); drawMap(dropMap, true); }
+      // The countdown: everyone is aboard and the deployment (client/deploy.js) has the screen. The
+      // island map still opens on its key, to plan where to go.
+      dropScreen.classList.remove('on');
+      if (game.room.phase === 'drop') {
         if (state.wall) state.wall.visible = false;
+        const showMap = held(player.keys || new Set(), 'map');
+        bigMap.classList.toggle('on', showMap);
+        if (showMap && performance.now() - lastBigMap > 33) { lastBigMap = performance.now(); drawMap(bigMap, true); }
         return;
       }
       if (card.classList.contains('on') && performance.now() > state.cardUntil) card.classList.remove('on');
@@ -614,7 +623,7 @@ export function initRoyale({ arena, hud, player }) {
       state.fWas = fDown;
       // Coming down: how high, and what to do about it.
       alt.classList.toggle('on', Boolean(player.drop && player.alive));
-      if (player.drop) { put(alt.firstChild, `${Math.max(0, Math.round(me.y - 1.6))} M`); put(alt.lastChild, player.drop.chute ? 'Parachute open · steer with the move keys' : `${bindLabel('jump')} opens the parachute · opens itself at ${DROP.chuteAt} m`); }
+      if (player.drop) { const ground = arena.physics.groundBelow(player.body.x, player.body.y + 0.2, player.body.z); put(alt.firstChild, `${Math.max(0, Math.round(player.body.y - (Number.isFinite(ground) ? ground : 0)))} M`); put(alt.lastChild, player.drop.chute ? 'Parachute' : 'Free fall'); }
       // Boosts that are still running.
       const clock = performance.now();
       for (const [id, until] of state.powers) if (clock > until) state.powers.delete(id);

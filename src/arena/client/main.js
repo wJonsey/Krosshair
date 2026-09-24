@@ -16,6 +16,7 @@ import { Hud, roundIntroVoice } from './hud.js';
 import { announce, meter, musicState, play, playImpact, playShot, setAmbience, setAmbienceShelter, setAmbienceVolume, setListener, setMusicScene, setWorldAudio, refreshMusic, setVolume, stopAllLoops, unlockAudio } from './audio.js';
 import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
+import { initDeploy } from './deploy.js';
 import { initDevTools } from './devtools.js';
 import { startGuard } from './guard.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
@@ -533,6 +534,10 @@ function drawViewmodel() {
 const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
 const scopeTilt = new THREE.Quaternion();
 const royale = initRoyale({ arena, hud, player });
+// The royale's third-person deployment. It takes the camera from the player while it runs, then hands it back.
+const deploy = initDeploy({ arena, camera, player, viewmodel });
+player.deploying = () => deploy.active;
+player.deployLock = () => deploy.locked;
 const devtools = initDevTools({ player, operators, camera });
 // Runs one part of a frame. The first time a part throws it is reported, then it is left to try again.
 const broken = new Set();
@@ -554,6 +559,7 @@ function frame(now = 0) {
   const wallDt = Math.min(rawDt, 0.3); // cinematic timers (death cam, replays) follow the wall clock even on slow machines
   if (game.screen === 'game') {
     player.update(dt, wallDt);
+    step('deploy', () => deploy.update(wallDt));
     if (game.room?.phase === 'buy' && player.alive && !hud.buyOpen) hud.prompt(`${bindLabel('armoury')} ARMOURY`); else if (game.room?.phase !== 'range') hud.prompt('');
     if (player.alive && game.you && game.you.hp < 35) { heartbeat -= dt; if (heartbeat <= 0) { heartbeat = 0.9; play('heartbeat', { volume: 0.8 }); } }
   } else {
@@ -627,5 +633,5 @@ net.connect();
 frame();
 // debugCam stays writable for the screenshot harness; the anti-cheat seals the
 // handle so nothing can bolt extra entry points onto it.
-window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, audio: { meter, play, playShot, music: musicState }, debugCam: null };
+window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, deploy, audio: { meter, play, playShot, music: musicState }, debugCam: null };
 startGuard({ player, api: window.__arena, notify: feed });

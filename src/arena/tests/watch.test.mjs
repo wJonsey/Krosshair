@@ -279,6 +279,8 @@ test('a watcher sees the island: every pilot’s position, and the loot', () => 
   const socket = fakeSocket();
   room.watch(socket, hello(MARK), look);
   room.startMatch(); room.deploy();
+  // Out of the aircraft first: nobody aboard it is anywhere yet.
+  for (const pilot of room.players.values()) if (pilot.inPlane) room.exit(pilot);
   room.snapshot(performance.now() / 1000);
   const positions = socket.sent.filter((m) => m.type === 's');
   assert.ok(positions.length, 'a watcher was sent no positions, so they watched an empty island');
@@ -326,7 +328,10 @@ test('a watcher is not in the placements, and costs the lobby no bot', () => {
 
 test('the royale client gives a watcher no drop map and no inventory', () => {
   const client = readFileSync(new URL('../client/royale.js', import.meta.url), 'utf8');
-  assert.match(client, /const dropping = game\.room\.phase === 'drop' && !game\.watching;/, 'the drop map would cover the screen with nowhere to drop');
+  assert.match(client, /dropScreen\.classList\.remove\('on'\);/, 'the old drop map would cover the screen with nowhere to drop');
+  // Nor is a watcher put aboard the aircraft: the deployment camera is for the pilots in it.
+  const deploy = readFileSync(new URL('../client/deploy.js', import.meta.url), 'utf8');
+  assert.match(deploy, /const aboard = Boolean\(game\.you\?\.inPlane\) && flight && !game\.watching;/, 'a watcher would be given the deployment camera');
   assert.match(client, /!game\.room\?\.royale \|\| game\.watching\) return;/, 'a watcher carries nothing to open');
   const hud = readFileSync(new URL('../client/hud.js', import.meta.url), 'utf8');
   assert.match(hud, /const canReact = [^;]*&& !game\.watching;/, 'reactions from a watcher are refused, so the buttons must not be offered');

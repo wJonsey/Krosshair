@@ -170,6 +170,46 @@ turns it: all the way round, a little tilt, and back to side on for a new gun. E
 the same way (skins, charms, crates, the Locker and Play page pilot), all through `client/turntable.js`.
 A crate lets go of its angle the moment it is opened, so the opening always swings round to face you.
 
+## The royale deployment
+
+The opening of a royale: a countdown, one transport flying a line across the island, and each pilot
+choosing when to go off its back ramp. The only third-person camera in the game; it hands back to first
+person the moment the pilot is on their feet.
+
+| Piece | File | What it holds |
+| --- | --- | --- |
+| The numbers | `shared/royale.js` `DEPLOY` | Countdown, aircraft altitude, speed and route, ramp door delay, max flight, free fall and chute speeds, auto-deploy height, landing time, camera tuning. |
+| The maths | `shared/royale.js` | `flightRoute`, `flightPlan`, `aircraftAt`, `rampAt`, and `descentStep` (one frame of falling, flown by the browser and by the tests). |
+| The rules | `server/royale.js` | `board` at match start, `fly` each tick, `jump` (validated), `exit`, `fallLimit`, bots' `jumpAt`. |
+| The show | `client/deploy.js` | The aircraft model, your own pilot and chute, the camera director, the countdown and prompts, marking the ground. |
+| The poses | `client/operator.js` `animateOperator` `pose.deploy` | Ramp, free fall and canopy, blended in like crouch; `buildChute` is shared with other pilots (`characters.js`). |
+
+**Stages, one at a time.** `plane` (aboard: `player.mode === 'plane'`), `jump` (a run down the ramp and off,
+predicted on the key press), `freefall`, `chute`, `landing` (knees, stand, camera blends into the eye over
+`DEPLOY.blend`), then null: first person, viewmodel drawn back in. The stage follows the server: `you.inPlane`,
+then a `spawn` high up, then the ground. A death or leaving the match resets it.
+
+**The server owns it.** Aboard, a pilot is alive but nowhere: no snapshot row, no damage, no storm, no loot,
+and their own position messages are ignored. `royale-jump` is taken only aboard, alive, with the ramp open,
+once. Anyone still aboard at `ejectAt` goes out over land. Off the ramp the descent is budgeted: free fall
+speed until the chute has had `DEPLOY.parachute.open` to slow you (the chute flag in state, or being under
+`autoDeploy` above the ground, whichever is first), chute speed after. No weapon, swing or gadget works until
+`inDrop` clears on landing.
+
+**The aircraft costs nothing to send.** The flight plan goes out once (`royale-flight`), and every browser places
+the aircraft with `aircraftAt` on its own clock.
+
+**Traps.**
+- The sea is outside the world: bounds clamp anything beyond them. The ramp opens `route.lead` metres inland
+  for that reason, and `exit` clamps too.
+- The ramp camera is fenced to `camera.ramp.arc` round the tail and kept under the tailplane: further round
+  or higher and it is inside the hold or looking at the tail's underside.
+- On Jump the facing turns to the flight heading at once (as the spawn will), or the follow camera swings
+  through the fuselage while waiting for the server.
+- Each scratch vector in `deploy.js` has one job. Sharing one between the follow target and its direction
+  once put the camera at the world origin.
+- There are no squads in the royale (everyone is their own team), so there is no squad drop or follow.
+
 ## Weapon levels
 
 Every gun starts at level 0 with only its stock build, earns XP when it gets kills and assists, and unlocks
