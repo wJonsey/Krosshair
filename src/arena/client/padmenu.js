@@ -23,6 +23,9 @@ const seen = (element) => {
 // Inside an open card (a notice, the dev panel), only that card's buttons are reachable: a modal should
 // trap the pad the same way it traps a click.
 function scope() {
+  // A present from the devs sits over everything, menus included.
+  const gift = document.querySelector('.gift-veil.on');
+  if (gift) return gift;
   const card = [...document.querySelectorAll('.notice-card, .online-card, .loading-card')].find((el) => !el.classList.contains('hidden'));
   return card || document.querySelector('.menu-shell') || document.body;
 }

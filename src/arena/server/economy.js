@@ -100,6 +100,11 @@ function rollCrate(profiles, token, crate) {
   const finish = choices[randomInt(choices.length)].id;
   return { ...grant(profiles, token, finish, rarity, SKINNABLE[randomInt(SKINNABLE.length)]), pity: forced };
 }
+// One drop from a crate nobody paid for: a developer's gift. Same odds and pity as a bought one.
+export function giftCrate(profiles, token, crateId) {
+  const crate = CRATES[crateId];
+  return crate ? rollCrate(profiles, token, crate) : null;
+}
 export const dailyWait = (profile) => Math.max(0, (profile.dailyCrate || 0) + DAILY_CRATE.hours * 3600e3 - Date.now());
 // count: 1 or 5. free: the daily crate, one field crate every DAILY_CRATE.hours.
 export function openCrate(profiles, token, crateId = 'field', count = 1, free = false) {

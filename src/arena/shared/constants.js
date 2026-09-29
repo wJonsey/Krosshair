@@ -635,9 +635,11 @@ export function cosmeticUnlocked(kind, id, level, owned = [], dev = false) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
   if (!item) return false;
   if (item.dev) return Boolean(dev);
+  // Owned is owned, whichever way it came: bought, or given by a developer ahead of the level.
+  if (owned.includes(`${kind}:${id}`)) return true;
   // Item Shop pieces have no price and no level: being there on the day is the only way in.
-  if (item.shop === 'item') return owned.includes(`${kind}:${id}`);
-  return item.price ? owned.includes(`${kind}:${id}`) : level >= item.level;
+  if (item.shop === 'item' || item.price) return false;
+  return level >= item.level;
 }
 // The developers' own class. Items in it can't be bought, won or traded.
 export const DEV_CLASS = { id: 'dev', name: 'Dev', color: '#00ffc6', blurb: 'Dev only. Nobody else can get this.' };

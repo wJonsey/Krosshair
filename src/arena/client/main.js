@@ -18,6 +18,8 @@ import { mapFingerprint } from '../shared/version.js';
 import { initRoyale } from './royale.js';
 import { initDeploy } from './deploy.js';
 import { initDevTools } from './devtools.js';
+import { initTerminal } from './terminal.js';
+import { initGifts } from './gift.js';
 import { startGuard } from './guard.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
 
@@ -53,7 +55,10 @@ const pauseCard = document.querySelector('#pause-card');
 const settingsCard = document.querySelector('#settings-card');
 const endCard = document.querySelector('#end-card');
 const visible = (element) => !element.classList.contains('hidden');
-player.uiBlocked = () => hud.blocking || visible(pauseCard) || visible(settingsCard) || visible(endCard) || visible(feedbackCard);
+// The dev terminal on / (server checks every line) and presents from the devs, full screen.
+const terminal = initTerminal();
+const gifts = initGifts();
+player.uiBlocked = () => hud.blocking || visible(pauseCard) || visible(settingsCard) || visible(endCard) || visible(feedbackCard) || terminal.isOpen() || gifts.isOpen();
 const feedbackCard = document.querySelector('#feedback');
 
 let inviteHandled = false;

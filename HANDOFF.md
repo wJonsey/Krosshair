@@ -62,7 +62,9 @@ anything treats it as gear.
 
 **Exclusives have no other way in.** No crate drops one, no trade-up pays one out or eats one, the
 normal shelf refuses to sell one, and they cannot be scrapped. If you add a route that hands out a
-finish, exclude `finish.shop === 'item'` and add a test.
+finish, exclude `finish.shop === 'item'` and add a test. The one exception is a developer typing
+`/give` (see "Dev terminal and gifts"): it can hand out a released exclusive on purpose, never an
+unreleased one.
 
 **The runway** is the dev-only line on the shop header saying how many days of sets are left. It counts
 sets a client is never told about, so it is computed on the server and attached to the profile view for
@@ -137,8 +139,37 @@ the nearest clear spot. Anything that raises team size past five needs that look
   `game.profile.dev`. Dev cosmetics are the `dev` rarity and are secret: `rarityOrder()`,
   `PUBLIC_FINISHES` and `PUBLIC_RARITIES` exist so nothing dev shows to anyone else. The server is the
   real enforcement; the client gate is only so it is not drawn. Bots never get dev anything.
-- Dev tools are on `K` (`client/devtools.js`), and the header online count becomes a "who is playing"
-  panel for devs.
+- Dev tools are on `K` (`client/devtools.js`), the dev terminal is on `/` (`client/terminal.js`), and
+  the header online count becomes a "who is playing" panel for devs.
+
+## Dev terminal and gifts
+
+`/` opens a terminal for dev accounts. Its one real job is `/give`: coins, XP, skins, crates and every
+cosmetic kind, to one pilot, a comma list, `all` (every account there is) or `online`. The pilot gets
+a full screen present to unwrap, with the dev's note inside.
+
+| Piece | File | What it holds |
+| --- | --- | --- |
+| The words | `shared/gifts.js` | Kinds and aliases, `findGift` (id, then name, then a unique prefix), amounts like `5k`, the tokenizer, the command list. Shared so the terminal can complete. |
+| The console | `server/gifts.js` | `createDevConsole` parses and checks every line; `giveGift` hands one gift to one pilot. Pure over a ProfileStore and an AccountStore, so the tests drive it with no sockets. |
+| The wiring | `multiplayer-server.mjs` `handleDevCommand`, `deliverGifts`, `gift-open` | Dev check on every line. A gift is pushed with the profile it changed to every tab on that account. |
+| The screens | `client/terminal.js`, `client/gift.js` | Both bring their own styles and DOM, like the K menu. |
+
+**Given when sent, unwrapped later.** `giveGift` credits everything at once and adds an entry to
+`profile.gifts`. The present is only the reveal: opening it (`gift-open`) takes the entry off the list
+and nothing else. A pilot offline at the time gets every waiting present on sign in. The inbox keeps
+the newest 25.
+
+**Rules the server holds, whatever was typed.** `all` and `online` wait for `/confirm` (60 s, and
+anything else typed drops it). Dev items only go to dev accounts. An unreleased Item Shop piece does
+not exist to the terminal at all: `findGift` takes a `hide` filter and the server passes `unreleased`,
+so it cannot be given, listed or even suggested as a near miss. Coins and XP are capped per gift.
+
+**A present never lands mid fight.** `busy()` in `client/gift.js` holds it while alive in a live, buy
+or overtime phase, over the intro, or over a notice card, and tries again every second.
+
+**Gifted cosmetics count.** `cosmeticUnlocked` now treats anything in `owned` as unlocked, so a level
+item given early works. Anything that checks ownership of a cosmetic should go through it.
 
 ## Warnings
 

@@ -23,6 +23,7 @@ import { PartyBook } from './server/party.js';
 import { WAGER } from './shared/economy.js';
 import { Guard } from './server/guard.js';
 import { isDetection } from './shared/guard.js';
+import { createDevConsole } from './server/gifts.js';
 
 const root = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 // Secrets (Discord keys) live in a git-ignored .env next to package.json (or in the working directory).
@@ -212,6 +213,35 @@ function handleCoins(socket, message) {
   }
   if (!result) return;
   reply(result.error ? 'coins-error' : 'coins-result', result);
+}
+
+// The developers' terminal (server/gifts.js). A gift lands on every tab the pilot has open, with the
+// profile it changed, so the present and the new coins arrive together.
+function deliverGifts(token) {
+  let reached = false;
+  for (const other of sockets) {
+    if (other.token !== token || !other.account || other.readyState !== 1) continue;
+    send(other, { type: 'profile', profile: profiles.view(token) });
+    send(other, { type: 'gifts', gifts: profiles.gifts(token) });
+    reached = true;
+  }
+  return reached;
+}
+const devConsole = createDevConsole({
+  profiles, accounts,
+  online: () => [...new Set([...sockets].filter((other) => other.identified && other.account).map((other) => other.name))],
+  deliver: deliverGifts,
+  log: (text) => console.log(text),
+});
+function handleDevCommand(socket, message) {
+  // Developers only, checked on every line, whatever the page thinks it is allowed to do.
+  if (!socket.identified || !socket.account || !profiles.get(socket.token).dev) return;
+  if (message.names) return send(socket, { type: 'dev-names', names: devConsole.names() });
+  const t = now();
+  if (socket.devCmdAt && t - socket.devCmdAt < 0.15) return send(socket, { type: 'dev-cmd', id: message.id, lines: [{ text: 'Slow down.', tone: 'bad' }] });
+  socket.devCmdAt = t;
+  const lines = devConsole.run(socket.name, String(message.line || '').slice(0, 600));
+  send(socket, { type: 'dev-cmd', id: message.id, lines });
 }
 
 // Who is on the server right now, for the developers' accounts only. Nobody else can ask, and it is
@@ -468,6 +498,9 @@ function signIn(socket, account, message, session = null) {
   profiles.scheduleSave();
   if (socket.player) { socket.player.name = account.username; socket.room.pushRoom(); }
   send(socket, { type: 'identity', username: account.username, avatar: avatarOf(account), session, profile: profiles.view(socket.token), serverTime: now(), online: [...sockets].filter((s) => s.identified).length, rooms: publicRooms(), modifier: dailyModifier(dateKey()) });
+  // Presents sent while they were away.
+  const waiting = profiles.gifts(socket.token);
+  if (waiting.length) send(socket, { type: 'gifts', gifts: waiting });
   parties.ensure(account.username);
   pushSocial(socket);
   tellFriends(account.username);
@@ -908,6 +941,13 @@ wss.on('connection', (socket, request) => {
         return send(socket, { type: 'itemshop', itemShop: shopCatalogue() });
       }
       if (message.type === 'dev-online') return sendOnline(socket);
+      if (message.type === 'dev-cmd') return handleDevCommand(socket, message);
+      // Unwrapping a present. What was in it arrived when it was sent; this only takes it off the pile.
+      if (message.type === 'gift-open') {
+        if (!socket.account || typeof message.id !== 'string') return;
+        if (profiles.openGift(socket.token, message.id.slice(0, 32))) for (const other of sockets) if (other !== socket && other.token === socket.token && other.account) send(other, { type: 'gifts', gifts: profiles.gifts(socket.token) });
+        return;
+      }
       if (message.type === 'dev-watch') return watchRoom(socket, message);
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }

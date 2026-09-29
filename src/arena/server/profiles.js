@@ -220,6 +220,18 @@ export class ProfileStore {
     this.scheduleSave();
     return true;
   }
+  // Presents from a developer (server/gifts.js). What is inside was given when it was sent; these are
+  // only waiting to be unwrapped, and opening one takes it off the list and nothing else.
+  gifts(token) { return this.unsaved(token) ? [] : [...(this.get(token).gifts || [])]; }
+  openGift(token, id) {
+    const profile = this.get(token);
+    const before = profile.gifts?.length || 0;
+    profile.gifts = (profile.gifts || []).filter((gift) => gift.id !== id);
+    if (profile.gifts.length === before) return false;
+    this.scheduleSave();
+    return true;
+  }
+
   // Wager stakes are held on the profile until the match settles, so a crash can refund them.
   // One stake at a time: a second would overwrite the first, and a restart would refund only one.
   hold(token, amount, room) {
