@@ -326,6 +326,12 @@ The client is a proposal. These are the rules it is held to, and the tests that 
   stage, and an explicit width beats `left`/`right`, so without `width: auto` the box silently ran the
   full width and the gun sat off to one side.
 
+- **A browser remembers its last look, and the account may have less.** After a wiped store (or a scrap
+  or trade-up) it was wearing skins and gear the account didn't own, so they showed as equipped but
+  weren't in the Locker and couldn't be put back on. `cleanLook` in `shared/look.js` is the one rule:
+  the server uses it in `sanitizeCosmetics` and in `view()`, and the browser runs its look through it
+  on sign-in and after a trade-up (`keepLookOwned` in `client/menu.js`). Dev accounts keep every dev
+  item because `setDev` runs before the profile is sent. Don't add a second copy of the rule.
 - **`net.on` used to keep one handler per type.** It holds arrays now. If you register a second handler
   for a type, check it still holds arrays before assuming both run.
 - **One `#skin-stage` exists at a time.** Whichever tab renders one gets the shared 3D stage moved into

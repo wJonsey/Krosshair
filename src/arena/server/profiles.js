@@ -7,8 +7,9 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, DEFAULT_LOOK, WEAPONS, cosmeticUnlocked } from '../shared/constants.js';
-import { COINS, devFinish, finishInfo } from '../shared/economy.js';
+import { contractText, dailyContracts, dateKey, levelFromXp, COSMETICS, WEAPONS } from '../shared/constants.js';
+import { COINS, finishInfo } from '../shared/economy.js';
+import { cleanLook } from '../shared/look.js';
 
 const HISTORY_LIMIT = 25;
 // A store file that is missing is a first boot. One that is there and will not parse is not: it used to
@@ -23,8 +24,6 @@ export async function readStore(file) {
   }
 }
 const COIN_LOG_LIMIT = 30;
-// Look keys and the cosmetics list that validates each.
-const LOOK_KINDS = { color: 'suit', accent: 'visor', tracer: 'tracer', title: 'title', headgear: 'headgear', face: 'face', pack: 'pack', pattern: 'pattern', charm: 'charm' };
 // Settings a pilot's account remembers, with the values the server will accept.
 // Key binds and the crosshair are structured, so they get their own checks: only the shapes the client
 // writes are kept, everything is bounded, and nothing unexpected reaches the saved file.
@@ -264,7 +263,7 @@ export class ProfileStore {
       coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], finishes: profile.finishes || [], pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
-      look: profile.look || null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
+      look: profile.look ? this.sanitizeCosmetics(token, profile.look) : null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
       // Only what each gun's level allows: a saved build is a wish, the level decides what is on it.
       builds: this.usableBuilds(token),
       gunXp: { ...(profile.gunXp || {}) },
@@ -347,17 +346,7 @@ export class ProfileStore {
   // Only what this pilot has unlocked or bought survives; anything else falls back to the default.
   sanitizeCosmetics(token, look) {
     const profile = this.get(token);
-    const level = levelFromXp(profile.xp);
-    const owned = profile.owned || [];
-    const clean = {};
-    const dev = Boolean(profile.dev);
-    for (const [key, kind] of Object.entries(LOOK_KINDS)) clean[key] = cosmeticUnlocked(kind, look[key], level, owned, dev) ? look[key] : DEFAULT_LOOK[key];
-    clean.skins = {};
-    if (look.skins && typeof look.skins === 'object') {
-      // A finish you own goes on any gun. Dev finishes need the account.
-      for (const [weapon, finish] of Object.entries(look.skins).slice(0, 40)) if (Object.hasOwn(WEAPONS, weapon) && finishInfo(finish) && (devFinish(finish) ? dev : profile.finishes?.includes(finish))) clean.skins[weapon] = finish;
-    }
-    return clean;
+    return cleanLook(look, { level: levelFromXp(profile.xp), owned: profile.owned, finishes: profile.finishes, dev: Boolean(profile.dev) });
   }
 
   // Coins for one match: finishing, winning (worth less against bots), topping the kills, and each kill

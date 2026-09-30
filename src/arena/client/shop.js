@@ -145,6 +145,7 @@ net.on('coins-result', (message) => {
   } else if (message.traded) {
     held = null;
     game.profile = message.profile;
+    ctx.keepLook();
     trade = []; tradeMode = false;
     reveal = { drops: [message.traded], index: 0, source: 'trade', landed: true, at: now() };
     crate = null;

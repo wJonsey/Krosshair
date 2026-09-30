@@ -15,6 +15,7 @@ import { turntable } from './turntable.js';
 import { COIN, SHOP_PAGES, coins, initShop, keepShopInput, mountShop, onShopClick, onShopHover, onShopInput, restoreShopInput, shopPageHtml } from './shop.js';
 import { patternSwatch } from './skins.js';
 import { WAGER } from '../shared/economy.js';
+import { cleanLook } from '../shared/look.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
 import { FEATURES, featureName, featureOut, outageReason } from '../shared/outage.js';
@@ -123,12 +124,25 @@ export function applyAccountPrefs(profile) {
   if (!profile) return;
   applyingPrefs = true;
   if (profile.look) { game.look = { ...game.look, ...profile.look }; store('look', game.look); bus.emit('look'); refreshPreviewLook(); }
+  const fixed = keepLookOwned(profile);
   if (profile.settings) { Object.assign(game.settings, migrateSettings({ settingsVersion: 1, ...profile.settings })); saveSettings(); setVolume(game.settings.volume); }
   if (profile.tutorialDone) { game.tutorialDone = true; store('tutorialDone', true); }
   applyingPrefs = false;
   // A brand-new account starts from whatever this browser already had.
   // …and an account saved before a default changed is brought up to date once.
-  if (!profile.settings || (profile.settings.settingsVersion || 1) < DEFAULT_SETTINGS.settingsVersion || (game.tutorialDone && !profile.tutorialDone)) uploadPrefs(0);
+  if (fixed || !profile.settings || (profile.settings.settingsVersion || 1) < DEFAULT_SETTINGS.settingsVersion || (game.tutorialDone && !profile.tutorialDone)) uploadPrefs(0);
+}
+// This browser remembers the last look it wore, and the account may not have all of it any more (a fresh
+// server, a scrapped or traded skin). Anything the account doesn't own comes off, so what is worn is
+// always something that can be put back on. True when something was taken off.
+function keepLookOwned(profile = game.profile) {
+  if (!profile) return false;
+  const worn = cleanLook(game.look, profile);
+  const same = Object.keys(worn).every((key) => (key === 'skins' ? JSON.stringify(worn.skins) === JSON.stringify(game.look.skins || {}) : worn[key] === game.look[key]));
+  if (same) return false;
+  game.look = { ...game.look, ...worn };
+  store('look', game.look); bus.emit('look'); refreshPreviewLook();
+  return true;
 }
 function uploadPrefs(delay = 800) {
   if (applyingPrefs || !net.identified) return;
@@ -724,7 +738,7 @@ function chooseGear(kind, id, key = kind) {
 const LOOK_KEY = { suit: 'color', visor: 'accent' };
 function refreshCoins() { const chip = $('.coin-chip'); if (chip && game.profile) chip.innerHTML = coins(game.profile.coins); }
 initShop({
-  rerender: () => renderHome(), onShop: () => game.screen === 'home' && SHOP_PAGES.includes(homePage), goto: (page) => { if (game.screen === 'home') setHomePage(page); }, toast, saveLook, refreshCoins,
+  keepLook: () => { if (keepLookOwned()) uploadPrefs(0); }, rerender: () => renderHome(), onShop: () => game.screen === 'home' && SHOP_PAGES.includes(homePage), goto: (page) => { if (game.screen === 'home') setHomePage(page); }, toast, saveLook, refreshCoins,
   onGearBought: ({ kind, id }) => { game.look[LOOK_KEY[kind] || kind] = id; saveLook(); toast(`${COSMETICS[kind]?.find((item) => item.id === id)?.name || 'Gear'} unlocked.`, 'good'); if (game.screen === 'home') renderHome(); },
 });
 home.addEventListener('input', (event) => { if (!SHOP_PAGES.includes(homePage)) return; const redraw = onShopInput(event.target); if (redraw) renderHome(); });
