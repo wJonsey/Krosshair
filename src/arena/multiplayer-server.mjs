@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
@@ -1042,7 +1042,7 @@ const RESTART_GRACE = Math.min(60, Math.max(0, Number(process.env.RESTART_GRACE_
 let stopping = false;
 function shutdown() { refundCrashes(); profiles.flush(); accounts.flush(); process.exit(0); }
 process.on('SIGINT', shutdown); // Ctrl+C while developing: no ceremony
-process.on('SIGTERM', () => {
+function beginStop() {
   if (stopping) return shutdown(); // asked twice: go now
   stopping = true;
   const pilots = [...sockets].filter((socket) => socket.identified).length;
@@ -1055,7 +1055,18 @@ process.on('SIGTERM', () => {
   const posted = webhooks.announceRestart({ seconds, pilots, matches });
   // Never let a slow webhook hold the deploy up: leave when the grace period is over, posted or not.
   Promise.race([Promise.all([posted, new Promise((resolve) => setTimeout(resolve, seconds * 1000))]), new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 3000))]).then(shutdown);
-});
+}
+process.on('SIGTERM', beginStop);
+// Windows never sends SIGTERM, so a deploy there drops a file in the data folder instead. A file needs no
+// open port or secret, and a stale one from a crash is cleared at boot so it cannot restart the game in a loop.
+const restartFlag = path.join(path.dirname(profiles.file), 'restart.flag');
+try { unlinkSync(restartFlag); } catch { /* none */ }
+setInterval(() => {
+  if (stopping || !existsSync(restartFlag)) return;
+  try { unlinkSync(restartFlag); } catch { /* already gone */ }
+  console.log('restart requested by the deploy script');
+  beginStop();
+}, 1000).unref();
 server.listen(port, '0.0.0.0', () => {
   console.log(`Krosshair online at http://localhost:${port}/`);
   webhooks.announceBoot().catch((error) => console.warn('update webhook failed', error.message));
