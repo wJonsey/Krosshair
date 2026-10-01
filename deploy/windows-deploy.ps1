@@ -41,10 +41,10 @@ if ($graceful) {
   nssm stop krosshair 2>&1 | Out-Null
   $until = (Get-Date).AddSeconds(30)
   while ((nssm status krosshair) -notmatch 'STOPPED' -and (Get-Date) -lt $until) { Start-Sleep -Seconds 2 }
-  if ((nssm status krosshair) -notmatch 'STOPPED') {
-    Get-Game | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-    Start-Sleep -Seconds 3
-  }
+  # The service can report STOPPED while the game it started is still alive on the old code, so no game
+  # process is allowed to outlive this step, whatever the service says.
+  Get-Game | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+  Start-Sleep -Seconds 3
   if ((nssm status krosshair) -notmatch 'STOPPED') {
     $svcPid = ((sc.exe queryex krosshair | Select-String 'PID').ToString() -replace '\D', '')
     if ($svcPid -and $svcPid -ne '0') { taskkill /F /PID $svcPid | Out-Null }
@@ -53,4 +53,8 @@ if ($graceful) {
 }
 
 if ((nssm status krosshair) -notmatch 'RUNNING') { nssm start krosshair 2>&1 | Out-Null }
-Add-Content $log "$(Get-Date -Format s) deploy complete $want, service $(nssm status krosshair)"
+# Prove it came back: a game process that started after this deploy began, or try once more.
+Start-Sleep -Seconds 8
+$fresh = Get-Game | Select-Object -First 1
+if (-not $fresh) { Add-Content $log "$(Get-Date -Format s) no game process after restart, restarting the service"; nssm restart krosshair 2>&1 | Out-Null; Start-Sleep -Seconds 8 }
+Add-Content $log "$(Get-Date -Format s) deploy complete $want, service $(nssm status krosshair), game pid $((Get-Game | Select-Object -First 1).ProcessId)"
