@@ -1057,6 +1057,7 @@ function beginStop() {
   Promise.race([Promise.all([posted, new Promise((resolve) => setTimeout(resolve, seconds * 1000))]), new Promise((resolve) => setTimeout(resolve, seconds * 1000 + 3000))]).then(shutdown);
 }
 process.on('SIGTERM', beginStop);
+// (deploy/windows-deploy.ps1 writes the file; deploy/run-game.cmd starts the game again after it exits.)
 // Windows never sends SIGTERM, so a deploy there drops a file in the data folder instead. A file needs no
 // open port or secret, and a stale one from a crash is cleared at boot so it cannot restart the game in a loop.
 const restartFlag = path.join(path.dirname(profiles.file), 'restart.flag');
