@@ -15,6 +15,7 @@ const STYLES = {
   street: { base: '#2a2d34', dark: '#15171b', trim: '#0f1013', ink: '#f4f4f4', mark: 'STREET', tags: ['#ff3d7f', '#3ff2ff', '#ffe14d', '#7dff5a'], metal: 0.25 },
   winter: { base: '#b8cad6', dark: '#5d7384', trim: '#8fa6b5', ink: '#244157', accent: '#3f8fc4', bright: '#dcecf5', mark: 'WINTER', frost: true, glow: 0.9, metal: 0.55 },
   forge: { base: '#26282c', dark: '#141518', trim: '#34373c', ink: '#ff9448', rivet: '#ff8a3a', mark: 'FORGE', forge: true, glow: 1.8, glowText: 0.6, metal: 0.6 },
+  blade: { base: '#aeb9c2', dark: '#59646d', trim: '#20262c', ink: '#12171c', rivet: '#e9eef2', bright: '#f4f7f9', mark: 'BLADE', glow: 0.8, metal: 0.8 },
   cosmic: { base: '#140b2c', dark: '#0a0618', trim: '#3d2f7a', ink: '#e4d9ff', rivet: '#b9a4ff', bright: '#c9bbff', mark: 'COSMIC', stars: ['#8a5cff', '#ff5cc8', '#3fd8ff'], glow: 1.5, glowText: 0.5, metal: 0.45 },
 };
 function seeded(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }

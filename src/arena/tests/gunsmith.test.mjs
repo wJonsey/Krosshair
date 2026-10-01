@@ -750,7 +750,11 @@ test('a refill respects the rules about when builds apply', async () => {
 // opens and closes a list and shows numbers, and every change still goes through the one fit handler.
 test('the redrawn gunsmith changes the build only through the fit handler it always had', () => {
   const shop = readFileSync(new URL('../client/shop.js', import.meta.url), 'utf8');
-  const render = shop.slice(shop.indexOf('function partCard'), shop.indexOf('// ------------------------------------------------------------------ games'));
+  // The games used to be the next section of this file. They have their own (client/arcade.js), so the
+  // gunsmith's drawing now runs up to the wallet.
+  const end = shop.indexOf('// ------------------------------------------------------------------ wallet');
+  assert.ok(end > 0, 'the section marker this test cuts at has gone');
+  const render = shop.slice(shop.indexOf('function partCard'), end);
   assert.ok(!/smithDrafts\[/.test(render), 'drawing the screen must never write a build');
   assert.ok(!/keepBuilds\(/.test(render), 'nor save one');
   const ui = shop.slice(shop.indexOf('if (d.smithSlot) {'), shop.indexOf('// Gunsmith. Fitting a part'));

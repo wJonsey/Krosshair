@@ -6,11 +6,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ProfileStore } from '../server/profiles.js';
 import { AccountStore } from '../server/accounts.js';
-import { buyGear, buySkin, cashOutCrash, openCrate, playGame, refundCrashes, scrapSkin, sendCoins, startCrash, tradeUp } from '../server/economy.js';
+import { buyGear, buySkin, cashOutCrash, openCrate, playGame, playMines, refundCrashes, scrapSkin, sendCoins, startCrash, tradeUp } from '../server/economy.js';
+import { MINES, WHEEL, minesMultiplier } from '../shared/economy.js';
 import { Room } from '../server/room.js';
 import { isDev } from '../server/devs.js';
 import { COSMETICS, DEFAULT_LOOK, cosmeticUnlocked } from '../shared/constants.js';
-import { COINS, CRASH, CRATES, EPIC_OR_BETTER, FINISHES, PLINKO, RARITY, crashAt, hiloMultiplier, SCRAP, SLOTS, crateFinishes, crateOdds, finishInfo, finishPrice, finishValue, killCoins, slotsMultiplier } from '../shared/economy.js';
+import { COINS, CRASH, CRATES, EPIC_OR_BETTER, FINISHES, PLINKO, RARITY, crashAt, hiloMultiplier, SCRAP, SLOTS, crateFinishes, crateOdds, finishInfo, finishPrice, finishValue, killCoins, slotsMultiplier, KNIVES, crateItems, knifeInfo } from '../shared/economy.js';
 import { readFileSync } from 'node:fs';
 
 async function stores() {
@@ -79,7 +80,7 @@ test('every crate charges its price, drops only from its own pool, and gives a s
   profiles.credit(token, 10 ** 6, 'test', 'top up');
   let owned = 0;
   for (const crate of Object.values(CRATES)) {
-    const pool = crateFinishes(crate).map((finish) => finish.id);
+    const pool = crateItems(crate).map((item) => item.id);
     for (let i = 0; i < 40; i += 1) {
       const count = i % 4 ? 1 : 5;
       const before = profiles.coins(token);
@@ -87,9 +88,11 @@ test('every crate charges its price, drops only from its own pool, and gives a s
       assert.equal(drops.length, count);
       assert.equal(profiles.coins(token), before - crate.cost * count + drops.reduce((sum, drop) => sum + drop.refund, 0));
       for (const drop of drops) {
-        assert.ok(pool.includes(drop.finish), `${crate.id} dropped ${drop.finish}`);
-        assert.equal(finishInfo(drop.finish).rarity, drop.rarity);
-        if (!drop.duplicate) owned += 1;
+        // The Blade crate drops a knife; every other crate drops a finish.
+        const id = crate.knives ? drop.knife : drop.finish;
+        assert.ok(pool.includes(id), `${crate.id} dropped ${id}`);
+        assert.equal((crate.knives ? knifeInfo(id) : finishInfo(id)).rarity, drop.rarity);
+        if (!drop.duplicate && !crate.knives) owned += 1;
       }
     }
   }
@@ -476,4 +479,98 @@ test('a crash that lands exactly on the auto cash-out pays it', async () => {
   const server = readFileSync(new URL('../server/economy.js', import.meta.url), 'utf8');
   assert.match(server, /const cashes = autoCashOut\(auto, crash\);/, 'the server has to use the rule, not its own copy of it');
   assert.ok(!/auto < crash/.test(server), 'the old strict comparison is still in there');
+});
+
+test('the Blade crate gives knives: owned once, refunded after, and only an owned one can be carried', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 10 ** 6, 'test', 'top up');
+  const crate = CRATES.blade;
+  assert.ok(crate.knives && !crate.weights.common, 'a knife crate, and never a common');
+  assert.equal(KNIVES.length, 13);
+  const before = profiles.wallet(token).finishes.length;
+  const got = new Set();
+  for (let i = 0; i < 60; i += 1) {
+    const [drop] = openCrate(profiles, token, 'blade', 1).unboxed.drops;
+    assert.equal(drop.weapon, 'knife');
+    assert.equal(drop.duplicate, got.has(drop.knife), 'the second of a knife is a duplicate');
+    if (drop.duplicate) assert.ok(drop.refund > 0); else assert.equal(drop.refund, 0);
+    got.add(drop.knife);
+  }
+  const profile = profiles.wallet(token);
+  assert.equal(profile.finishes.length, before, 'no finishes come out of it');
+  assert.equal(profile.owned.filter((entry) => entry.startsWith('knife:')).length, got.size);
+  const mine = [...got][0], other = KNIVES.find((knife) => !got.has(knife.id));
+  assert.equal(profiles.sanitizeCosmetics(token, { knife: mine }).knife, mine);
+  if (other) assert.equal(profiles.sanitizeCosmetics(token, { knife: other.id }).knife, 'kestrel', 'a knife you never unboxed falls back to the issue blade');
+  assert.equal(profiles.sanitizeCosmetics(token, {}).knife, 'kestrel');
+});
+
+test('the wheel pays what the segment says and keeps about 5%', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 100000, 'test', 'top up');
+  const back = WHEEL.segments.reduce((sum, m) => sum + m, 0) / WHEEL.segments.length;
+  assert.ok(Math.abs(back - 0.95) < 0.001, `the wheel returns ${back}`);
+  for (let i = 0; i < 60; i += 1) {
+    const before = profiles.coins(token);
+    const { game } = playGame(profiles, token, { game: 'wheel', stake: 10 });
+    assert.ok(game.detail.slot >= 0 && game.detail.slot < WHEEL.segments.length);
+    assert.equal(game.detail.multiplier, WHEEL.segments[game.detail.slot]);
+    assert.equal(game.payout, Math.floor(10 * game.detail.multiplier));
+    assert.equal(profiles.coins(token), before - 10 + game.payout);
+  }
+  assert.equal(profiles.view(token).gameLog[0].game, 'wheel');
+});
+
+test('mines: the field is the server\'s, a tile is asked for one at a time, and a mine takes the stake', async () => {
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 5000, 'test', 'top up');
+  const start = profiles.coins(token);
+  assert.ok(playMines(profiles, token, { action: 'pick', cell: 3 }).error, 'no field to pick from yet');
+  assert.ok(playMines(profiles, token, { action: 'out' }).error);
+  const laid = playMines(profiles, token, { action: 'start', stake: 100, count: 3 });
+  assert.deepEqual(laid.mines.picked, []);
+  assert.equal(JSON.stringify(laid).includes('"mines":['), false, 'the page is never told where the mines are');
+  assert.equal(profiles.coins(token), start - 100, 'the stake is taken when the field is laid');
+  assert.ok(playMines(profiles, token, { action: 'start', stake: 100, count: 3 }).error, 'one field at a time');
+  assert.ok(playMines(profiles, token, { action: 'out' }).error, 'nothing to cash out before a tile is turned');
+  assert.deepEqual(playMines(profiles, token, { action: 'state' }).mines.picked, [], 'a refresh finds the field still there');
+  // Turn tiles until something ends it. Whatever happens, the wallet matches what the server said.
+  let result = null, safe = 0;
+  for (let cell = 0; cell < MINES.cells && !result; cell += 1) {
+    const reply = playMines(profiles, token, { action: 'pick', cell });
+    if (reply.game) { result = reply.game; break; }
+    safe += 1;
+    assert.equal(reply.mines.multiplier, minesMultiplier(3, safe));
+    assert.ok(playMines(profiles, token, { action: 'pick', cell }).error, 'the same tile twice is refused');
+    if (safe === 2) result = playMines(profiles, token, { action: 'out' }).game;
+  }
+  assert.ok(result, 'the round ended');
+  assert.equal(result.detail.mines.length, 3, 'the mines are shown once it is over');
+  if (result.detail.hit !== null) { assert.equal(result.payout, 0); assert.equal(profiles.coins(token), start - 100); }
+  else { assert.equal(result.payout, Math.floor(100 * minesMultiplier(3, 2))); assert.equal(profiles.coins(token), start - 100 + result.payout); }
+  assert.equal(playMines(profiles, token, { action: 'state' }).mines, null);
+  assert.equal(profiles.view(token).gameLog[0].game, 'mines');
+});
+
+test('mines pays more for every safe tile, never more than its cap, and a restart hands an open stake back', async () => {
+  for (const count of MINES.counts) {
+    let last = 0;
+    for (let picks = 1; picks <= MINES.cells - count; picks += 1) {
+      const m = minesMultiplier(count, picks);
+      assert.ok(m >= last && m <= MINES.max, `${count} mines, ${picks} picks: ${m}`);
+      last = m;
+    }
+  }
+  const { profiles } = await stores();
+  const token = ProfileStore.newToken();
+  profiles.credit(token, 1000, 'test', 'top up');
+  const start = profiles.coins(token);
+  playMines(profiles, token, { action: 'start', stake: 250, count: 5 });
+  assert.equal(profiles.coins(token), start - 250);
+  refundCrashes();
+  assert.equal(profiles.coins(token), start, 'the stake came back');
+  assert.equal(playMines(profiles, token, { action: 'state' }).mines, null);
 });

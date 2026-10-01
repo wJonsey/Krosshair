@@ -60,6 +60,29 @@ function scopeGlass(texture) {
   });
 }
 
+// How each blade is carried, drawn and swung. Every knife in the crate handles like itself.
+// chain: the attacks in order (a pause starts it again). time: seconds a swing takes. draw: how it comes
+// up. reach: how wide it cuts. hold: a small extra turn on the hammer grip. Small, because the hand and
+// forearm are part of the model: turn it far and the sleeve swings across the screen.
+// Damage and range are the server's and the same for every knife: this is only how it looks in the hand.
+export const KNIFE_STYLES = {
+  kestrel: { chain: ['slash', 'back', 'stab'], time: 0.42, draw: 'turn' },
+  bayonet: { chain: ['stab', 'slash', 'stab'], time: 0.4, draw: 'pull' },
+  tanto: { chain: ['slash', 'stab', 'back'], time: 0.38, draw: 'pull' },
+  bowie: { chain: ['slash', 'back', 'chop'], time: 0.47, draw: 'turn', reach: 1.15 },
+  dagger: { chain: ['stab', 'stab', 'back'], time: 0.35, draw: 'flip', hold: [-0.22, 0, 0] },
+  kukri: { chain: ['chop', 'slash', 'chop'], time: 0.46, draw: 'turn', reach: 1.1, hold: [-0.12, 0, 0] },
+  cleaver: { chain: ['chop', 'chop', 'slash'], time: 0.48, draw: 'pull', hold: [-0.18, 0, -0.1] },
+  trench: { chain: ['punch', 'back', 'stab'], time: 0.38, draw: 'pull' },
+  machete: { chain: ['slash', 'back', 'chop'], time: 0.5, draw: 'pull', reach: 1.3 },
+  karambit: { chain: ['hook', 'rip', 'hook'], time: 0.36, draw: 'ring', hold: [-0.2, 0.12, 0.28] },
+  butterfly: { chain: ['slash', 'back', 'stab'], time: 0.35, draw: 'fan' },
+  tomahawk: { chain: ['chop', 'slash', 'chop'], time: 0.5, draw: 'toss', hold: [-0.2, 0, 0] },
+  wakizashi: { chain: ['slash', 'back', 'stab'], time: 0.46, draw: 'sheath', reach: 1.35, hold: [-0.1, 0.1, 0] },
+  plasma: { chain: ['slash', 'back', 'whirl'], time: 0.4, draw: 'ignite', reach: 1.2 },
+};
+export const knifeStyle = (type) => KNIFE_STYLES[type] || KNIFE_STYLES.kestrel;
+
 // Capped at the 768 it always used, so this can only ever draw fewer pixels than before, never more.
 const SCOPE_STEPS = [256, 384, 512, 768];
 
@@ -99,7 +122,7 @@ export class ViewModel {
     this.eyeLocal = new THREE.Vector3(); this.inverse = new THREE.Matrix4();
     this.current = null;
     this.currentId = null;
-    this.accent = '#6ce6d1'; this.suit = '#ec6a9e'; this.skins = {}; this.charm = 'none'; this.builds = {};
+    this.accent = '#6ce6d1'; this.suit = '#ec6a9e'; this.skins = {}; this.knifeType = 'kestrel'; this.charm = 'none'; this.builds = {};
     this.charmGravity = new THREE.Vector3(0, -1, 0); this.charmJolt = new THREE.Vector3();
     this.kick = 0; this.kickRot = 0; this.swayX = 0; this.swayY = 0; this.bob = 0; this.equip = 1; this.flashTime = 0;
     this.reloadTime = 0; this.reloadDuration = 0; this.cycleTime = -1; this.cycleDuration = 0; this.slash = -1; this.landDip = 0;
@@ -111,10 +134,11 @@ export class ViewModel {
 
   // builds: what the gunsmith bolted on. The models are cached per gun, so a change to a build has to
   // drop them the same way a change of skin does, or you keep looking at the gun you used to have.
-  setLook(suit, accent, skins = {}, charm = 'none', builds = {}) {
-    if (suit === this.suit && accent === this.accent && charm === this.charm
+  // knife: which blade model the third slot holds (COSMETICS.knife).
+  setLook(suit, accent, skins = {}, charm = 'none', builds = {}, knife = 'kestrel') {
+    if (suit === this.suit && accent === this.accent && charm === this.charm && (knife || 'kestrel') === this.knifeType
       && JSON.stringify(skins) === JSON.stringify(this.skins) && JSON.stringify(builds) === JSON.stringify(this.builds)) return;
-    this.suit = suit; this.accent = accent; this.skins = { ...skins }; this.charm = charm || 'none'; this.builds = { ...builds };
+    this.suit = suit; this.accent = accent; this.skins = { ...skins }; this.charm = charm || 'none'; this.builds = { ...builds }; this.knifeType = knife || 'kestrel';
     this.models.forEach((model) => this.holder.remove(model));
     this.models.clear();
     if (this.currentId) { const id = this.currentId; this.currentId = null; this.setWeapon(id, true); }
@@ -122,7 +146,7 @@ export class ViewModel {
 
   setWeapon(id, instant = false) {
     if (id === this.currentId) return;
-    if (!this.models.has(id)) { const model = buildWeapon(id, this.accent, this.skins[id], this.builds?.[id] || null); model.userData.sleeve.color.set(this.suit);
+    if (!this.models.has(id)) { const model = buildWeapon(id, this.accent, this.skins[id], this.builds?.[id] || (id === 'knife' ? { knife: this.knifeType } : null)); model.userData.sleeve.color.set(this.suit);
       // Layer 1 is what stays sharp while the gun is blurred: the scope's picture and the projected reticles.
       if (model.userData.lens) { model.userData.lens.material = this.scopeMaterial; model.userData.lens.layers.set(1); }
       const charm = WEAPONS[id]?.melee ? null : buildCharm(this.charm);
@@ -153,12 +177,13 @@ export class ViewModel {
   cancelReload() { this.reloadTime = 0; }
   // Turn the weapon over in the hands for a look at it (and its finish). Anything else you do ends it.
   inspect() { if (this.reloadTime <= 0 && this.slash < 0 && this.inspectTime < 0) this.inspectTime = 0; }
-  // Attacks chain: forehand slash, backhand slash, then a stab. Pause for a second and the chain starts again.
+  // Attacks chain, each blade in its own order (KNIFE_STYLES). Pause for a second and the chain starts again.
   melee() {
     const now = performance.now();
     if (now - this.lastSlashAt > 1100) this.slashCount = 0;
     this.lastSlashAt = now;
-    this.slashKind = this.slashCount % 3;
+    const chain = this.current?.userData.knife ? knifeStyle(this.knifeType).chain : ['butt'];
+    this.slashKind = chain[this.slashCount % chain.length];
     this.slashCount += 1;
     this.slash = 0;
     this.inspectTime = -1;
@@ -329,37 +354,66 @@ export class ViewModel {
       }
     }
 
+    const style = data.knife ? knifeStyle(this.knifeType) : null;
     if (data.knife) {
       // Hammer grip: fist low on the right, blade up and tipped forward, edge toward the target. Never dead still.
-      model.rotation.x += 0.95 + Math.sin(now * 1.3) * 0.015;
-      model.rotation.y += 0.3 + Math.sin(now * 0.9 + 1) * 0.02;
-      model.rotation.z += -0.18 + Math.sin(now * 0.75) * 0.012;
-      // Draw: up from below with one turn in the hand.
-      if (this.equip < 1) { const spin = 1 - ease; model.rotation.x -= spin * Math.PI * 2; model.position.y -= spin * 0.16; model.position.x += spin * 0.05; }
+      const hold = style.hold || [0, 0, 0];
+      model.rotation.x += 0.95 + hold[0] + Math.sin(now * 1.3) * 0.015;
+      model.rotation.y += 0.3 + hold[1] + Math.sin(now * 0.9 + 1) * 0.02;
+      model.rotation.z += -0.18 + hold[2] + Math.sin(now * 0.75) * 0.012;
+      // The draw, each in its own way.
+      if (this.equip < 1) {
+        const left = 1 - ease, hop = Math.sin(this.equip * Math.PI);
+        if (style.draw === 'pull') { model.position.y -= left * 0.22; model.rotation.x -= left * 0.9; model.rotation.z += left * 0.3; }                                   // straight up out of the sheath
+        else if (style.draw === 'flip') { model.rotation.z += left * Math.PI; model.position.y -= left * 0.14 - hop * 0.03; }                                           // turned over in the fingers
+        else if (style.draw === 'ring') { model.rotation.z -= left * Math.PI * 4; model.position.y -= left * 0.1; model.position.x += hop * 0.03; }                      // twice round the finger ring
+        else if (style.draw === 'fan') { model.rotation.z -= left * Math.PI * 6; model.rotation.x += hop * 0.5; model.position.y -= left * 0.12; model.position.x += hop * 0.05; }   // flicked open
+        else if (style.draw === 'toss') { model.rotation.z += left * Math.PI * 2; model.position.y += hop * 0.09 - left * 0.1; }                                         // one turn through the air, caught
+        else if (style.draw === 'sheath') { model.position.x -= left * 0.3; model.position.y -= left * 0.14; model.rotation.y -= left * 1.3; model.rotation.z += left * 0.6; }   // drawn across from the hip
+        else if (style.draw === 'ignite') { model.position.z += left * 0.12; model.rotation.z += left * 1.1; model.position.y -= left * 0.08; model.position.x += Math.sin(left * 40) * 0.004 * left; }
+        else { model.rotation.x -= left * Math.PI * 2; model.position.y -= left * 0.16; model.position.x += left * 0.05; }                                              // up from below with one turn in the hand
+      }
     }
     if (this.slash >= 0) {
-      this.slash += dt / (data.knife ? 0.42 : 0.32);
+      this.slash += dt / (style ? style.time : 0.32);
       const k = Math.min(1, this.slash);
       if (data.knife) {
         // wind: a short pull back; cut: fast and late-peaking; home: eases back to the ready.
         const wind = Math.sin(span(k, 0, 0.2) * Math.PI);
         const cut = smoothstep(k, 0.14, 0.42);
         const home = 1 - smoothstep(k, 0.55, 1);
-        if (this.slashKind === 2) {
+        const reach = style.reach || 1, kind = this.slashKind;
+        if (kind === 'stab') {
           // Stab: the point comes down level, drives out along the view, snaps back.
           const drive = cut * home;
-          model.rotation.x -= (wind * 0.2 + drive) * 0.85; model.rotation.y -= drive * 0.2; model.rotation.z += drive * 0.25;
-          model.position.z += wind * 0.09 - drive * 0.3; model.position.x -= drive * 0.1; model.position.y += drive * 0.09;
+          model.rotation.x -= (wind * 0.2 + drive) * 0.85 + (style.hold?.[0] || 0) * drive; model.rotation.y -= drive * 0.2; model.rotation.z += drive * 0.25;
+          model.position.z += wind * 0.09 - drive * 0.3 * reach; model.position.x -= drive * 0.1; model.position.y += drive * 0.09;
+        } else if (kind === 'chop') {
+          // Chop: up over the shoulder, then straight down through the middle of the view.
+          const drive = cut * home;
+          model.rotation.x += wind * 0.45 - drive * 0.8; model.rotation.z += drive * 0.3;
+          model.position.y += wind * 0.15 - drive * 0.2; model.position.z += wind * 0.06 - drive * 0.24 * reach; model.position.x -= drive * 0.15;
+        } else if (kind === 'punch') {
+          // The knuckle guard goes in first: a straight jab, the blade barely turning.
+          const drive = cut * home;
+          model.position.z += wind * 0.1 - drive * 0.34; model.position.x -= drive * 0.13; model.position.y += drive * 0.07;
+          model.rotation.y += drive * 0.35; model.rotation.z -= drive * 0.3; model.rotation.x -= drive * 0.25;
+        } else if (kind === 'hook' || kind === 'rip') {
+          // Point down: a hook up across the body, then the rip back down the other way.
+          const dir = kind === 'hook' ? 1 : -1, sweep = (cut - wind * 0.35) * home, arc = Math.sin(cut * Math.PI) * home;
+          model.position.x -= dir * sweep * 0.32; model.position.y += dir * sweep * 0.13 + arc * 0.03; model.position.z -= arc * 0.2;
+          model.rotation.z += dir * sweep * 1.2; model.rotation.y += dir * sweep * 0.8; model.rotation.x += dir * sweep * 0.25;
         } else {
           // Slashes cross the view: forehand right to left and down, backhand back the other way and up.
-          const dir = this.slashKind === 0 ? 1 : -1;
+          // A whirl is a forehand with the blade rolled right round on the way.
+          const dir = kind === 'back' ? -1 : 1;
           const sweep = (cut - wind * 0.3) * home, arc = Math.sin(cut * Math.PI) * home;
-          model.position.x -= dir * sweep * 0.3 + (dir < 0 ? wind * 0.1 : 0);
+          model.position.x -= (dir * sweep * 0.3 + (dir < 0 ? wind * 0.1 : 0)) * reach;
           model.position.y += arc * 0.07 + dir * (wind * 0.03 - sweep * 0.025);
-          model.position.z -= arc * 0.18 - wind * 0.04;
+          model.position.z -= (arc * 0.18 - wind * 0.04) * reach;
           model.rotation.x -= arc * 0.3 + sweep * 0.12;
           model.rotation.y += dir * sweep * 0.9;
-          model.rotation.z += dir * sweep * 1.1;
+          model.rotation.z += dir * sweep * 1.1 + (kind === 'whirl' ? smoothstep(k, 0.1, 0.6) * Math.PI * 2 : 0);
         }
       } else {
         // A gun butt: the weapon whips across and back.

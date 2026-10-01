@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { MAP_IDS, ROYALE_MAP } from '../shared/map.js';
 import { WEAPONS } from '../shared/constants.js';
-import { FEATURE_IDS, OUTAGE_KINDS, cleanReason, emptyOutages } from '../shared/outage.js';
+import { FEATURE_IDS, OUTAGE_KINDS, cleanDowntime, cleanReason, downtimeLive, emptyOutages } from '../shared/outage.js';
 
 const known = (kind, id) => (kind === 'map' ? [...MAP_IDS, ROYALE_MAP].includes(id)
   : kind === 'weapon' ? Boolean(WEAPONS[id])
@@ -17,6 +17,7 @@ export class OutageBook {
   constructor(file) {
     this.file = file;
     this.out = emptyOutages();
+    this.planned = null;   // scheduled downtime: { at, minutes, note, by }
     this.load();
   }
 
@@ -29,6 +30,9 @@ export class OutageBook {
           if (known(kind, id)) this.out[kind][id] = { kind, id, reason: cleanReason(entry?.reason), by: String(entry?.by || 'dev').slice(0, 32), at: Number(entry?.at) || Date.now() };
         }
       }
+      // Kept across the restart too: downtime planned for tonight should survive a deploy this afternoon.
+      const planned = raw?.downtime ? cleanDowntime(raw.downtime, raw.downtime.at) : null;
+      if (planned) this.planned = { ...planned, by: String(raw.downtime.by || 'dev').slice(0, 32) };
     } catch { /* first run, or nothing pulled */ }
   }
 
@@ -36,7 +40,7 @@ export class OutageBook {
     try {
       mkdirSync(path.dirname(this.file), { recursive: true });
       const temporary = `${this.file}.tmp`;
-      writeFileSync(temporary, JSON.stringify(this.out, null, 2));
+      writeFileSync(temporary, JSON.stringify({ ...this.out, downtime: this.planned }, null, 2));
       renameSync(temporary, this.file);
     } catch (error) { console.warn(`outages: could not save (${error.message})`); }
   }
@@ -48,6 +52,21 @@ export class OutageBook {
   get(kind, id) { return this.out[kind]?.[id] || null; }
   // Maps still in rotation. The caller decides what to do when that is empty.
   playableMaps(ids) { return ids.filter((id) => !this.isOut('map', id)); }
+
+  // Planned downtime, or null once it is over. What every pilot is sent.
+  downtime(now = Date.now()) {
+    if (this.planned && !downtimeLive(this.planned, now)) { this.planned = null; this.save(); }
+    return this.planned ? { at: this.planned.at, minutes: this.planned.minutes, note: this.planned.note } : null;
+  }
+  // Set it (raw: { at, minutes, note }) or take it down (raw: null). Returns false for nonsense.
+  plan(raw, by, now = Date.now()) {
+    if (raw === null) { const had = Boolean(this.planned); this.planned = null; if (had) this.save(); return true; }
+    const clean = cleanDowntime(raw, now);
+    if (!clean) return false;
+    this.planned = { ...clean, by: String(by || 'dev').slice(0, 32) };
+    this.save();
+    return true;
+  }
 
   // Returns what changed, or null when the call was nonsense or made no difference.
   set(kind, id, on, reason, by) {

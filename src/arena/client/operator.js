@@ -1,18 +1,21 @@
-// The third-person operator: a faceted, low-poly armoured pilot. Everything is procedural.
+// The third-person operator: an armoured pilot, modelled to the standard of the guns. Everything is procedural.
+// The body itself (limbs, torso, plate carrier, boots, gloves) is shaped from lathes, bevelled slabs and
+// side profiles, and baked into one mesh a material for each part of the rig, so the detail costs fewer
+// draw calls than the boxes it replaced. Headgear, faces and packs are groups hung on that body.
 // build → style → animate. The weapon in hand is the real first-person model, and the arms are
 // solved each frame so both hands always sit on it, whatever is being carried.
 // Proportions follow the hit zones in shared/combat.js (1.8 m tall, head centre 1.62 m, torso 0.9–1.4 m).
 import * as THREE from 'three';
 import { WEAPONS } from '../shared/constants.js';
 import { applyPattern } from './skins.js';
-import { buildWeapon, stripHands } from './viewmodel.js';
+import { buildWeapon, knifeStyle, stripHands } from './viewmodel.js';
 import { buildCharm, updateCharm } from './charms.js';
 
 const TEAM_COLORS = { friend: '#6ce6d1', foe: '#ff4d3d' };
 export { TEAM_COLORS };
 
 function mat(color, options = {}) {
-  return new THREE.MeshStandardMaterial({ color, roughness: options.rough ?? 0.6, metalness: options.metal ?? 0.1, emissive: options.emissive ?? '#000000', emissiveIntensity: options.glow ?? 0, flatShading: true });
+  return new THREE.MeshStandardMaterial({ color, roughness: options.rough ?? 0.6, metalness: options.metal ?? 0.1, emissive: options.emissive ?? '#000000', emissiveIntensity: options.glow ?? 0, flatShading: !options.smooth });
 }
 
 // Geometry is shared by every operator in the match; only materials are per pilot.
@@ -28,11 +31,67 @@ function add(group, geometry, material, position = [0, 0, 0], rotation = null, s
   return mesh;
 }
 const block = (group, key, size, material, position, rotation = null) => add(group, geo(`box:${key}`, () => new THREE.BoxGeometry(...size)), material, position, rotation);
-// A tapered prism hanging down from the group's origin: limbs. `sides` keeps it faceted.
-function limb(group, key, length, top, bottom, material, sides = 6) {
-  return add(group, geo(`limb:${key}`, () => new THREE.CylinderGeometry(top, bottom, length, sides).translate(0, -length / 2, 0)), material);
-}
 const gem = (group, key, radius, material, position, scale = null) => add(group, geo(`gem:${key}`, () => new THREE.IcosahedronGeometry(radius, 0)), material, position, null, scale);
+// ------------------------------------------------------------------ the body kit
+// Shapes the body is made of. Each returns a fresh geometry; bodyPart bakes and caches the result.
+// A slab with every edge rounded off: plates, pouches, pads.
+function slab(w, h, d, r = 0.01) {
+  const bevel = Math.min(r, d / 2 - 0.0005, w / 2 - 0.0005, h / 2 - 0.0005);
+  const x = w / 2 - bevel, y = h / 2 - bevel, c = Math.max(0.0005, Math.min(r, x, y));
+  const shape = new THREE.Shape();
+  shape.moveTo(-x + c, -y); shape.lineTo(x - c, -y); shape.quadraticCurveTo(x, -y, x, -y + c); shape.lineTo(x, y - c); shape.quadraticCurveTo(x, y, x - c, y);
+  shape.lineTo(-x + c, y); shape.quadraticCurveTo(-x, y, -x, y - c); shape.lineTo(-x, -y + c); shape.quadraticCurveTo(-x, -y, -x + c, -y);
+  const depth = Math.max(0.0005, d - bevel * 2);
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 3, steps: 1 }).translate(0, 0, -depth / 2);
+}
+// Turned on a lathe: [radius, height] from the bottom up. Limbs, the torso, anything round.
+const turned = (points, sides = 14) => new THREE.LatheGeometry(points.map(([r, y]) => new THREE.Vector2(r, y)), sides);
+// A side silhouette, points as [forward, up], extruded across the body and bevelled: boots.
+function silhouette(points, width, bevel = 0.008) {
+  const shape = new THREE.Shape();
+  points.forEach(([forward, up], index) => (index ? shape.lineTo(forward, up) : shape.moveTo(forward, up)));
+  shape.closePath();
+  const depth = Math.max(0.001, width - bevel * 2);
+  return new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, steps: 1, curveSegments: 4 }).translate(0, 0, -depth / 2).rotateY(Math.PI / 2);
+}
+const band = (r, tube, sides = 18) => new THREE.TorusGeometry(r, tube, 6, sides).rotateX(Math.PI / 2);
+function mergeBody(list) {
+  let count = 0;
+  for (const geometry of list) count += geometry.attributes.position.count;
+  const position = new Float32Array(count * 3), normal = new Float32Array(count * 3);
+  let at = 0;
+  for (const geometry of list) { position.set(geometry.attributes.position.array, at * 3); normal.set(geometry.attributes.normal.array, at * 3); at += geometry.attributes.position.count; geometry.dispose(); }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute('position', new THREE.BufferAttribute(position, 3));
+  merged.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+  return merged;
+}
+// One part of the rig. `make(put)` lays its pieces down, each against a material by name; the pieces of
+// one material become one mesh. Built the first time a pilot needs it and shared by every pilot after.
+const BODY = new Map();
+const bodyMatrix = new THREE.Matrix4(), bodyTurn = new THREE.Quaternion(), bodyEuler = new THREE.Euler(), bodyAt = new THREE.Vector3(), bodySize = new THREE.Vector3();
+function bodyPart(group, key, mats, make) {
+  let baked = BODY.get(key);
+  if (!baked) {
+    const piles = new Map();
+    make((name, geometry, position = [0, 0, 0], rotation = null, scale = null) => {
+      bodyEuler.set(...(rotation || [0, 0, 0]));
+      bodyMatrix.compose(bodyAt.set(...position), bodyTurn.setFromEuler(bodyEuler), scale ? bodySize.set(...scale) : bodySize.set(1, 1, 1));
+      const flat = geometry.index ? geometry.toNonIndexed() : geometry;
+      if (flat !== geometry) geometry.dispose();
+      flat.applyMatrix4(bodyMatrix);
+      if (!piles.has(name)) piles.set(name, []);
+      piles.get(name).push(flat);
+    });
+    baked = [...piles].map(([name, list]) => [name, mergeBody(list)]);
+    BODY.set(key, baked);
+  }
+  return baked.map(([name, geometry]) => add(group, geometry, mats[name]));
+}
+const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const ball = (r, w = 14, h = 9) => new THREE.SphereGeometry(r, w, h);
+const rod = (top, bottom, length, sides = 12) => new THREE.CylinderGeometry(top, bottom, length, sides);
+
 // Bends a fresh geometry once, before it is cached: `move` shifts each vertex in place.
 const bend = new THREE.Vector3();
 function warp(geometry, move) {
@@ -65,6 +124,8 @@ function onMask(mesh, x, y, lift = 0, roll = 0) {
 
 // ------------------------------------------------------------------ arms
 const UPPER = 0.29, FORE = 0.29;
+// Legs: hip to knee, knee to ankle, and how high the ankle sits when the sole is flat on the ground.
+const THIGH = 0.44, SHIN = 0.4, ANKLE = 0.078;
 const SHOULDER = 0.215, SHOULDER_Y = -0.015;
 // Shoulders as the aim group sees them once the chest is turned by `blade` (support shoulder forward).
 const shoulderAt = (side, blade, out) => out.set(side * SHOULDER * Math.cos(blade), SHOULDER_Y, side * SHOULDER * Math.sin(blade));
@@ -111,11 +172,13 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const root = new THREE.Group();
   // Yaw first, then any tilt: a pilot in free fall pitches face down about their own shoulders' line.
   root.rotation.order = 'YXZ';
-  const suit = mat(color, { rough: 0.55 });
-  const dark = mat('#20262d', { rough: 0.9 });
-  const gear = mat('#38424c', { rough: 0.6, metal: 0.2 });
-  const plate = mat('#5d6a76', { rough: 0.45, metal: 0.3 });
-  const skin = mat('#c99a7c', { rough: 0.85 });
+  // Cloth, webbing, armour and skin are lit smooth: the shapes carry the form now, not the facets.
+  const suit = mat(color, { rough: 0.72, metal: 0.02, smooth: true });
+  const dark = mat('#1b2026', { rough: 0.9, smooth: true });
+  const gear = mat('#333c45', { rough: 0.66, metal: 0.15, smooth: true });
+  const plate = mat('#596673', { rough: 0.42, metal: 0.35, smooth: true });
+  const skin = mat('#c99a7c', { rough: 0.85, smooth: true });
+  const body = { suit, dark, gear, plate, skin };
   const visorMat = mat(accent, { emissive: accent, glow: 1.4, rough: 0.15, metal: 0.4 });
   const teamMat = mat('#ffffff', { emissive: '#ffffff', glow: 1.8 });
   const gold = mat('#e2b646', { rough: 0.25, metal: 0.6, emissive: '#6b4a08', glow: 0.6 });
@@ -141,31 +204,67 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const hips = new THREE.Group();
   hips.position.y = 0.96;
   root.add(hips);
-  add(hips, geo('pelvis', () => new THREE.CylinderGeometry(0.175, 0.13, 0.2, 8)), dark, [0, -0.02, 0], null, [1, 1, 0.68]);
-  block(hips, 'belt', [0.37, 0.06, 0.25], gear, [0, 0.085, 0]);
-  block(hips, 'buckle', [0.08, 0.05, 0.02], plate, [0, 0.085, -0.13]);
-  block(hips, 'pouchL', [0.07, 0.12, 0.11], gear, [-0.2, 0.0, 0.02]);
-  block(hips, 'dump', [0.15, 0.12, 0.06], gear, [0.05, 0.0, 0.14]);
-  block(hips, 'tasset', [0.13, 0.13, 0.025], plate, [0, -0.06, -0.115], [0.12, 0, 0]);
+  bodyPart(hips, 'hips', body, (put) => {
+    put('suit', turned([[0, -0.13], [0.085, -0.13], [0.15, -0.08], [0.174, -0.01], [0.17, 0.06], [0.158, 0.11], [0, 0.11]], 18), [0, 0, 0], null, [1, 1, 0.7]);
+    // Belt, buckle, and what hangs off it.
+    put('gear', rod(0.178, 0.176, 0.058, 20), [0, 0.085, 0], null, [1, 1, 0.71]);
+    put('plate', slab(0.072, 0.048, 0.02, 0.008), [0, 0.085, -0.126]);
+    put('dark', box(0.03, 0.03, 0.012), [0, 0.085, -0.134]);
+    put('gear', slab(0.07, 0.115, 0.1, 0.014), [-0.192, 0.0, 0.02]);
+    put('dark', slab(0.074, 0.04, 0.104, 0.012), [-0.193, 0.045, 0.02]);
+    put('gear', slab(0.15, 0.12, 0.06, 0.016), [0.05, 0.0, 0.135]);
+    put('dark', slab(0.154, 0.035, 0.064, 0.012), [0.05, 0.048, 0.135]);
+    put('gear', slab(0.06, 0.08, 0.04, 0.01), [0.115, 0.01, -0.105], [0, -0.5, 0]);
+    put('gear', slab(0.125, 0.125, 0.03, 0.014), [0, -0.06, -0.112], [0.12, 0, 0]);
+    put('plate', slab(0.08, 0.075, 0.012, 0.01), [0, -0.062, -0.129], [0.12, 0, 0]);
+  });
   const legs = [-1, 1].map((side) => {
     const pivot = new THREE.Group();
     pivot.position.set(side * 0.1, -0.05, 0);
-    limb(pivot, 'thigh', 0.44, 0.1, 0.074, dark);
-    block(pivot, 'thighPlate', [0.13, 0.24, 0.03], suit, [side * 0.005, -0.19, -0.082], [-0.05, 0, 0]);
-    block(pivot, 'thighSide', [0.03, 0.2, 0.12], plate, [side * 0.092, -0.17, 0], [0, 0, side * 0.06]);
-    if (side > 0) { block(pivot, 'holster', [0.05, 0.17, 0.11], gear, [0.125, -0.2, 0.0]); block(pivot, 'holsterGrip', [0.035, 0.07, 0.05], dark, [0.125, -0.085, 0.03], [0.3, 0, 0]); }
+    bodyPart(pivot, side > 0 ? 'thighR' : 'thighL', body, (put) => {
+      put('suit', turned([[0, -0.44], [0.068, -0.44], [0.074, -0.4], [0.088, -0.28], [0.099, -0.14], [0.1, -0.04], [0.086, 0.01], [0, 0.01]], 14), [0, 0, 0], null, [1, 1, 1.04]);
+      // A hard plate over the quad, on webbing.
+      put('gear', slab(0.115, 0.21, 0.024, 0.016), [side * 0.004, -0.2, -0.098], [-0.06, 0, 0]);
+      put('plate', slab(0.078, 0.14, 0.014, 0.012), [side * 0.004, -0.2, -0.112], [-0.06, 0, 0]);
+      for (const [y, r] of [[-0.12, 0.099], [-0.28, 0.09]]) put('dark', band(r, 0.007), [0, y, 0], null, [1, 1, 1.04]);
+      if (side > 0) {
+        // The sidearm: a moulded holster on a drop-leg panel, the grip standing out of it.
+        put('gear', slab(0.03, 0.2, 0.13, 0.012), [0.112, -0.2, 0.0]);
+        put('dark', slab(0.05, 0.16, 0.085, 0.014), [0.138, -0.215, -0.005]);
+        put('dark', slab(0.034, 0.075, 0.05, 0.01), [0.14, -0.105, 0.03], [0.3, 0, 0]);
+        put('plate', box(0.036, 0.012, 0.03), [0.14, -0.132, 0.012]);
+      } else {
+        // A cargo pocket with a flap.
+        put('gear', slab(0.036, 0.15, 0.115, 0.012), [-0.106, -0.21, 0.004]);
+        put('dark', slab(0.04, 0.042, 0.119, 0.012), [-0.107, -0.145, 0.004]);
+        put('plate', box(0.012, 0.012, 0.016), [-0.128, -0.158, 0.004]);
+      }
+    });
     const knee = new THREE.Group();
     knee.position.set(0, -0.44, 0);
-    limb(knee, 'shin', 0.4, 0.074, 0.055, dark);
-    gem(knee, 'knee', 0.074, plate, [0, 0.0, -0.035], [1, 1.1, 0.8]);
-    block(knee, 'shinGuard', [0.105, 0.27, 0.035], suit, [0, -0.2, -0.062], [0.045, 0, 0]);
-    block(knee, 'calf', [0.09, 0.18, 0.04], gear, [0, -0.15, 0.06]);
+    bodyPart(knee, 'shin', body, (put) => {
+      put('suit', turned([[0, -0.4], [0.055, -0.4], [0.06, -0.33], [0.078, -0.2], [0.084, -0.1], [0.076, -0.02], [0.07, 0.025], [0, 0.025]], 14));
+      put('suit', ball(0.062, 12, 8), [0, -0.13, 0.03], null, [0.95, 1.5, 0.9]);          // the calf
+      // Knee pad: a moulded cap on a backing, strapped behind.
+      put('gear', slab(0.115, 0.13, 0.04, 0.02), [0, 0.0, -0.045]);
+      put('plate', ball(0.066, 14, 8), [0, 0.004, -0.05], null, [0.9, 1.05, 0.6]);
+      put('dark', band(0.078, 0.008), [0, -0.04, 0.004]);
+      // Shin guard with a raised spine, and the gaiter over the boot top.
+      put('gear', slab(0.1, 0.25, 0.028, 0.02), [0, -0.21, -0.07], [0.05, 0, 0]);
+      put('plate', slab(0.034, 0.2, 0.014, 0.01), [0, -0.21, -0.086], [0.05, 0, 0]);
+      put('dark', rod(0.072, 0.07, 0.06, 14), [0, -0.345, 0]);
+    });
     const foot = new THREE.Group();
     foot.position.set(0, -0.4, 0);
-    block(foot, 'ankle', [0.125, 0.15, 0.17], gear, [0, 0.015, 0.0]);
-    block(foot, 'toe', [0.125, 0.085, 0.15], gear, [0, -0.018, -0.15], [0.12, 0, 0]);
-    block(foot, 'toeCap', [0.13, 0.05, 0.06], plate, [0, -0.025, -0.205]);
-    block(foot, 'sole', [0.135, 0.035, 0.33], dark, [0, -0.06, -0.06]);
+    bodyPart(foot, 'boot', body, (put) => {
+      // A boot from its side profile: heel, arch, the rise of the toe, a shaft up the ankle.
+      put('gear', silhouette([[-0.07, 0.1], [-0.078, -0.02], [-0.074, -0.05], [0.17, -0.05], [0.202, -0.042], [0.212, -0.022], [0.196, -0.004], [0.14, 0.018], [0.08, 0.05], [0.058, 0.1]], 0.104, 0.016));
+      put('dark', silhouette([[-0.08, -0.048], [0.208, -0.048], [0.216, -0.058], [0.19, -0.078], [0.04, -0.078], [0.024, -0.068], [-0.022, -0.068], [-0.034, -0.078], [-0.082, -0.078]], 0.112, 0.004));
+      put('plate', slab(0.1, 0.03, 0.05, 0.014), [0, -0.026, -0.182], [0.2, 0, 0]);
+      for (let i = 0; i < 4; i += 1) put('dark', box(0.052, 0.006, 0.01), [0, 0.066 - i * 0.014, -0.064 - i * 0.022], [0.55, 0, 0]);
+      put('dark', rod(0.066, 0.064, 0.022, 14), [0, 0.094, -0.006]);
+      put('plate', box(0.018, 0.028, 0.006), [0, 0.02, 0.082]);
+    });
     knee.add(foot);
     pivot.add(knee);
     hips.add(pivot);
@@ -178,17 +277,36 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   hips.add(spine);
   const chest = new THREE.Group();
   spine.add(chest);
-  add(chest, geo('waist', () => new THREE.CylinderGeometry(0.155, 0.15, 0.2, 8)), dark, [0, 0.1, 0], null, [1, 1, 0.7]);
-  add(chest, geo('ribs', () => new THREE.CylinderGeometry(0.245, 0.16, 0.3, 8)), suit, [0, 0.33, 0], null, [1, 1, 0.6]);
-  add(chest, geo('yoke', () => new THREE.CylinderGeometry(0.12, 0.245, 0.07, 8)), suit, [0, 0.515, 0], null, [1, 1, 0.6]);
-  add(chest, geo('collar', () => new THREE.CylinderGeometry(0.082, 0.105, 0.07, 8)), gear, [0, 0.53, 0.005]);
-  // Armour: a two-part chest plate, abdominal plate, back plate, side panels, magazine pouches.
-  block(chest, 'plateF', [0.3, 0.17, 0.05], plate, [0, 0.38, -0.142], [0.16, 0, 0]);
-  block(chest, 'plateF2', [0.24, 0.1, 0.05], plate, [0, 0.255, -0.128], [-0.12, 0, 0]);
-  block(chest, 'plateB', [0.31, 0.3, 0.05], plate, [0, 0.32, 0.138], [-0.05, 0, 0]);
-  for (const side of [-1, 1]) block(chest, 'plateS', [0.03, 0.16, 0.17], gear, [side * 0.185, 0.24, 0]);
-  for (const x of [-0.085, 0, 0.085]) block(chest, 'mag', [0.072, 0.11, 0.04], gear, [x, 0.145, -0.125], [0.05, 0, 0]);
-  block(chest, 'radio', [0.05, 0.11, 0.04], dark, [-0.12, 0.4, -0.185], [0.16, 0, 0]);
+  bodyPart(chest, 'torso', body, (put) => {
+    // One turned form from waist to collar, flattened front to back: waist, ribs, the spread of the shoulders.
+    put('suit', turned([[0, -0.02], [0.166, -0.02], [0.168, 0.06], [0.172, 0.14], [0.2, 0.28], [0.234, 0.39], [0.244, 0.45], [0.21, 0.5], [0.13, 0.54], [0.09, 0.56], [0, 0.56]], 20), [0, 0, 0], null, [1, 1, 0.64]);
+    put('dark', rod(0.176, 0.174, 0.05, 20), [0, 0.07, 0], null, [1, 1, 0.66]);                    // the hem of the combat shirt
+    put('gear', rod(0.084, 0.106, 0.07, 14), [0, 0.53, 0.005]);
+    // Plate carrier: cummerbund, front and back panels with their plates, straps over the shoulders.
+    put('gear', rod(0.224, 0.196, 0.17, 20), [0, 0.235, 0], null, [1, 1, 0.66]);
+    put('gear', slab(0.3, 0.3, 0.05, 0.03), [0, 0.33, -0.132], [0.1, 0, 0]);
+    put('plate', slab(0.225, 0.15, 0.02, 0.022), [0, 0.398, -0.165], [0.14, 0, 0]);
+    put('gear', slab(0.31, 0.32, 0.05, 0.03), [0, 0.33, 0.132], [-0.05, 0, 0]);
+    put('plate', slab(0.23, 0.2, 0.016, 0.022), [0, 0.35, 0.16], [-0.05, 0, 0]);
+    put('dark', slab(0.11, 0.022, 0.022, 0.008), [0, 0.5, 0.152]);                                   // drag handle
+    for (const side of [-1, 1]) {
+      put('gear', slab(0.07, 0.028, 0.3, 0.012), [side * 0.105, 0.538, 0], [0, 0, -side * 0.18]);
+      put('plate', box(0.05, 0.012, 0.03), [side * 0.105, 0.548, -0.09], [0, 0, -side * 0.18]);
+      put('dark', box(0.012, 0.13, 0.15), [side * 0.215, 0.24, 0]);
+    }
+    // Three magazines in their pouches, flaps down, the tops just showing.
+    for (const x of [-0.085, 0, 0.085]) {
+      put('gear', slab(0.072, 0.112, 0.042, 0.01), [x, 0.2, -0.16], [0.04, 0, 0]);
+      put('dark', slab(0.076, 0.03, 0.046, 0.01), [x, 0.238, -0.162], [0.04, 0, 0]);
+      put('plate', box(0.046, 0.016, 0.022), [x, 0.264, -0.158]);
+    }
+    for (let i = 0; i < 3; i += 1) put('dark', box(0.25, 0.012, 0.006), [0, 0.22 + i * 0.07, 0.161 + i * 0.003], [-0.05, 0, 0]);   // webbing across the back
+    // Admin pouch high on the right, the radio and its stub aerial on the left.
+    put('gear', slab(0.1, 0.06, 0.026, 0.01), [0.072, 0.46, -0.172], [0.14, 0, 0]);
+    put('dark', slab(0.052, 0.12, 0.04, 0.01), [-0.122, 0.41, -0.186], [0.16, 0, 0]);
+    put('dark', rod(0.006, 0.007, 0.1, 6), [-0.136, 0.515, -0.178], [0.12, 0, 0]);
+    put('plate', box(0.03, 0.012, 0.01), [-0.122, 0.44, -0.208], [0.16, 0, 0]);
+  });
   // Packs: one group per option, shown by styleOperator.
   const packs = {};
   const packGroup = (id) => { const group = new THREE.Group(); group.visible = id === 'radio'; chest.add(group); packs[id] = group; return group; };
@@ -369,8 +487,9 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   for (const side of [-1, 1]) {
     const pad = new THREE.Group();
     pad.position.set(side * 0.245, 0.455, 0); pad.rotation.z = -side * 0.42;
-    add(pad, geo('pauldron', () => new THREE.CylinderGeometry(0.062, 0.118, 0.11, 6)), suit, [0, 0, 0], null, [1, 1, 1.12]);
-    block(pad, 'pauldronRim', [0.17, 0.022, 0.2], plate, [0, -0.06, 0]);
+    add(pad, geo('pauldron', () => new THREE.SphereGeometry(0.112, 16, 6, 0, Math.PI * 2, 0, Math.PI * 0.5).translate(0, -0.055, 0)), gear, [0, 0, 0], null, [1, 0.95, 1.14]);
+    add(pad, geo('pauldronCap', () => slab(0.11, 0.02, 0.14, 0.01)), plate, [0, 0.046, 0]);
+    add(pad, geo('pauldronRim', () => new THREE.TorusGeometry(0.112, 0.009, 6, 20).rotateX(Math.PI / 2)), dark, [0, -0.055, 0], null, [1, 1, 1.14]);
     block(pad, 'stripS', [0.1, 0.02, 0.02], teamMat, [0, -0.06, -0.105]);
     block(pad, 'stripS', [0.1, 0.02, 0.02], teamMat, [0, -0.06, 0.105]);
     chest.add(pad);
@@ -379,23 +498,36 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   // --- head: centre at 1.62 m ---------------------------------------------------------------------------
   const head = new THREE.Group();
   head.position.y = 0.56;
-  add(head, geo('neck', () => new THREE.CylinderGeometry(0.052, 0.062, 0.12, 6)), dark, [0, -0.09, 0.008]);
-  const face = add(head, geo('face', () => new THREE.IcosahedronGeometry(0.128, 1)), skin, [0, 0, 0], null, [0.92, 1.08, 1]);
-  add(head, geo('balaclava', () => new THREE.SphereGeometry(0.133, 10, 6, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48)), dark, [0, 0, 0], null, [0.95, 1.08, 1.02]);
+  add(head, geo('neck', () => new THREE.CylinderGeometry(0.054, 0.066, 0.13, 14)), dark, [0, -0.09, 0.008]);
+  const face = add(head, geo('face', () => new THREE.SphereGeometry(0.128, 20, 14)), skin, [0, 0, 0], null, [0.92, 1.08, 1]);
+  add(head, geo('balaclava', () => new THREE.SphereGeometry(0.133, 20, 8, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.48)), dark, [0, 0, 0], null, [0.95, 1.08, 1.02]);
   const jaw = block(head, 'jaw', [0.12, 0.05, 0.06], dark, [0, -0.095, -0.075], [0.35, 0, 0]);
   void face;
   // Headgear and face options: one group each, only the chosen one visible. The team lights stay on
   // every option so a side is always readable.
   const headgear = {}, faces = {};
   const option = (map, id, visible) => { const group = new THREE.Group(); group.visible = visible; head.add(group); map[id] = group; return group; };
-  const shell = (group, material = gear) => add(group, geo('helmet', () => new THREE.SphereGeometry(0.168, 10, 5, 0, Math.PI * 2, 0, Math.PI * 0.56)), material, [0, 0.025, 0], null, [1, 0.98, 1.1]);
+  const shell = (group, material = gear) => add(group, geo('helmet', () => new THREE.SphereGeometry(0.168, 22, 9, 0, Math.PI * 2, 0, Math.PI * 0.56)), material, [0, 0.025, 0], null, [1, 0.98, 1.1]);
+  // The combat helmet: a high-cut shell with a rim, rails, ear cups under them, a shroud for the mount.
   const lid = option(headgear, 'helmet', true);
   shell(lid);
-  block(lid, 'crest', [0.045, 0.03, 0.27], suit, [0, 0.183, 0.005]);
-  block(lid, 'brim', [0.2, 0.03, 0.07], gear, [0, 0.082, -0.168], [0.3, 0, 0]);
-  block(lid, 'nape', [0.2, 0.09, 0.03], gear, [0, -0.03, 0.17], [-0.25, 0, 0]);
-  for (const side of [-1, 1]) { block(lid, 'cheek', [0.03, 0.11, 0.13], gear, [side * 0.152, -0.015, 0.015]); block(lid, 'rail', [0.014, 0.025, 0.11], plate, [side * 0.17, 0.06, 0.0]); }
-  block(lid, 'nvgMount', [0.05, 0.045, 0.035], plate, [0, 0.135, -0.168]);
+  bodyPart(lid, 'helmet', body, (put) => {
+    put('dark', new THREE.TorusGeometry(0.166, 0.008, 6, 26).rotateX(Math.PI / 2), [0, -0.004, 0], null, [1, 1, 1.1]);
+    put('suit', slab(0.05, 0.02, 0.27, 0.01), [0, 0.184, 0.005]);
+    put('gear', slab(0.2, 0.026, 0.07, 0.012), [0, 0.078, -0.172], [0.3, 0, 0]);
+    put('gear', slab(0.2, 0.09, 0.03, 0.014), [0, -0.03, 0.172], [-0.25, 0, 0]);
+    for (const side of [-1, 1]) {
+      put('gear', slab(0.03, 0.1, 0.12, 0.012), [side * 0.152, -0.01, 0.02]);
+      put('plate', slab(0.014, 0.026, 0.12, 0.006), [side * 0.172, 0.06, 0.0]);
+      put('dark', rod(0.05, 0.05, 0.034, 14), [side * 0.158, -0.035, 0.012], [0, 0, Math.PI / 2]);        // ear cup
+      put('gear', rod(0.036, 0.036, 0.012, 14), [side * 0.178, -0.035, 0.012], [0, 0, Math.PI / 2]);
+      for (let i = 0; i < 3; i += 1) put('dark', box(0.006, 0.01, 0.022), [side * 0.118, 0.14, -0.06 + i * 0.05], [0, 0, side * 0.7]);   // vents
+    }
+    put('plate', slab(0.056, 0.05, 0.03, 0.01), [0, 0.132, -0.172], [0.25, 0, 0]);
+    put('dark', box(0.03, 0.022, 0.012), [0, 0.132, -0.19], [0.25, 0, 0]);
+    put('dark', slab(0.014, 0.07, 0.014, 0.005), [-0.1, -0.06, -0.09], [0.3, 0, 0.5]);                    // chin strap
+    put('dark', slab(0.014, 0.07, 0.014, 0.005), [0.1, -0.06, -0.09], [0.3, 0, -0.5]);
+  });
   const cap = option(headgear, 'cap', false);
   add(cap, geo('capDome', () => new THREE.SphereGeometry(0.142, 10, 4, 0, Math.PI * 2, 0, Math.PI * 0.5)), suit, [0, 0.035, 0], null, [1, 0.85, 1.05]);
   block(cap, 'capPeak', [0.2, 0.014, 0.12], dark, [0, 0.04, -0.175], [0.12, 0, 0]);
@@ -744,13 +876,33 @@ export function buildOperator(color = '#ec6a9e', accent = '#6ce6d1') {
   const gun = new THREE.Group();
   aim.add(gun);
   const arms = [-1, 1].map((side) => {
-    const upper = limb(aim, 'upperArm', UPPER, 0.062, 0.05, suit);
-    const fore = limb(aim, 'foreArm', FORE, 0.046, 0.058, gear);
-    const pad = gem(aim, 'elbow', 0.058, plate, [0, 0, 0]);
-    const hand = new THREE.Group();
-    block(hand, 'glove', [0.07, 0.085, 0.085], dark, [0, -0.035, 0]);
-    block(hand, 'knuckle', [0.074, 0.03, 0.05], plate, [0, -0.045, -0.03]);
-    aim.add(hand);
+    // Each is a group the solver places and turns; what is in it hangs down its own length.
+    const upper = new THREE.Group(), fore = new THREE.Group(), pad = new THREE.Group(), hand = new THREE.Group();
+    bodyPart(upper, 'upperArm', body, (put) => {
+      put('suit', turned([[0, -UPPER], [0.05, -UPPER], [0.056, -0.22], [0.068, -0.1], [0.071, -0.03], [0.06, 0.02], [0, 0.02]], 14));
+      put('dark', band(0.064, 0.006, 14), [0, -0.17, 0]);
+      put('gear', rod(0.066, 0.063, 0.05, 14), [0, -0.2, 0]);
+    });
+    bodyPart(fore, 'foreArm', body, (put) => {
+      put('suit', turned([[0, -FORE], [0.04, -FORE], [0.043, -0.25], [0.052, -0.16], [0.058, -0.05], [0.05, 0.01], [0, 0.01]], 14));
+      put('gear', rod(0.058, 0.05, 0.13, 14), [0, -0.15, 0]);                    // bracer
+      put('plate', rod(0.06, 0.06, 0.014, 14), [0, -0.1, 0]);
+      put('dark', rod(0.048, 0.045, 0.06, 14), [0, -0.255, 0]);                 // glove cuff
+    });
+    bodyPart(pad, 'elbow', body, (put) => {
+      put('gear', ball(0.06, 14, 9));
+      put('plate', ball(0.046, 12, 8), [0, 0, 0.022], null, [1, 1, 0.8]);
+    });
+    bodyPart(hand, side > 0 ? 'handR' : 'handL', body, (put) => {
+      // A glove closed round a grip: the back of the hand, fingers curled under, a thumb, hard knuckles.
+      put('dark', slab(0.076, 0.07, 0.044, 0.016), [0, -0.036, 0.006]);
+      put('dark', slab(0.072, 0.04, 0.046, 0.016), [0, -0.068, -0.022]);
+      put('dark', slab(0.068, 0.03, 0.032, 0.012), [0, -0.05, -0.046]);
+      put('dark', slab(0.026, 0.052, 0.028, 0.011), [-side * 0.042, -0.04, -0.02], [0.3, 0, side * 0.3]);
+      put('plate', slab(0.072, 0.02, 0.03, 0.008), [0, -0.08, -0.012]);
+      put('gear', slab(0.05, 0.03, 0.01, 0.005), [0, -0.03, 0.03]);
+    });
+    aim.add(upper, fore, pad, hand);
     return { side, upper, fore, pad, hand, at: new THREE.Vector3(...(side > 0 ? REST.right : REST.left)) };
   });
 
@@ -806,6 +958,7 @@ export function styleOperator(root, look) {
   if (look.pattern) applyPattern(data.suit, look.pattern);
   if (look.skins) data.skins = look.skins;
   if (look.builds) data.builds = look.builds;
+  if (look.knife !== undefined && look.knife !== data.knifeType) { data.knifeType = look.knife; if (data.held) data.held.model.visible = false; data.held = null; }
   if (look.charm !== undefined && look.charm !== data.charm) { data.charm = look.charm; if (data.held) data.held.model.visible = false; data.held = null; }
 }
 
@@ -813,7 +966,7 @@ export function styleOperator(root, look) {
 // finish, built the first time it is drawn and kept.
 function heldGun(data, weapon) {
   const finish = data.skins[weapon.id] || null;
-  const build = data.builds?.[weapon.id] || null;
+  const build = weapon.melee ? { knife: data.knifeType || 'kestrel' } : data.builds?.[weapon.id] || null;
   // The build is part of what makes this model, so it is part of what tells two of them apart.
   const key = `${weapon.id}|${finish}|${data.charm || 'none'}|${build ? Object.values(build).join(',') : ''}`;
   if (data.held?.key === key) return data.held;
@@ -925,7 +1078,9 @@ function animateCosmetics(data, stride, sway) {
 const target = new THREE.Vector3(), shoulder = new THREE.Vector3(), grip = new THREE.Vector3(), euler = new THREE.Euler(), reach = new THREE.Vector3();
 // Where the hands go in each deployment pose, in the arms' own space: a hand on the strap on the ramp,
 // arms spread in free fall, both up on the toggles under the canopy.
-const DEPLOY_HANDS = { ride: { right: [0.2, 0.52, -0.08], left: [-0.14, -0.12, -0.16] }, sky: { right: [0.66, 0.2, -0.12], left: [-0.66, 0.2, -0.12] }, chute: { right: [0.3, 0.64, 0.04], left: [-0.3, 0.64, 0.04] } };
+// Aboard, both hands are on the harness straps at the chest. One used to be held straight up at a grab
+// rail the hold never had, which read as an arm stuck in the air.
+const DEPLOY_HANDS = { ride: { right: [0.14, -0.16, -0.21], left: [-0.14, -0.17, -0.2] }, sky: { right: [0.66, 0.2, -0.12], left: [-0.66, 0.2, -0.12] }, chute: { right: [0.3, 0.64, 0.04], left: [-0.3, 0.64, 0.04] } };
 const NO_DEPLOY = { ride: 0, sky: 0, chute: 0, lean: 0 };
 const mix = (from, to, w) => from + (to - from) * w;
 const POLE_R = new THREE.Vector3(0.75, -0.65, 0.25), POLE_L = new THREE.Vector3(-0.55, -0.8, 0.1);
@@ -977,28 +1132,41 @@ export function animateOperator(root, pose) {
   const breath = Math.sin(data.idle * 1.7) * (1 - stride);
   const sway = Math.sin(data.idle * 0.6) * (1 - stride) * (1 - c);
 
-  // Hips: bob twice per stride, sway side to side, and drop for the crouch.
-  data.hips.position.y = 0.96 - c * 0.42 + Math.abs(Math.cos(data.phase)) * 0.045 * stride + air * 0.03 - data.landDip * 0.12 * (1 - c);
+  // Hips: lower in a stride than standing (a leg at full stretch cannot reach forward), lowest with the
+  // feet apart and highest as they pass, swaying side to side, and dropped for the crouch.
+  // The crouch drops the head to where the hit zones put it (shared/combat.js: 1.07 m), no higher.
+  const hipY = 0.96 - c * 0.52 - stride * 0.055 * (1 - c) - Math.abs(Math.sin(data.phase)) * 0.028 * stride + air * 0.03 - data.landDip * 0.12 * (1 - c);
+  data.hips.position.y = hipY;
   data.hips.position.x = Math.sin(data.phase) * 0.02 * stride + sway * 0.012;
   data.hips.rotation.y = data.legYaw + Math.sin(data.phase) * 0.17 * stride;
   data.hips.rotation.z = Math.sin(data.phase) * 0.035 * stride + sway * 0.02;
   data.legs.forEach(({ pivot, knee, foot }, index) => {
-    const s = index === 0 ? swing : -swing;
-    // Standing still, the feet are set apart: support leg forward, the other back and turned out.
-    const stance = (1 - stride) * (1 - c) * (1 - air) * (index === 0 ? -0.16 : 0.12);
-    const tuck = air * (index === 0 ? 0.75 : 0.25);
-    pivot.rotation.x = -data.landDip * 0.22 * (1 - c) + s - c * 1.15 + stance - tuck - dead * (index === 0 ? 0.5 : 0.1);
-    pivot.rotation.z = (index === 0 ? -1 : 1) * (0.035 + (1 - stride) * 0.06 + c * 0.1 + dead * 0.2);
-    knee.rotation.x = data.landDip * 0.45 * (1 - c) + Math.max(0, -s) * 1.1 + c * 1.9 + stride * 0.24 + Math.abs(stance) * 0.5 + air * (index === 0 ? 1.2 : 0.7) + dead * (index === 0 ? 1.1 : 0.3);
-    // Heel strike and toe-off, flat on the ground when crouched, toes down in the air.
-    foot.rotation.x = -(pivot.rotation.x + knee.rotation.x) * (c > 0.5 ? 1 : 0.4) * (1 - air) + Math.max(0, s) * 0.3 * stride + air * 0.5;
+    // Each foot is told where to be and the leg is solved to put it there, knee forward: the feet stay
+    // on the ground through a crouch, a landing and a turn, and a stride is a step rather than a swing.
+    const theta = data.phase + (index === 0 ? 0 : Math.PI), sn = Math.sin(theta), cs = Math.cos(theta);
+    const moving = Math.min(1, stride + shuffle);
+    // Standing still the feet are set apart, support side forward. A stride carries the foot forward
+    // through the air and back along the ground.
+    const set = (1 - stride) * (index === 0 ? 0.11 : -0.09) + c * (index === 0 ? 0.05 : -0.04);
+    const forward = mix(sn * (0.3 * stride + 0.07 * shuffle) + set, index === 0 ? 0.16 : -0.08, air);
+    const lift = Math.max(0, cs) * (0.05 + 0.12 * stride) * moving;
+    const down = mix(hipY - 0.05 - ANKLE - lift, index === 0 ? 0.56 : 0.7, air);
+    const d = Math.min(THIGH + SHIN - 0.004, Math.max(0.26, Math.hypot(forward, down)));
+    const toFoot = Math.atan2(forward, down);
+    const atHip = Math.acos(THREE.MathUtils.clamp((THIGH * THIGH + d * d - SHIN * SHIN) / (2 * THIGH * d), -1, 1));
+    const atKnee = Math.acos(THREE.MathUtils.clamp((THIGH * THIGH + SHIN * SHIN - d * d) / (2 * THIGH * SHIN), -1, 1));
+    pivot.rotation.x = mix(toFoot + atHip, index === 0 ? 0.5 : 0.1, dead);
+    knee.rotation.x = mix(atKnee - Math.PI, index === 0 ? -1.1 : -0.3, dead);
+    pivot.rotation.z = (index === 0 ? -1 : 1) * (0.035 + (1 - stride) * 0.05 + c * 0.1 + dead * 0.2);
+    // The sole stays flat while it is down: toes up as the heel strikes, heel up as it pushes off, toes down in the air.
+    foot.rotation.x = -(pivot.rotation.x + knee.rotation.x) * (1 - dead) + stride * (Math.max(0, sn) * Math.max(0, cs) * 0.5 - Math.max(0, -sn) * 0.42) - air * 0.4;
     if (!deploying) return;
-    // Free fall: knees bent, legs apart, fluttering in the wind. Under the canopy: hanging, swinging a little.
+    // Free fall: thighs trailing, knees bent, legs apart, fluttering in the wind. Under the canopy: hanging, swinging a little.
     const flutter = Math.sin(data.idle * 9 + index * 2) * 0.05;
-    pivot.rotation.x = mix(mix(pivot.rotation.x, 0.3 + flutter, sky), -0.12 + Math.sin(data.idle * 1.7 + index) * 0.1, can);
+    pivot.rotation.x = mix(mix(pivot.rotation.x, -0.2 + flutter, sky), 0.14 + Math.sin(data.idle * 1.7 + index) * 0.1, can);
     pivot.rotation.z = mix(pivot.rotation.z, (index === 0 ? -1 : 1) * 0.3, sky);
-    knee.rotation.x = mix(mix(knee.rotation.x, 1.05 + flutter, sky), 0.3 + index * 0.1, can);
-    foot.rotation.x = mix(foot.rotation.x, 0.4, Math.max(sky, can));
+    knee.rotation.x = mix(mix(knee.rotation.x, -1.05 + flutter, sky), -0.35 - index * 0.1, can);
+    foot.rotation.x = mix(foot.rotation.x, -0.4, Math.max(sky, can));
   });
 
   // The weapon and how it is held.
@@ -1019,17 +1187,27 @@ export function animateOperator(root, pose) {
   data.gun.position.z += data.recoil * 0.05 + data.ads * 0.03 + rel * 0.05;
   data.gun.rotation.set(data.gunRot.x + stride * 0.05 + data.recoil * 0.12 - run * 0.5 + rel * 0.45 + data.swap * 0.9, data.gunRot.y + run * 0.35 + rel * 0.25, data.gunRot.z + rel * 0.5 + relBeat * 0.05);
   if (data.swing >= 0) {
-    // The blade: wind up across the body, cut through, recover.
+    // The blade: wind up, cut through, recover. What kind of cut follows the knife in hand (KNIFE_STYLES),
+    // so a cleaver comes down from the shoulder and a dagger goes straight in.
     const k = data.swing, wind = Math.sin(Math.min(1, k / 0.25) * Math.PI) * (k < 0.25 ? 1 : 0), cut = Math.sin(Math.max(0, Math.min(1, (k - 0.2) / 0.6)) * Math.PI);
-    data.gun.position.x -= data.swingDir * (cut * 0.34 - wind * 0.08); data.gun.position.z -= cut * 0.22; data.gun.position.y += cut * 0.1;
-    data.gun.rotation.y += data.swingDir * cut * 1.1; data.gun.rotation.z += data.swingDir * cut * 0.8;
+    const kind = data.swingKind;
+    if (kind === 'stab' || kind === 'punch') {
+      data.gun.position.z -= cut * 0.34 - wind * 0.1; data.gun.position.x -= cut * 0.12; data.gun.position.y += cut * 0.12;
+      data.gun.rotation.x -= cut * 0.5;
+    } else if (kind === 'chop') {
+      data.gun.position.y += wind * 0.3 + cut * 0.02; data.gun.position.z -= cut * 0.26; data.gun.position.x -= cut * 0.14;
+      data.gun.rotation.x += wind * 1.1 - cut * 1.3;
+    } else {
+      data.gun.position.x -= data.swingDir * (cut * 0.34 - wind * 0.08); data.gun.position.z -= cut * 0.22; data.gun.position.y += cut * 0.1;
+      data.gun.rotation.y += data.swingDir * cut * 1.1; data.gun.rotation.z += data.swingDir * cut * 0.8;
+    }
   }
   data.gun.visible = !dead;
 
   // The spine takes part of the pitch so the arms never have to fold through the chest; shoulders
   // counter-rotate against the hips; the torso leans into a run and breathes when still.
   const pitch = THREE.MathUtils.clamp(pose.pitch, -1.45, 1.45);
-  data.spine.rotation.x = c * 0.28 + data.lean * 0.13 + pitch * 0.35 + dead * 0.35 + data.landDip * 0.12 - data.recoil * 0.04 + rel * 0.08;
+  data.spine.rotation.x = c * 0.12 + data.lean * 0.13 + pitch * 0.35 + dead * 0.35 + data.landDip * 0.12 - data.recoil * 0.04 + rel * 0.08;
   data.spine.rotation.y = -data.legYaw - Math.sin(data.phase) * 0.22 * stride;
   data.spine.rotation.z = -sway * 0.02 + dead * 0.2;
   data.spine.position.y = 0.1 + breath * 0.004;
@@ -1090,5 +1268,10 @@ export function animateOperator(root, pose) {
 export function operatorAction(root, action, amount = 1) {
   const data = root.userData;
   if (action === 'fire') data.recoil = Math.min(1.4, data.recoil + 0.55 * amount);
-  if (action === 'melee') { data.swing = 0; data.swingDir = -data.swingDir; }
+  if (action === 'melee') {
+    const chain = knifeStyle(data.knifeType).chain;
+    data.swingKind = chain[(data.swingCount = (data.swingCount || 0) + 1) % chain.length];
+    data.swing = 0;
+    data.swingDir = data.swingKind === 'back' || data.swingKind === 'rip' ? -1 : data.swingKind === 'slash' || data.swingKind === 'hook' ? 1 : -data.swingDir;
+  }
 }

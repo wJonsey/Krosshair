@@ -11,7 +11,7 @@ import { Room } from '../server/room.js';
 import { MAX_WEAPON_LEVEL, XP_CURVE } from '../shared/gunlevels.js';
 import { MAP_IDS } from '../shared/map.js';
 import { WEAPONS } from '../shared/constants.js';
-import { DEFAULT_REASON, FEATURES, FEATURE_IDS, cleanReason, featureOut, outageReason } from '../shared/outage.js';
+import { DEFAULT_REASON, DOWNTIME, FEATURES, FEATURE_IDS, cleanDowntime, cleanReason, downtimeLive, featureOut, outageReason, untilLabel } from '../shared/outage.js';
 
 const look = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit' };
 const fakeSocket = () => { const sent = []; return { readyState: 1, sent, send: (raw) => { const m = JSON.parse(raw); if (m.type !== 's') sent.push(m); } }; };
@@ -217,4 +217,50 @@ test('a pulled arena is never picked, voted for, pinned or played', async () => 
     beginMatch(room);
     assert.notEqual(room.map.id, pulled, 'a pin set before the pull still played it');
   } finally { Room.useOutages(null); room.close(); }
+});
+
+// Planned downtime: a time, a length and a reason, shown to everyone until it is over.
+test('planned downtime is kept through a restart, cleaned, and gone once it is over', async () => {
+  const one = await book();
+  const now = 1_800_000_000_000;
+  assert.equal(one.downtime(now), null, 'nothing planned to begin with');
+  assert.ok(one.plan({ at: now + 30 * 60000, minutes: 20, note: '  Update going in\u0007  ' }, 'Gking09', now));
+  assert.deepEqual(one.downtime(now), { at: now + 30 * 60000, minutes: 20, note: 'Update going in' });
+  assert.equal(one.downtime(now).by, undefined, 'who planned it is not sent to players');
+  // A restart before the downtime: still planned.
+  const two = new OutageBook(one.file);
+  assert.deepEqual(two.downtime(now), { at: now + 30 * 60000, minutes: 20, note: 'Update going in' });
+  // The pulled list is untouched by it, so nothing that reads the list has to know.
+  assert.deepEqual(two.view(), { map: {}, weapon: {}, feature: {} });
+  // While it is happening it is still shown; after it, it is gone, and gone from the file.
+  assert.ok(two.downtime(now + 40 * 60000));
+  assert.equal(two.downtime(now + 51 * 60000), null);
+  assert.equal(new OutageBook(one.file).downtime(now), null);
+});
+
+test('a downtime plan is refused if it makes no sense, and can be taken down', async () => {
+  const out = await book();
+  const now = 1_800_000_000_000;
+  for (const bad of [{}, { at: 'soon' }, { at: now - 10 * 60000 }, { at: now + DOWNTIME.maxAhead + 60000 }, null]) {
+    if (bad === null) continue;
+    assert.equal(out.plan(bad, 'dev', now), false, `took ${JSON.stringify(bad)}`);
+  }
+  assert.equal(out.downtime(now), null);
+  assert.ok(out.plan({ at: now + 60000, minutes: 999999 }, 'dev', now));
+  assert.equal(out.downtime(now).minutes, DOWNTIME.maxMinutes, 'a length is capped');
+  assert.ok(out.plan({ at: now + 60000 }, 'dev', now));
+  assert.equal(out.downtime(now).minutes, DOWNTIME.defaultMinutes, 'and has a default');
+  assert.equal(cleanDowntime({ at: now + 60000, note: 'x'.repeat(500) }, now).note.length, DOWNTIME.noteMax);
+  assert.ok(out.plan(null, 'dev', now), 'taking it down always works');
+  assert.equal(out.downtime(now), null);
+  assert.equal(downtimeLive(null, now), false);
+});
+
+test('the countdown reads like a clock, not a number of seconds', () => {
+  assert.equal(untilLabel(45 * 1000), '45s');
+  assert.equal(untilLabel(5 * 60000 + 3000), '5m 03s');
+  assert.equal(untilLabel(42 * 60000), '42m');
+  assert.equal(untilLabel(2 * 3600000 + 5 * 60000), '2h 5m');
+  assert.equal(untilLabel(26 * 3600000), '1d 2h');
+  assert.equal(untilLabel(-5000), '0s');
 });

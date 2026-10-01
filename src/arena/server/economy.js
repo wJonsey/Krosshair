@@ -3,10 +3,10 @@
 import { randomInt } from 'node:crypto';
 import { COSMETICS, WEAPONS } from '../shared/constants.js';
 import { bundleOn, bundlePrice, inShop, itemName, itemPrice, itemSet, ownsItem } from '../shared/itemshop.js';
-import { CRASH, COINFLIP, CRATES, PLINKO, crashAt, crashTime, hiloMultiplier, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, SCRAP, SLOTS, TRADE_UP, crateFinishes, crateOdds, STAKE, TRANSFER, diceMultiplier, finishInfo, finishPrice, finishValue, slotsMultiplier, autoCashOut } from '../shared/economy.js';
+import { CRASH, COINFLIP, CRATES, MINES, PLINKO, WHEEL, minesMultiplier, crashAt, crashTime, hiloMultiplier, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, SCRAP, SLOTS, TRADE_UP, crateFinishes, crateItems, crateOdds, knifeValue, STAKE, TRANSFER, diceMultiplier, finishInfo, finishPrice, finishValue, slotsMultiplier, autoCashOut } from '../shared/economy.js';
 
 const SKINNABLE = Object.keys(WEAPONS);
-const GAME_NAMES = { coinflip: 'Coin flip', dice: 'Dice', slots: 'Slots', plinko: 'Plinko', hilo: 'Higher or lower', crash: 'Crash' };
+const GAME_NAMES = { coinflip: 'Coin flip', dice: 'Dice', slots: 'Slots', plinko: 'Plinko', hilo: 'Higher or lower', crash: 'Crash', wheel: 'Wheel', mines: 'Mines' };
 const GAME_LOG = 20;
 // Every settled bet, newest first, for the Games tab.
 function logGame(profiles, token, entry) {
@@ -96,6 +96,16 @@ function rollCrate(profiles, token, crate) {
   if (forced) odds = odds.filter(([rarity]) => EPIC_OR_BETTER.includes(rarity));
   const [rarity] = weighted(odds, ([, weight]) => Math.round(weight * 100));
   if (crate.pity) profile.pity[crate.id] = EPIC_OR_BETTER.includes(rarity) ? 0 : (profile.pity[crate.id] || 0) + 1;
+  if (crate.knives) {
+    // A blade for the third slot. Owned as 'knife:id'; a second one pays part of its value back.
+    const blades = crateItems(crate).filter((knife) => knife.rarity === rarity);
+    const knife = blades[randomInt(blades.length)].id;
+    const duplicate = profile.owned.includes(`knife:${knife}`);
+    let refund = 0;
+    if (duplicate) { refund = Math.floor(knifeValue(knife) * DUPLICATE_REFUND); profiles.credit(token, refund, 'crate', 'Duplicate refund'); } else profile.owned.push(`knife:${knife}`);
+    profiles.scheduleSave();
+    return { knife, weapon: 'knife', finish: null, rarity, duplicate, refund, pity: forced };
+  }
   const choices = crateFinishes(crate).filter((finish) => finish.rarity === rarity);
   const finish = choices[randomInt(choices.length)].id;
   return { ...grant(profiles, token, finish, rarity, SKINNABLE[randomInt(SKINNABLE.length)]), pity: forced };
@@ -192,6 +202,10 @@ export function playGame(profiles, token, message) {
     if (pick === 'higher' ? next > card : next < card) payout = Math.floor(stake * multiplier);
     profile.hiloCard = next;
     detail = { card, next, pick };
+  } else if (game === 'wheel') {
+    const slot = randomInt(WHEEL.segments.length);
+    payout = Math.floor(stake * WHEEL.segments[slot]);
+    detail = { slot, multiplier: WHEEL.segments[slot] };
   } else if (game === 'slots') {
     const reels = [0, 1, 2].map(() => weighted(SLOTS.symbols, (symbol) => symbol.weight).id);
     payout = Math.floor(stake * slotsMultiplier(reels));
@@ -251,8 +265,55 @@ function finishCrash(round, cashed, direct = false) {
   if (!direct) round.notify(round.token, result);
   return result;
 }
-// Shutting down mid-round: hand every open stake back rather than lose it.
+// Mines. Like Crash the round lives here: the stake is taken when the field is laid, the mines are placed
+// then, and every tile is asked for one at a time, so a page never knows where anything is until it is
+// told. One round a pilot. Nothing is paid until they cash out, hit the cap or clear the field.
+const mineRounds = new Map();
+const minesView = (round) => ({ stake: round.stake, count: round.count, picked: [...round.picked], multiplier: minesMultiplier(round.count, round.picked.length), next: minesMultiplier(round.count, round.picked.length + 1) });
+function endMines(round, cashed, hit = null) {
+  mineRounds.delete(round.token);
+  const payout = cashed ? Math.floor(round.stake * cashed) : 0;
+  if (payout) round.profiles.credit(round.token, payout, 'game', `Mines · cashed at ×${cashed}`);
+  logGame(round.profiles, round.token, { game: 'mines', stake: round.stake, payout, note: cashed ? `×${cashed} · ${round.count} mines` : `hit a mine · ${round.count} mines` });
+  return { game: { game: 'mines', stake: round.stake, payout, detail: { count: round.count, mines: [...round.mines], picked: [...round.picked], hit, cashed: cashed || null } } };
+}
+export function playMines(profiles, token, message) {
+  const round = mineRounds.get(token);
+  const action = message.action;
+  if (action === 'state') return { mines: round ? minesView(round) : null };
+  if (action === 'start') {
+    if (round) return { error: 'You already have a field going.' };
+    const stake = wholeCoins(message.stake, STAKE.min, STAKE.max);
+    if (!stake) return { error: `Stake ${STAKE.min} to ${STAKE.max} coins.` };
+    const count = MINES.counts.includes(message.count) ? message.count : 3;
+    if (!profiles.debit(token, stake, 'game', 'Mines · stake')) return { error: 'Not enough coins.' };
+    const mines = new Set();
+    while (mines.size < count) mines.add(randomInt(MINES.cells));
+    const fresh = { stake, count, mines, picked: [], profiles, token };
+    mineRounds.set(token, fresh);
+    return { mines: minesView(fresh) };
+  }
+  if (!round) return { error: 'No field going.' };
+  if (action === 'out') {
+    if (!round.picked.length) return { error: 'Turn a tile over first.' };
+    return endMines(round, minesMultiplier(round.count, round.picked.length));
+  }
+  if (action === 'pick') {
+    const cell = Number(message.cell);
+    if (!Number.isInteger(cell) || cell < 0 || cell >= MINES.cells || round.picked.includes(cell)) return { error: 'Pick a tile that is still face down.' };
+    if (round.mines.has(cell)) return endMines(round, 0, cell);
+    round.picked.push(cell);
+    const multiplier = minesMultiplier(round.count, round.picked.length);
+    // Nothing left to turn, or the cap is reached: it is paid there and then.
+    if (round.picked.length >= MINES.cells - round.count || multiplier >= MINES.max) return endMines(round, multiplier);
+    return { mines: minesView(round) };
+  }
+  return { error: 'No such move.' };
+}
+// Shutting down mid-round, or the games being switched off: hand every open stake back rather than lose it.
 export function refundCrashes() {
   for (const round of crashRounds.values()) { clearTimeout(round.timer); round.profiles.credit(round.token, round.stake, 'refund', 'Crash · refunded (server restart)'); }
   crashRounds.clear();
+  for (const round of mineRounds.values()) round.profiles.credit(round.token, round.stake, 'refund', 'Mines · refunded (server restart)');
+  mineRounds.clear();
 }

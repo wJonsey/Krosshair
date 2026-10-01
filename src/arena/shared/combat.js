@@ -69,8 +69,11 @@ function cross(a, b) { return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b
 function normalize(v) { const length = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / length, v[1] / length, v[2] / length]; }
 
 // Hit shapes, relative to the feet. [zone, y0, y1, radius] (y0 === y1 → sphere)
-const STAND_SHAPES = [['head', 1.6, 1.6, 0.21], ['torso', 0.92, 1.36, 0.29], ['limb', 0.22, 0.8, 0.25], ['limb', 1.0, 1.34, 0.45]];
-const CROUCH_SHAPES = [['head', 1.07, 1.07, 0.21], ['torso', 0.52, 0.84, 0.3], ['limb', 0.2, 0.42, 0.32], ['limb', 0.58, 0.82, 0.45]];
+// Sized to the pilot as drawn (client/operator.js): the helmet, the plate carrier, the legs under it and
+// the arms as far out as the shoulder pads reach. The arms' shape used to stand 10 cm clear of the model
+// all round, which is a hit on someone you can see you missed.
+const STAND_SHAPES = [['head', 1.6, 1.6, 0.2], ['torso', 0.92, 1.36, 0.29], ['limb', 0.22, 0.8, 0.25], ['limb', 1.0, 1.34, 0.38]];
+const CROUCH_SHAPES = [['head', 1.07, 1.07, 0.2], ['torso', 0.52, 0.84, 0.3], ['limb', 0.2, 0.42, 0.3], ['limb', 0.58, 0.82, 0.38]];
 const ZONE_RANK = { head: 3, torso: 2, limb: 1 };
 
 function raySphere(origin, dir, cx, cy, cz, radius) {

@@ -29,7 +29,7 @@ try {
 export const DEFAULT_SETTINGS = {
   sensitivity: 1, scopeSensitivity: 0.7, fov: 78, volume: 0.8, ambience: 0.6, music: 0.9, musicInMatch: true, announcer: true, invertY: false, padSensitivity: 1, aimAssist: true, padLayout: '', toggleScope: false, toggleCrouch: false, toggleSprint: false, speedFov: true, moveDebug: false, visualizeSound: true,
   // Graphics: `quality` is a preset; touching any of the fine controls below turns it into 'custom'.
-  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
+  quality: 'high', renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', detail: 'high', bloom: true, brightness: 1, fpsCap: 0, autoQuality: true, showFps: true,
   binds: {},        // action → [primary, secondary]; anything missing falls back to DEFAULT_BINDS (input.js)
   crosshair: null,  // null = the default in crosshair.js
   settingsVersion: 4,
@@ -47,14 +47,15 @@ export function migrateSettings(settings) {
 // What each graphics preset means. 'custom' leaves the fine controls alone.
 export const GRAPHICS_PRESETS = {
   // Sharpness is the last thing to go: a soft picture hurts a sniper more than a missing shadow.
-  low: { renderScale: 0.85, shadows: 'off', streetLights: false, viewDistance: 'low' },
-  medium: { renderScale: 1, shadows: 'low', streetLights: true, viewDistance: 'medium' },
-  high: { renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high' },
-  ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true, viewDistance: 'ultra' },
+  low: { renderScale: 0.85, shadows: 'off', streetLights: false, viewDistance: 'low', detail: 'low', bloom: false },
+  medium: { renderScale: 1, shadows: 'low', streetLights: true, viewDistance: 'medium', detail: 'high', bloom: true },
+  high: { renderScale: 1, shadows: 'high', streetLights: true, viewDistance: 'high', detail: 'high', bloom: true },
+  ultra: { renderScale: 1.5, shadows: 'ultra', streetLights: true, viewDistance: 'ultra', detail: 'high', bloom: true },
 };
-export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, viewDistance: settings.viewDistance || 'high', brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
+export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, viewDistance: settings.viewDistance || 'high', detail: settings.detail || 'high', bloom: settings.bloom !== false, brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
+  downtime: null,                     // planned downtime: { at, minutes, note }, or null
   outages: { map: {}, weapon: {} },   // what a developer has pulled from the game, with why
   watching: null,                     // a developer watching someone else's match: its name, or null
   name: tabStored('name', ''),

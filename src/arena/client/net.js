@@ -126,6 +126,7 @@ function connect() {
       // nothing unreleased is ever written into these pages.
       if (message.itemShop) installShopCatalogue(message.itemShop);
       if (message.outages) { game.outages = message.outages; bus.emit('outages'); }
+      game.downtime = message.downtime || null; bus.emit('downtime');
       bus.emit('config');
     }
     // Asked for when the day turns over: a new catalogue on its own, without the rest of config, which

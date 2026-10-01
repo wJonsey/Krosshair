@@ -143,7 +143,7 @@ export class Room {
         id: player.id, name: player.name, team: player.team, bot: player.bot, difficulty: player.difficulty, botType: player.botType || null, connected: player.connected, ready: player.ready,
         host: player.host, alive: player.alive, kills: player.match.kills, playerKills: player.match.playerKills, botKills: player.match.botKills, deaths: player.match.deaths, assists: player.match.assists,
         score: this.scoreOf(player), credits: player.credits, ping: player.ping, color: player.color, accent: player.accent, tracer: player.tracer,
-        title: player.title, headgear: player.headgear, face: player.face, pack: player.pack, pattern: player.pattern, charm: player.charm, skins: player.skins,
+        title: player.title, headgear: player.headgear, face: player.face, pack: player.pack, pattern: player.pattern, charm: player.charm, knife: player.knife, skins: player.skins,
         // What is bolted to the guns in their hands, so everyone else, and a killcam most of all,
         // draws the gun that actually shot them. Only the guns they hold: the rest is nobody's business
         // and would be sent on every room push for nothing.
@@ -183,7 +183,7 @@ export class Room {
   newPlayer(base) {
     const player = {
       id: `p${this.nextPlayer++}`, name: 'Pilot', team: 'A', bot: false, dummy: false, watching: false, socket: null, connected: true, ready: false, host: false,
-      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {}, level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
+      color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', knife: 'kestrel', skins: {}, level: 1, rating: 1000, rankedMatches: 0, difficulty: null, ping: 0,
       token: null, session: null, credits: this.rules.startCredits, match: freshMatchStats(),
       alive: false, hp: 100, armor: 0, helmet: false, weapons: { ...DEFAULT_LOADOUT }, ammo: {}, active: 'primary', gadgets: [], bought: {},
       x: 0, y: 0, z: 0, yaw: 0, pitch: 0, flags: FLAG.ground, speed: 0, history: [], shotLog: [], epoch: 0, lastStateAt: 0, strikes: 0,

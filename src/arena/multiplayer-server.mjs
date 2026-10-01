@@ -17,7 +17,7 @@ import { installCatalogue, publicCatalogue } from './server/itemsets.js';
 import { ROYALE_MAP, getMap } from './shared/map.js';
 import { OutageBook } from './server/outage.js';
 import { cleanReason, featureName, outageLine, OUTAGE_KINDS } from './shared/outage.js';
-import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
+import { buyGear, buyItemShop, buySkin, cashOutCrash, refundCrashes, openCrate, playGame, playMines, scrapSkin, sendCoins, startCrash, tradeUp } from './server/economy.js';
 import { accept as acceptFriend, block as blockPilot, blockedEitherWay, lists as socialLists, normalize as normalizeFriends, reject as rejectFriend, relation, request as requestFriend, unblock as unblockPilot, unfriend } from './server/social.js';
 import { PartyBook } from './server/party.js';
 import { WAGER } from './shared/economy.js';
@@ -153,7 +153,7 @@ function announceDrops(name, drops) {
   if (!big.length) return;
   setTimeout(() => {
     for (const drop of big) {
-      const entry = { name, weapon: drop.weapon, finish: drop.finish, rarity: drop.rarity, at: Date.now() };
+      const entry = { name, weapon: drop.weapon, finish: drop.finish, knife: drop.knife || undefined, rarity: drop.rarity, at: Date.now() };
       recentDrops.unshift(entry);
       recentDrops.length = Math.min(recentDrops.length, 12);
       for (const socket of sockets) if (socket.identified) send(socket, { type: 'drop', drop: entry });
@@ -168,7 +168,7 @@ function handleCoins(socket, message) {
   if (!socket.account) return reply('coins-error', { error: 'Coins need a Discord login.' });
   const t = now();
   // Cashing out of Crash is never throttled: a click that arrives must count.
-  const urgent = message.type === 'crash' && message.action === 'out';
+  const urgent = (message.type === 'crash' && message.action === 'out') || (message.type === 'mines' && message.action !== 'start');
   if (!urgent && socket.coinsAt && t - socket.coinsAt < (message.type === 'lookup' || message.type === 'friends' ? 0.2 : 0.45)) return reply('coins-error', { error: 'Slow down.' });
   if (!urgent) socket.coinsAt = t;
   if (message.type === 'friends') return handleFriends(socket, message);
@@ -200,6 +200,11 @@ function handleCoins(socket, message) {
     // Cashing out is always allowed: a bet already running must never be trapped by the switch.
     if (message.action !== 'out' && outages.featureOut('games')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'games'), 'Games') });
     result = message.action === 'out' ? cashOutCrash(socket.token) : startCrash(profiles, socket.token, message, now, crashSettled);
+  }
+  else if (message.type === 'mines') {
+    // Like a Crash cash-out, finishing a field already laid is always allowed. Only a new one is refused.
+    if (message.action === 'start' && outages.featureOut('games')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'games'), 'Games') });
+    result = playMines(profiles, socket.token, message);
   }
   else if (message.type === 'send-coins') {
     if (outages.featureOut('trading')) return send(socket, { type: 'coins-error', message: outageLine(outages.get('feature', 'trading'), 'Sending coins') });
@@ -866,7 +871,7 @@ wss.on('connection', (socket, request) => {
   socket.on('close', () => { const left = (perAddress.get(socket.address) || 1) - 1; if (left > 0) perAddress.set(socket.address, left); else perAddress.delete(socket.address); });
   sockets.add(socket);
   // Only the sets that have already been out. A set still to come is not described to anyone.
-  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: shopCatalogue(), outages: outages.view() });
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: shopCatalogue(), outages: outages.view(), downtime: outages.downtime() });
   socket.identified = false;
   socket.room = null;
   socket.player = null;
@@ -928,7 +933,7 @@ wss.on('connection', (socket, request) => {
       if (message.type === 'prefs' && socket.identified) return profiles.savePrefs(socket.token, message);
       if (message.type === 'feedback') return void saveFeedback(socket, message).catch((error) => console.error('feedback handler failed', error));
       if (message.type === 'leaderboard') return send(socket, { type: 'leaderboard', boards: leaderboardFor(socket) });
-      if (['shop', 'game', 'crash', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
+      if (['shop', 'game', 'crash', 'mines', 'friends', 'send-coins', 'lookup'].includes(message.type)) return handleCoins(socket, message);
       if (message.type === 'party') { if (!socket.account) return send(socket, { type: 'party-result', error: 'Log in to use parties.' }); return handleParty(socket, message); }
       if (message.type === 'social' && socket.account) return void pushSocial(socket);
       if (message.type === 'drops') return send(socket, { type: 'drops', drops: recentDrops });
@@ -952,6 +957,16 @@ wss.on('connection', (socket, request) => {
       if (message.type === 'enter') return enter(socket, message);
       if (message.type === 'leave-room') { leaveRoom(socket, true); return send(socket, { type: 'left', profile: profiles.view(socket.token), rooms: publicRooms() }); }
       // Saved gun builds. Kept on the profile, and handed to the player so the armoury sells the build.
+      // Planned downtime: a developer says when and for how long, and everyone is shown it on every screen.
+      if (message.type === 'downtime') {
+        if (!socket.identified || !profiles.get(socket.token).dev) return;
+        const ok = outages.plan(message.clear === true ? null : { at: message.at, minutes: message.minutes, note: message.note }, socket.name);
+        if (!ok) return send(socket, { type: 'error', message: 'Pick a time in the next two weeks.' });
+        const downtime = outages.downtime();
+        console.log(`downtime: ${socket.name} ${downtime ? `planned ${new Date(downtime.at).toISOString()} for ${downtime.minutes} min` : 'cleared it'}`);
+        for (const other of sockets) send(other, { type: 'downtime', downtime });
+        return;
+      }
       // Pull a map or a gun, or put it back. Developers only, checked here on every call.
       if (message.type === 'outage') {
         if (!socket.identified || !profiles.get(socket.token).dev) return;

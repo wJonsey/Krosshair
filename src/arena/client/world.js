@@ -5,102 +5,19 @@ import * as THREE from 'three';
 import { MATERIALS } from '../shared/constants.js';
 import { getMap } from '../shared/map.js';
 import { World } from '../shared/physics.js';
-
-const PATTERNS = { noise: 0, panels: 1, bricks: 2, planks: 3, ribs: 4, tiles: 5, stripes: 6, windows: 7, strata: 8 };
+import { EXPOSURE, LINEAR_OUT, NOISE_GLSL, SURFACE_TIME, TO_LIGHT, surfaceMaterial } from './surface.js';
+import { Grass, Motes } from './scenery.js';
 
 // Battle royale view distance: a multiple of the weather's own fog. Ultra shows the island end to end.
 export const VIEW_DISTANCE = { low: 0.7, medium: 1, high: 1.7, ultra: 3.2 };
 const VARIANTS = {
-  dusk: { top: '#1d2a4a', horizon: '#f0a35e', fog: '#c58a66', fogNear: 45, fogFar: 210, sun: '#ffb070', sunPower: 2.6, sunDir: [-0.5, 0.5, 0.42], hemiSky: '#a9b6d6', hemiGround: '#6b5447', hemi: 1.7, lamps: 0.7, exposure: 1.05, stars: 0.15, windows: 0.5 },
-  night: { top: '#03050a', horizon: '#142036', fog: '#0a111b', fogNear: 10, fogFar: 100, sun: '#9db9ff', sunPower: 1.1, sunDir: [0.35, 0.7, -0.3], hemiSky: '#5a78ad', hemiGround: '#2c3a52', hemi: 1.7, lamps: 1.6, exposure: 1.2, stars: 1, windows: 1, haze: 0.8 },
-  storm: { top: '#262c33', horizon: '#5d6770', fog: '#4f5860', fogNear: 8, fogFar: 110, sun: '#b4c0cd', sunPower: 1.0, sunDir: [0.2, 0.8, 0.35], hemiSky: '#9aa7b4', hemiGround: '#4a4f54', hemi: 1.6, lamps: 0.9, exposure: 0.95, stars: 0, windows: 0.7, haze: 0.85, precip: 'rain' },
-  snow: { top: '#a9b5c1', horizon: '#dde5eb', fog: '#d3dce3', fogNear: 10, fogFar: 92, sun: '#ffffff', sunPower: 1.3, sunDir: [0.3, 0.75, 0.3], hemiSky: '#e6eef6', hemiGround: '#a8b3be', hemi: 1.9, lamps: 0.8, exposure: 0.95, stars: 0, windows: 0.5, haze: 0.92, precip: 'snow' },
-  haze: { top: '#8f7655', horizon: '#dfc08c', fog: '#d1af7a', fogNear: 18, fogFar: 150, sun: '#ffd9a0', sunPower: 2.4, sunDir: [-0.4, 0.6, 0.3], hemiSky: '#e6cfa4', hemiGround: '#8a6e48', hemi: 1.6, lamps: 0.2, exposure: 1.0, stars: 0, windows: 0.1, haze: 0.85 },
-  noon: { top: '#2b6cb3', horizon: '#cfe3f2', fog: '#bfd5e8', fogNear: 90, fogFar: 340, sun: '#fff1d6', sunPower: 3.1, sunDir: [0.3, 0.85, 0.25], hemiSky: '#bcd7f5', hemiGround: '#6f6553', hemi: 1.6, lamps: 0, exposure: 1.0, stars: 0, windows: 0.05 },
+  dusk: { dust: 0.42, cloud: 0.5, cloudLight: '#ffc7a0', cloudShade: '#5c4658', top: '#2b3966', horizon: '#f0a35e', fog: '#b98a72', fogNear: 45, fogFar: 210, sun: '#ffb47c', sunPower: 2.9, sunDir: [-0.56, 0.38, 0.44], hemiSky: '#8fa6de', hemiGround: '#5f5049', hemi: 1.7, lamps: 0.7, exposure: 1.05, stars: 0.15, windows: 0.5 },
+  night: { dust: 0.1, cloud: 0.42, cloudLight: '#27324c', cloudShade: '#090d17', top: '#03050a', horizon: '#142036', fog: '#0a111b', fogNear: 10, fogFar: 100, sun: '#9db9ff', sunPower: 1.1, sunDir: [0.35, 0.7, -0.3], hemiSky: '#5a78ad', hemiGround: '#2c3a52', hemi: 1.7, lamps: 1.6, exposure: 1.2, stars: 1, windows: 1, haze: 0.8 },
+  storm: { cloud: 0.97, cloudLight: '#79838c', cloudShade: '#2a3036', top: '#262c33', horizon: '#5d6770', fog: '#4f5860', fogNear: 8, fogFar: 110, sun: '#b4c0cd', sunPower: 1.0, sunDir: [0.2, 0.8, 0.35], hemiSky: '#9aa7b4', hemiGround: '#4a4f54', hemi: 1.6, lamps: 0.9, exposure: 0.95, stars: 0, windows: 0.7, haze: 0.85, precip: 'rain' },
+  snow: { cloud: 0.9, cloudLight: '#f1f5f8', cloudShade: '#b3bfca', top: '#a9b5c1', horizon: '#dde5eb', fog: '#d3dce3', fogNear: 10, fogFar: 92, sun: '#ffffff', sunPower: 1.3, sunDir: [0.3, 0.75, 0.3], hemiSky: '#e6eef6', hemiGround: '#a8b3be', hemi: 1.9, lamps: 0.8, exposure: 0.95, stars: 0, windows: 0.5, haze: 0.92, precip: 'snow' },
+  haze: { dust: 0.6, cloud: 0.3, cloudLight: '#f2dfb8', cloudShade: '#b59565', top: '#8f7655', horizon: '#dfc08c', fog: '#d1af7a', fogNear: 18, fogFar: 150, sun: '#ffd9a0', sunPower: 2.4, sunDir: [-0.4, 0.6, 0.3], hemiSky: '#e6cfa4', hemiGround: '#8a6e48', hemi: 1.6, lamps: 0.2, exposure: 1.0, stars: 0, windows: 0.1, haze: 0.85 },
+  noon: { dust: 0.24, cloud: 0.44, cloudLight: '#ffffff', cloudShade: '#a6b5c5', top: '#2b6cb3', horizon: '#cfe3f2', fog: '#bfd5e8', fogNear: 90, fogFar: 340, sun: '#fff1d6', sunPower: 3.1, sunDir: [0.3, 0.85, 0.25], hemiSky: '#bcd7f5', hemiGround: '#6f6553', hemi: 1.6, lamps: 0, exposure: 1.0, stars: 0, windows: 0.05 },
 };
-
-const NOISE_GLSL = `
-float h21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
-float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
-// How much of a pattern at this frequency still fits on screen. Detail finer than a pixel is dropped
-// instead of drawn, which is what stops distant walls and floors crawling as you move.
-float aaFade(float px, float freq) { return 1.0 - smoothstep(0.3, 0.9, px * freq); }
-`;
-
-function surfaceMaterial(key) {
-  const spec = MATERIALS[key];
-  const material = new THREE.MeshStandardMaterial({ color: spec.color, roughness: spec.rough ?? 0.8, metalness: spec.metal ?? 0.05 });
-  if (spec.emissive) { material.emissive = new THREE.Color(spec.color); material.emissiveIntensity = spec.emissive; }
-  const pattern = PATTERNS[spec.pattern] ?? -1;
-  if (pattern < 0) return material;
-  material.userData.uniforms = { uWindowGlow: { value: 0.5 }, uHaze: { value: 0 }, uHazeColor: { value: new THREE.Color() } };
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, material.userData.uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvec4 wpos = vec4(transformed, 1.0);\n#ifdef USE_INSTANCING\nwpos = instanceMatrix * wpos;\n#endif\nwpos = modelMatrix * wpos;\nvWPos = wpos.xyz;\nvWNrm = normal;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\nuniform float uWindowGlow;\nuniform float uHaze;\nuniform vec3 uHazeColor;\n${NOISE_GLSL}`)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        vec3 an = abs(vWNrm);
-        vec2 suv = an.y > 0.5 ? vWPos.xz : (an.x > 0.5 ? vWPos.zy : vWPos.xy);
-        float px = max(fwidth(suv.x), fwidth(suv.y));
-        float fMid = aaFade(px, 6.1), fFine = aaFade(px, 23.0), fLine = aaFade(px, 3.0);
-        // Faded detail hands its share back as flat mid grey, so nothing gets darker or lighter with range.
-        float grain = vnoise(suv * 1.3) * 0.55 + mix(0.5, vnoise(suv * 6.1), fMid) * 0.3 + mix(0.5, vnoise(suv * 23.0), fFine) * 0.15;
-        float shade = mix(0.78, 1.1, grain);
-        float glow = 0.0;
-        #if PATTERN == 1
-          vec2 cell = suv / vec2(2.4, 1.2);
-          vec2 edge = abs(fract(cell) - 0.5);
-          shade *= 1.0 - 0.35 * fLine * smoothstep(0.485, 0.5, max(edge.x, edge.y));
-          shade *= 0.94 + 0.12 * h21(floor(cell));
-        #elif PATTERN == 2
-          vec2 b = suv / vec2(0.52, 0.2);
-          b.x += step(1.0, mod(b.y, 2.0)) * 0.5;
-          vec2 be = abs(fract(b) - 0.5);
-          float mortar = smoothstep(0.455, 0.5, max(be.x * 0.2 + 0.4, be.y));
-          shade *= 0.82 + 0.36 * h21(floor(b));
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.33, 0.3, 0.28), mortar * 0.75 * aaFade(px, 5.0));
-        #elif PATTERN == 3
-          float along = an.y > 0.5 ? suv.x : suv.y;
-          float plank = along / 0.24;
-          shade *= 0.8 + 0.35 * h21(vec2(floor(plank), 3.0));
-          shade *= 1.0 - 0.45 * aaFade(px, 4.2) * smoothstep(0.42, 0.5, abs(fract(plank) - 0.5));
-          shade *= 0.92 + 0.16 * mix(0.5, vnoise(vec2(suv.x * 1.5, suv.y * 22.0)), fFine);
-        #elif PATTERN == 4
-          shade *= 0.86 + 0.16 * aaFade(px, 3.3) * sin(suv.x * 21.0);
-          shade *= 1.0 - 0.25 * vnoise(suv * 0.7) * step(0.55, vnoise(suv * 2.3));
-        #elif PATTERN == 5
-          vec2 te = abs(fract(suv / 1.5) - 0.5);
-          shade *= 1.0 - 0.3 * fLine * smoothstep(0.48, 0.5, max(te.x, te.y));
-          shade *= 0.93 + 0.14 * h21(floor(suv / 1.5));
-        #elif PATTERN == 6
-          shade *= 1.0;
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.9, 0.84), step(0.5, fract(suv.x / 0.9)) * 0.85 * aaFade(px, 1.1));
-        #elif PATTERN == 8
-          // Sedimentary bands on cliff faces; tops stay plain.
-          float warp = vnoise(suv * 0.12) * 2.4;
-          float bands = vnoise(vec2(2.7, suv.y * 1.7 + warp)) * 0.6 + vnoise(vec2(9.1, suv.y * 5.3 + warp)) * 0.4;
-          shade *= mix(1.0, 0.72 + 0.5 * bands, 1.0 - an.y);
-          shade *= 1.0 - 0.22 * aaFade(px, 1.0) * (1.0 - an.y) * smoothstep(0.44, 0.5, abs(fract(suv.y * 0.55 + warp * 0.3) - 0.5));
-        #elif PATTERN == 7
-          vec2 w = suv / vec2(2.2, 3.0);
-          vec2 we = abs(fract(w) - 0.5);
-          float pane = (1.0 - smoothstep(0.3, 0.34, we.x)) * (1.0 - smoothstep(0.26, 0.3, we.y)) * (1.0 - an.y);
-          float lit = step(0.74, h21(floor(w) + 7.0));
-          glow = pane * lit * uWindowGlow;
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.02, 0.03, 0.05), pane);
-        #endif
-        diffuseColor.rgb *= shade;`)
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.78, 0.45) * glow * 1.6;')
-      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#if PATTERN == 7\ngl_FragColor.rgb = mix(gl_FragColor.rgb, uHazeColor, uHaze * (1.0 - glow * 0.85));\n#endif');
-  };
-  material.defines = { PATTERN: pattern };
-  material.customProgramCacheKey = () => `surface-${pattern}`;
-  return material;
-}
 
 function textSprite(text, color, size) {
   const canvas = document.createElement('canvas');
@@ -129,6 +46,27 @@ function glowTexture() {
   gradient.addColorStop(0, 'rgba(255,255,255,1)'); gradient.addColorStop(0.25, 'rgba(255,255,255,0.35)'); gradient.addColorStop(1, 'rgba(255,255,255,0)');
   context.fillStyle = gradient; context.fillRect(0, 0, 128, 128);
   return new THREE.CanvasTexture(canvas);
+}
+
+const hazeTint = new THREE.Color();
+// Far mountains: bare rock, darker at the foot, with a ragged snow line. `line` is how high the snow starts.
+function peakMaterial(line) {
+  const material = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true });
+  material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPeak;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPeak = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vPeak;\n${NOISE_GLSL}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float ragged = fbm(vPeak.xz * 0.04) * 24.0 + vnoise(vPeak.xz * 0.19 + vPeak.y * 0.07) * 8.0 - 16.0;
+        float snowAt = smoothstep(${line.toFixed(1)}, ${(line + 7).toFixed(1)}, vPeak.y + ragged);
+        vec3 rockTone = vec3(0.25, 0.27, 0.3) * (0.7 + 0.6 * fbm(vec2(vPeak.x + vPeak.z, vPeak.y * 2.2) * 0.06));
+        rockTone = mix(rockTone, vec3(0.1, 0.13, 0.13), 1.0 - smoothstep(2.0, 18.0, vPeak.y + ragged * 0.5));
+        diffuseColor.rgb = mix(rockTone, vec3(0.86, 0.91, 0.97), snowAt);`);
+  };
+  material.customProgramCacheKey = () => `peak-${line}`;
+  return material;
 }
 
 export class Arena {
@@ -165,18 +103,46 @@ export class Arena {
 
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
-      uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 }, scopePass: { value: 0 } },
+      uniforms: {
+        top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 }, scopePass: LINEAR_OUT, uExposure: EXPOSURE,
+        uTime: SURFACE_TIME, cloudCover: { value: 0.4 }, cloudLight: { value: new THREE.Color('#ffffff') }, cloudShade: { value: new THREE.Color('#a9b7c6') },
+      },
       vertexShader: 'varying vec3 dir; void main() { dir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float stars; uniform float flash; uniform float scopePass; varying vec3 dir;
+      // The sky: a gradient, a sun (or moon) with a disc, a corona and a wide glow, stars, and a layer of
+      // clouds far overhead that drifts, thins toward the horizon and is lit from the side the sun is on.
+      fragmentShader: `uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform vec3 sunColor; uniform float stars; uniform float flash; uniform float scopePass;
+        uniform float uTime; uniform float cloudCover; uniform vec3 cloudLight; uniform vec3 cloudShade; varying vec3 dir;
+        ${TO_LIGHT}
         float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float h21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
+        float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+        float fbm(vec2 p) { float a = 0.5, sum = 0.0; for (int i = 0; i < 5; i++) { sum += a * vnoise(p); p = p * 2.03 + vec2(11.3, 7.7); a *= 0.5; } return sum; }
         void main() { vec3 d = normalize(dir); float h = max(d.y, 0.0);
-          vec3 color = mix(horizon, top, pow(smoothstep(0.0, 0.65, h), 0.7));
-          float s = max(dot(d, normalize(sunDir)), 0.0);
-          color += sunColor * (pow(s, 600.0) * 3.0 + pow(s, 12.0) * 0.28);
+          vec3 sd = normalize(sunDir); float s = max(dot(d, sd), 0.0);
+          // A low sun warms its own side of the horizon and leaves the far side cooler and dimmer.
+          float low = 1.0 - smoothstep(0.4, 0.85, sd.y);
+          float toward = dot(normalize(d.xz + 1e-5), normalize(sd.xz + 1e-5)) * 0.5 + 0.5;
+          vec3 rim = mix(horizon, mix(horizon, top, 0.62), (1.0 - toward) * low) + sunColor * pow(toward, 5.0) * low * 0.22;
+          vec3 color = mix(rim, top, pow(smoothstep(0.0, 0.65, h), 0.7));
+          float disc = smoothstep(0.99935, 0.9998, s);
+          color += sunColor * (disc * 2.4 + pow(s, 320.0) * 1.3 + pow(s, 10.0) * 0.26);
+          float cloud = 0.0;
+          if (d.y > 0.0 && cloudCover > 0.01) {
+            vec2 cuv = d.xz / (d.y + 0.1) * 0.9 + vec2(uTime * 0.006, uTime * 0.0025);
+            float dens = fbm(cuv + fbm(cuv * 0.5) * 0.8) + fbm(cuv * 3.1 + 4.0) * 0.22 - 0.11;
+            float from = 1.0 - cloudCover;
+            float thick = smoothstep(from, from + 0.55, dens);
+            cloud = smoothstep(from, from + 0.2, dens) * smoothstep(0.0, 0.16, d.y);
+            vec3 body = mix(cloudLight, cloudShade, thick * 0.78) + sunColor * pow(s, 4.0) * 0.32 * (1.0 - thick);
+            color = mix(color, body, cloud * 0.93);
+          }
           vec3 cell = floor(d * 220.0); float star = step(0.9975, h31(cell)) * smoothstep(0.02, 0.25, h);
-          color += vec3(star) * stars; color += vec3(0.75, 0.8, 1.0) * flash * (0.35 + 0.65 * (1.0 - h));
-          // The scope's picture is stored linear and tone mapped by the eyepiece, so undo both here.
-          if (scopePass > 0.5) color = pow(clamp(color, 0.0, 1.0), vec3(2.2)) * 1.55;
+          color += vec3(star) * stars * (1.0 - cloud); color += vec3(0.75, 0.8, 1.0) * flash * (0.35 + 0.65 * (1.0 - h));
+          // Drawn into a linear picture (the scope, the bloom buffer, reflections), the colours are taken back
+          // from display values to light, since the pass that shows that picture tone maps it again. The
+          // sun's disc is handed over far brighter than white, so it blooms.
+          if (scopePass > 0.5) color = toLight(min(color, vec3(0.93))) + sunColor * disc * 5.0 * (1.0 - cloud);
           gl_FragColor = vec4(color, 1.0); }`,
     }));
     this.sky.renderOrder = -10;
@@ -208,11 +174,60 @@ export class Arena {
     this.rain.frustumCulled = false;
     this.rain.visible = false;
     this.scene.add(this.rain);
+    // Grass standing on the lawns and dust in the air (client/scenery.js).
+    this.grass = new Grass();
+    this.motes = new Motes();
+    this.scene.add(this.grass.mesh, this.motes.points);
   }
 
   material(key) {
-    if (!this.materials.has(key)) this.materials.set(key, surfaceMaterial(key));
+    if (!this.materials.has(key)) { this.materials.set(key, surfaceMaterial(key, this.surfaceDetail ?? 1)); this.applyGlow(); }
     return this.materials.get(key);
+  }
+
+  // Shaders are built per map (the number of lamps is part of them), and building a map's worth takes a
+  // second or more: a frozen frame the first time each arena loads. So they are built ahead of time, in
+  // the background, one arena after another while the pilot is in the menus or a lobby. `first` jumps
+  // the queue (the arenas on a vote, the island in a royale lobby).
+  warm(ids, camera, first = false) {
+    if (!this.renderer.extensions.has('KHR_parallel_shader_compile')) return;   // without it this would block, which is the thing being avoided
+    this.warmed ||= new Set(); this.warmQueue ||= [];
+    const fresh = ids.filter((id) => id && !this.warmed.has(id));
+    this.warmQueue = first ? [...fresh, ...this.warmQueue.filter((id) => !fresh.includes(id))] : [...this.warmQueue, ...fresh.filter((id) => !this.warmQueue.includes(id))];
+    if (!this.warming) this.warmNext(camera);
+  }
+  warmNext(camera) {
+    const id = this.warmQueue?.shift();
+    if (!id) { this.warming = false; return; }
+    this.warming = true;
+    this.warmed.add(id);
+    let map;
+    try { map = getMap(id); } catch { return this.warmNext(camera); }
+    // One box of each material the arena uses and as many lamps as it has: the same programs it will need.
+    const group = new THREE.Group(), unit = new THREE.BoxGeometry(1, 1, 1), seen = new Set();
+    for (const box of map.boxes) {
+      const key = `${box.mat}|${box.noShadow ? 0 : 1}`;
+      if (box.glass || seen.has(key)) continue;
+      seen.add(key);
+      const mesh = new THREE.InstancedMesh(unit, this.material(box.mat), 1);
+      mesh.castShadow = !box.noShadow; mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    const apron = this.apronMaterial(map.env);
+    if (apron) group.add(new THREE.Mesh(unit, apron));
+    for (const spec of map.lights || []) group.add(new THREE.PointLight(spec.color, spec.intensity, spec.distance, 1.6));
+    // The arena on screen has lamps of its own; hidden for the instant the programs are requested, they are not counted.
+    const shown = this.mapGroup ? this.mapGroup.visible : true;
+    if (this.mapGroup) this.mapGroup.visible = false;
+    let done;
+    // With bloom on the world is drawn into a linear buffer, which is a different set of programs.
+    const target = this.bloom && this.warmTarget ? this.warmTarget : null;
+    if (target) this.renderer.setRenderTarget(target);
+    try { done = this.renderer.compileAsync(group, camera, this.scene); } catch { done = Promise.resolve(); }
+    if (target) this.renderer.setRenderTarget(null);
+    if (this.mapGroup) this.mapGroup.visible = shown;
+    const next = () => { unit.dispose(); setTimeout(() => this.warmNext(camera), 150); };
+    done.then(next, next);
   }
 
   loadMap(id) {
@@ -221,7 +236,7 @@ export class Arena {
     this.map = getMap(id);
     this.applyViewDistance();
     this.physics = new World(this.map.boxes);
-    this.glass.clear(); this.shields.clear(); this.barrierMeshes = []; this.lamps = []; this.glows = [];
+    this.glass.clear(); this.shields.clear(); this.barrierMeshes = []; this.lamps = []; this.glows = []; this.signs = [];
     const group = new THREE.Group();
     this.mapGroup = group;
     const unit = new THREE.BoxGeometry(1, 1, 1);
@@ -269,6 +284,8 @@ export class Arena {
     const facing = { north: Math.PI, south: 0, east: Math.PI / 2, west: -Math.PI / 2 };
     for (const sign of this.map.signs) {
       const mesh = textSprite(sign.text, sign.color, sign.size);
+      (this.signs ||= []).push(mesh);
+      mesh.material.color.setScalar(this.bloom ? 2.6 : 1);
       mesh.position.set(...sign.pos);
       mesh.rotation.y = facing[sign.face] ?? 0;
       group.add(mesh);
@@ -283,9 +300,19 @@ export class Arena {
       this.barrierMeshes.push(mesh);
     }
     this.addBackdrop(group, this.map.env || {});
+    this.grass.setMap(this.map);
     this.scene.add(group);
     // Fresh lamps and backdrop materials need the current conditions applied to them.
     if (this.renderer && this.variantName) this.setVariant(this.variantName);
+  }
+
+  // The ground beyond the walls: the same surfaces the arena is built from, in the backdrop's own colour.
+  apronMaterial(env) {
+    const ground = { skyline: ['asphalt', '#2a2f35'], town: ['gravel', '#6d675c'], mountains: ['snow', '#dfe7ee'], mesas: ['sand', '#bfa06a'], sea: ['water', '#1d5b73'] }[env?.backdrop];
+    if (!ground) return null;
+    const apron = surfaceMaterial(ground[0], this.surfaceDetail ?? 1);
+    apron.color.set(ground[1]);
+    return apron;
   }
 
   // Every arena sits in a wider world: an apron of ground beyond the walls and a ring of scenery.
@@ -293,15 +320,14 @@ export class Arena {
     this.skylineMaterial = null;
     const { bounds } = this.map;
     const reach = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
-    const groundColor = { skyline: '#2a2f35', town: '#6d675c', mountains: '#dfe7ee', mesas: '#bfa06a', sea: '#1d5b73' }[env.backdrop];
-    if (groundColor) {
+    const apron = this.apronMaterial(env);
+    if (apron) {
       // Four slabs around the playable box, so sunken routes inside it stay visible from above.
-      const apron = new THREE.MeshStandardMaterial({ color: groundColor, roughness: 1, metalness: 0 });
-      const pad = 6, far = 700;
+      const pad = 6, far = 700, unit = new THREE.BoxGeometry(1, 1, 1);
       [[-far, bounds.minX - pad, -far, far], [bounds.maxX + pad, far, -far, far], [bounds.minX - pad, bounds.maxX + pad, -far, bounds.minZ - pad], [bounds.minX - pad, bounds.maxX + pad, bounds.maxZ + pad, far]].forEach(([x1, x2, z1, z2]) => {
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x2 - x1, z2 - z1), apron);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.position.set((x1 + x2) / 2, -0.4, (z1 + z2) / 2);
+        const mesh = new THREE.Mesh(unit, apron);
+        mesh.scale.set(x2 - x1, 0.4, z2 - z1);
+        mesh.position.set((x1 + x2) / 2, -0.6, (z1 + z2) / 2);
         mesh.receiveShadow = false;
         group.add(mesh);
       });
@@ -327,9 +353,7 @@ export class Arena {
     };
     if (env.backdrop === 'skyline') this.addSkyline(group, reach + 70, centre);
     if (env.backdrop === 'town') {
-      const walls = surfaceMaterial('ochre');
-      walls.defines = { PATTERN: PATTERNS.windows };
-      walls.customProgramCacheKey = () => 'surface-windows';
+      const walls = surfaceMaterial('ochre', 0, 'windows');
       walls.color.set('#a9835a');
       walls.fog = false;
       this.skylineMaterial = walls;
@@ -341,9 +365,9 @@ export class Arena {
       ring(64, new THREE.BoxGeometry(1, 1, 1), roofs, (r) => { const base = specs[index]; index += 1; r(); r(); r(); r(); return { radius: base.radius, w: base.w + 1.2, d: base.d + 1.2, h: 0.8, y: base.h - 1 + 0.4 }; });
     }
     if (env.backdrop === 'mountains') {
-      const rockMat = new THREE.MeshStandardMaterial({ color: '#c3cfda', roughness: 1, flatShading: true });
+      const rockMat = peakMaterial(52);
       ring(34, new THREE.ConeGeometry(0.7, 1, 5), rockMat, (r) => { const h = 50 + r() * 90; return { radius: reach + 110 + r() * 160, w: h * (1.2 + r()), d: h * (1.2 + r()), h, y: h / 2 - 3, turn: r() * 3 }; });
-      const capMat = new THREE.MeshStandardMaterial({ color: '#8d99a6', roughness: 1, flatShading: true });
+      const capMat = peakMaterial(60);
       ring(22, new THREE.ConeGeometry(0.7, 1, 4), capMat, (r) => { const h = 26 + r() * 40; return { radius: reach + 50 + r() * 50, w: h * (1.6 + r()), d: h * (1.6 + r()), h, y: h / 2 - 3, turn: r() * 3 }; });
     }
     if (env.backdrop === 'mesas') {
@@ -354,9 +378,7 @@ export class Arena {
 
   // A ring of dark towers beyond the walls gives the city maps a place in the world.
   addSkyline(group, inner = 130, centre = { x: 0, z: 0 }) {
-    const material = surfaceMaterial('wall');
-    material.defines = { PATTERN: PATTERNS.windows };
-    material.customProgramCacheKey = () => 'surface-windows';
+    const material = surfaceMaterial('wall', 0, 'windows');
     material.color.set('#141a21');
     material.fog = false;
     this.skylineMaterial = material;
@@ -384,17 +406,25 @@ export class Arena {
     this.sun.color.set(v.sun); this.sun.intensity = v.sunPower;
     const u = this.sky.material.uniforms;
     u.top.value.set(v.top); u.horizon.value.set(v.horizon); u.sunDir.value.set(...v.sunDir).normalize(); u.sunColor.value.set(v.sun).multiplyScalar(v.sunPower / 2.6); u.stars.value = v.stars;
+    u.cloudCover.value = v.cloud ?? 0.4; u.cloudLight.value.set(v.cloudLight || '#ffffff'); u.cloudShade.value.set(v.cloudShade || '#a6b5c5');
     this.baseExposure = v.exposure;
-    this.renderer.toneMappingExposure = v.exposure * (this.brightness || 1);
+    this.renderer.toneMappingExposure = EXPOSURE.value = v.exposure * (this.brightness || 1);
+    this.refreshEnvironment();
     this.lamps.forEach((lamp) => { lamp.intensity = lamp.userData.base * (0.35 + v.lamps); lamp.visible = this.lampsOn !== false; });
-    this.glows.forEach((glow) => { glow.material.opacity = Math.min(1, 0.15 + v.lamps * 0.6); });
+    this.glows.forEach((glow) => { glow.material.opacity = Math.min(1, 0.15 + v.lamps * 0.6) * (this.bloom ? 0.45 : 1); });
     if (this.skylineMaterial) {
       const uniforms = this.skylineMaterial.userData.uniforms;
       uniforms.uWindowGlow.value = v.windows;
       uniforms.uHaze.value = (v.haze ?? 0.6) * (this.map?.env?.backdrop === 'town' ? 0.45 : 1);
-      uniforms.uHazeColor.value.set(v.fog).convertLinearToSRGB();
+      // Distance takes the towers toward the sky they stand against: mostly the horizon as it is drawn, part fog.
+      uniforms.uHazeColor.value.set(v.fog).convertLinearToSRGB().lerp(hazeTint.set(v.horizon), 0.7);
     }
     this.rain.visible = Boolean(v.precip);
+    // Dust shows in dry air with a sun to light it: thick in the haze, thin at night, none in rain or snow.
+    this.motes.points.visible = !v.precip && this.surfaceDetail !== 0;
+    this.motes.uniforms.uSun.value.copy(this.sunDir);
+    this.motes.uniforms.uTint.value.set(v.sun);
+    this.motes.uniforms.uAmount.value = v.dust ?? 0.3;
     const weather = this.rain.material.uniforms;
     if (v.precip === 'snow') { weather.fall.value = 2.4; weather.streak.value = 0.09; weather.drift.value = 1.1; weather.sway.value = 0.5; weather.tint.value.setRGB(1, 1, 1); } else { weather.fall.value = 26; weather.streak.value = 0.7; weather.drift.value = 3; weather.sway.value = 0; weather.tint.value.setRGB(0.75, 0.82, 0.9); }
     for (const key of ['neonCyan', 'neonOrange', 'neonPink', 'lamp']) if (this.materials.has(key)) this.materials.get(key).emissiveIntensity = MATERIALS[key].emissive * (0.5 + v.lamps * 0.9);
@@ -409,8 +439,42 @@ export class Arena {
     this.scene.fog.near = v.fogNear * Math.max(1, reach * 0.8); this.scene.fog.far = v.fogFar * reach;
     this.viewReach = reach;
   }
+  // Bloom on: anything that gives off light is turned up past white so the glow pass has something to take.
+  applyGlow() {
+    const boost = this.bloom ? 2.8 : 1;
+    for (const material of this.materials.values()) if (material.userData.glow) material.emissiveIntensity = material.userData.glow * boost;
+    for (const sign of this.signs || []) sign.material.color.setScalar(this.bloom ? 2.6 : 1);
+    // The glow pass gives every lamp a halo of its own, so the painted one steps back.
+    if (this.variant) this.glows?.forEach((glow) => { glow.material.opacity = Math.min(1, 0.15 + this.variant.lamps * 0.6) * (this.bloom ? 0.45 : 1); });
+  }
+  // The sky, baked into a reflection for everything shiny: steel, water, polished stone, glass.
+  refreshEnvironment() {
+    if (!this.pmrem) {
+      this.pmrem = new THREE.PMREMGenerator(this.renderer);
+      this.envScene = new THREE.Scene();
+      this.envScene.add(new THREE.Mesh(this.sky.geometry, this.sky.material));
+    }
+    const linear = this.sky.material.uniforms.scopePass, was = linear.value;
+    linear.value = 1;
+    const target = this.pmrem.fromScene(this.envScene, 0.03, 1, 2000);
+    linear.value = was;
+    this.envTarget?.dispose();
+    this.envTarget = target;
+    this.scene.environment = target.texture;
+    this.scene.environmentIntensity = this.variant?.env ?? 0.42;
+  }
   setGraphics(g) {
+    const bloom = g.bloom !== false;
+    if (bloom !== this.bloom) { this.bloom = bloom; this.applyGlow(); }
     this.viewDistance = g.viewDistance || 'high'; this.applyViewDistance();
+    // Surface detail: relief lighting and the busier patterns. Low turns them off for slow machines.
+    const detail = g.detail === 'low' ? 0 : 1;
+    if (detail !== (this.surfaceDetail ?? 1)) {
+      this.surfaceDetail = detail;
+      this.grass.setEnabled(detail === 1);
+      this.motes.points.visible = detail === 1 && !this.variant?.precip;
+      for (const material of this.materials.values()) if (material.defines) { material.defines.DETAIL = detail; material.customProgramCacheKey = () => `surface-${material.defines.PATTERN}-${detail}`; material.needsUpdate = true; }
+    }
     const size = { low: 1024, high: 2048, ultra: 4096 }[g.shadows] || 0;
     this.sun.castShadow = size > 0;
     if (size && this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
@@ -419,7 +483,7 @@ export class Arena {
     // Render scale is a share of the screen's own resolution; above 1 supersamples.
     this.renderer.setPixelRatio(Math.max(0.4, Math.min(devicePixelRatio * g.renderScale, 3)));
     this.brightness = g.brightness || 1;
-    this.renderer.toneMappingExposure = (this.baseExposure ?? 1) * this.brightness;
+    this.renderer.toneMappingExposure = EXPOSURE.value = (this.baseExposure ?? 1) * this.brightness;
   }
 
   resetRound() {
@@ -465,7 +529,9 @@ export class Arena {
 
   update(dt, camera) {
     this.time += dt;
+    SURFACE_TIME.value = this.time;
     this.sky.position.copy(camera.position);
+    this.grass.update(camera); this.motes.update(camera, this.renderer);
     const v = this.variant;
     // Keep the shadow frustum centred near the player for crisper shadows.
     this.sun.target.position.set(Math.round(camera.position.x / 8) * 8, 0, Math.round(camera.position.z / 8) * 8);

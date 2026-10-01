@@ -3,15 +3,16 @@
 // it was instead of starting again. Results arrive with the new balance, which is held back until the
 // animation lands so the coin counter never gives the answer away.
 import { COSMETICS, DEV_CLASS, WEAPONS, WEAPON_CLASSES, cosmeticUnlocked, dateKey, weaponClass } from '../shared/constants.js';
-// SLOTS is already the slot machine here, so the gun's six slots come in under their own name.
+// The gun's six slots come in under their own name: SLOTS means the slot machine everywhere else.
 import { ATTACHMENTS, SLOTS as GUN_SLOTS, SLOT_NAMES, cleanBuild, emptyBuild, isEmptyBuild, partsFor, resolveWeapon } from '../shared/attachments.js';
 import { nextUnlock, partUnlocked, unlockLevel, weaponProgress } from '../shared/gunlevels.js';
 import { bundleOn, bundlePrice, itemName, itemPrice, itemSet, lastSeen, ownsItem, seenLine, seenText, shopFor, untilRotation } from '../shared/itemshop.js';
 import * as THREE from 'three';
-import { COINFLIP, CRATES, DAILY_CRATE, DICE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, CARD_NAMES, CRASH, PLINKO, crashAt, hiloMultiplier, hiloOdds, SCRAP, SLOTS, STAKE, TRADE_UP, crateFinishes, crateOdds, devFinish, diceMultiplier, finishInfo, finishPrice, publicFinishes, PUBLIC_RARITIES } from '../shared/economy.js';
+import { KNIVES, crateItems, knifeInfo, CRATES, DAILY_CRATE, DUPLICATE_REFUND, EPIC_OR_BETTER, FINISHES, NEXT_RARITY, RARITY, finishValue, SCRAP, TRADE_UP, crateFinishes, crateOdds, devFinish, finishInfo, finishPrice, publicFinishes, PUBLIC_RARITIES } from '../shared/economy.js';
 import { bus, game } from './state.js';
 import { codeLabel } from './input.js';
 import { net } from './net.js';
+import { arcadeHtml, initArcade, onArcadeClick, onArcadeInput, startFrame } from './arcade.js';
 import { play } from './audio.js';
 import { animatedFinish, finishSwatch, patternSwatch } from './skins.js';
 import { buildCharm, buildWeapon, stripHands } from './viewmodel.js';
@@ -19,7 +20,7 @@ import { updateCharm } from './charms.js';
 import { turntable } from './turntable.js';
 import { CRATE_OPEN_TIME, buildCrate, poseCrate } from './cratebox.js';
 import { animateOperator, buildOperator, lookOf, styleOperator } from './characters.js';
-import { skinArt } from './weaponart.js';
+import { skinArt, knifeArt } from './weaponart.js';
 import { shopNow, shopToday } from './itemcatalogue.js';
 
 const escapeHtml = (text) => String(text).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
@@ -32,7 +33,7 @@ const SECTIONS = {
   locker: { eyebrow: 'Locker', title: 'Your <em>loadout.</em>', tabs: [['gear', 'Operator'], ['inventory', 'Skins'], ['charms', 'Charms']] },
   // Its own page rather than a tab in the locker: it is where a gun is built, not where it is dressed.
   gunsmith: { eyebrow: 'Gunsmith', title: 'Build your <em>guns.</em>', tabs: [['gunsmith', 'Gunsmith']] },
-  shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['market', 'Crates & Shop'], ['skins', 'Skins']], balance: true },
+  shop: { eyebrow: 'Shop', title: 'Spend your <em>coins.</em>', tabs: [['items', 'Item Shop'], ['crates', 'Crates'], ['skins', 'Skins']], balance: true },
   games: { eyebrow: 'Games', title: 'Double or <em>nothing.</em>', tabs: [['games', 'Games']], balance: true },
   wallet: { eyebrow: 'Profile', title: 'Your <em>coins.</em>', tabs: [['wallet', 'Wallet']], balance: true },
 };
@@ -43,12 +44,11 @@ const lastTab = {};
 const TEASE = { common: 0.45, rare: 0.7, epic: 1.05, legendary: 1.7, mythic: 2.4 };
 const REVEAL_SOUND = { common: 'buy', rare: 'ready', epic: 'xp', legendary: 'roundWin', mythic: 'matchWin' };
 const REEL_ITEM = 128, REEL_LENGTH = 34, REEL_WIN = 29, CRATE_SPIN = 4.6;
-const SLOT_ROW = 64, SLOT_TIMES = [1.1, 1.5, 1.9];
 const now = () => performance.now() / 1000;
 const skinnable = Object.values(WEAPONS);
 
 let ctx = null;
-let tab = 'crates';
+let tab = 'items';
 let weaponId = 'm44';
 let preview = null;          // finish being looked at (null = what is equipped)
 let armed = null;            // a buy or send waiting for its confirm click
@@ -61,9 +61,6 @@ let dropsAsked = false;
 let inventoryPick = null;    // the finish shown on the inventory stage
 let trade = [];              // skins picked for a trade-up
 let tradeMode = false;
-let flip = null, dice = null, slots = null, plinko = null, hilo = null; // { result, at }
-let crashGame = null;        // { phase: 'running' | 'done', stake, auto, start, result }
-let crashAuto = '';
 let gearKind = 'headgear';
 let tryOn = null;            // a gear item being tried on, not yet equipped
 let charmTry = null;
@@ -77,12 +74,11 @@ let smithDetail = false;     // every stat in rows, rather than the summary bars
 let smithLastGun = null;     // closing the list when the gun changes, since the slot may not exist on it
 let friends = null;          // [{ name, avatar, level, title, online }] once fetched
 let friendName = '';
-let stake = 10, target = 50, pick = 'heads';
 let crateId = 'field';
 let rarityFilter = 'all';
 let wallet = { to: '', amount: '', pilot: null, looking: false };
 
-export function initShop(context) { ctx = context; }
+export function initShop(context) { ctx = context; initArcade({ redraw, refreshCoins: () => ctx.refreshCoins(), toast: (text, tone) => ctx.toast(text, tone), coins }); }
 const loggedIn = () => Boolean(game.username && game.profile);
 // The developers' accounts see their Dev class items; everyone else never sees them listed at all.
 const isDev = () => Boolean(game.profile?.dev);
@@ -119,12 +115,15 @@ function request(message) { if (busy) return; busy = true; net.send(message); }
 net.on('coins-result', (message) => {
   busy = false;
   armed = null;
+  // The games have their own table and their own listener (client/arcade.js).
+  if (message.game || message.crashStarted || 'mines' in message) return;
   if (message.unboxed) {
     // The reel lands on the best drop; the reveal then shows all of them.
     const got = message.unboxed.drops;
     const best = got.reduce((top, drop) => (RARITY_RANK[drop.rarity] > RARITY_RANK[top.rarity] ? drop : top), got[0]);
-    const pool = crateFinishes(CRATES[message.unboxed.crate]);
-    const strip = Array.from({ length: REEL_LENGTH }, (_, i) => (i === REEL_WIN ? best : { weapon: skinnable[Math.floor(Math.random() * skinnable.length)].id, finish: pool[Math.floor(Math.random() * pool.length)].id }));
+    const blades = Boolean(CRATES[message.unboxed.crate].knives);
+    const pool = crateItems(CRATES[message.unboxed.crate]);
+    const strip = Array.from({ length: REEL_LENGTH }, (_, i) => { if (i === REEL_WIN) return best; const item = pool[Math.floor(Math.random() * pool.length)]; return blades ? { knife: item.id } : { weapon: skinnable[Math.floor(Math.random() * skinnable.length)].id, finish: item.id }; });
     // The crate is opened first (shake, latches, lid), then the reel runs.
     crate = { id: message.unboxed.crate, strip, at: now(), offset: Math.random() * 80 - 40 };
     clearTimeout(openTimer);
@@ -134,14 +133,6 @@ net.on('coins-result', (message) => {
     held = message.profile;
     landAfter(CRATE_OPEN_TIME + CRATE_SPIN);
     redraw();
-  } else if (message.crashStarted) {
-    busy = false;
-    game.profile = message.profile;
-    crashGame = { phase: 'running', ...message.crashStarted };
-    play('ready');
-    ctx.refreshCoins();
-    redraw();
-    startGameFrame();
   } else if (message.traded) {
     held = null;
     game.profile = message.profile;
@@ -160,24 +151,6 @@ net.on('coins-result', (message) => {
     ctx.toast(`Scrapped for ${message.scrapped.coins} coins.`, 'good');
     play('buy');
     ctx.refreshCoins();
-    redraw();
-  } else if (message.game) {
-    const result = message.game;
-    const state = { result, at: now() };
-    if (result.game === 'crash') {
-      // Settled by a cash-out or by the crash itself; there is nothing left to animate.
-      crashGame = { ...(crashGame || {}), phase: 'done', result };
-      game.profile = message.profile;
-      play(result.payout > result.stake ? 'buy' : 'deny');
-      ctx.refreshCoins();
-      redraw();
-      return;
-    }
-    const duration = GAME_TIME[result.game];
-    ({ coinflip: () => { flip = state; }, dice: () => { dice = state; }, slots: () => { slots = state; }, plinko: () => { plinko = state; }, hilo: () => { hilo = state; } })[result.game]();
-    if (result.game === 'plinko') setTimeout(startGameFrame, 0);
-    held = message.profile; release(duration);
-    setTimeout(() => play(result.payout > result.stake ? 'buy' : 'deny'), duration * 1000);
     redraw();
   } else {
     if (message.profile) game.profile = message.profile;
@@ -225,7 +198,7 @@ net.on('friends-result', (message) => {
 net.on('drops', (message) => { drops = message.drops || []; redraw(); });
 net.on('drop', (message) => {
   drops = [message.drop, ...drops].slice(0, 12);
-  const info = finishInfo(message.drop.finish);
+  const info = dropInfo(message.drop);
   if (message.drop.name !== game.username) ctx?.toast(`${message.drop.name} unboxed ${info.name} (${RARITY[message.drop.rarity].name})`, 'good');
   redraw();
 });
@@ -430,14 +403,11 @@ function spin() {
   requestAnimationFrame(spin);
 }
 function stageSubject() {
-  if (tab === 'crates' && reveal?.landed) { const drop = reveal.drops[reveal.index]; return { kind: 'gun', weapon: drop.weapon, finish: drop.finish }; }
+  if (tab === 'crates' && reveal?.landed) return dropSubject(reveal.drops[reveal.index]);
   if (tab === 'crates') return { kind: 'crate', id: crate?.id || crateId };
   if (tab === 'inventory' && inventoryPick) return { kind: 'gun', weapon: weaponId, finish: inventoryPick };
-  if (tab === 'market') {
-    if (reveal?.landed) { const drop = reveal.drops[reveal.index]; return { kind: 'gun', weapon: drop.weapon, finish: drop.finish }; }
-    if (crate || !itemPick) return { kind: 'crate', id: crate?.id || crateId };
-    return itemSubject();
-  }
+  if (tab === 'items') return itemSubject();
+  if (tab === 'gear' && gearKind === 'knife') return { kind: 'gun', weapon: 'knife', finish: game.look.skins?.knife || null, build: { knife: tryOn || game.look.knife || 'kestrel' } };
   if (tab === 'gear') return { kind: 'operator', look: tryLook() };
   if (tab === 'gunsmith') return { kind: 'gun', weapon: weaponId, finish: equippedFinish(), build: workingBuild(weaponId) };
   if (tab === 'charms') return { kind: 'gun', weapon: charmWeapon, finish: game.look.skins?.[charmWeapon] || null, charm: charmTry ?? game.look.charm };
@@ -558,14 +528,19 @@ function ownedCount() {
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 // A finish goes on every gun, so naming one here read as the skin being for that gun and nothing else.
 // The gun a drop carries is only which one it is shown on.
-const dropName = (drop) => finishInfo(drop.finish).name;
+// A drop is a finish, or (from the Blade crate) a knife. These read either.
+const dropInfo = (drop) => (drop.knife ? knifeInfo(drop.knife) : finishInfo(drop.finish));
+const dropName = (drop) => dropInfo(drop).name;
+const dropImage = (drop) => (drop.knife ? knifeArt(drop.knife) : finishSwatch(drop.finish));
+const dropSubject = (drop) => (drop.knife ? { kind: 'gun', weapon: 'knife', finish: game.look.skins?.knife || null, build: { knife: drop.knife } } : { kind: 'gun', weapon: drop.weapon, finish: drop.finish });
 function crateBox(c) { const image = thumb(`crate:${c.id}`); return image ? `<img class="crate-thumb" src="${image}" alt="" />` : `<i class="crate-box" style="--crate:${c.color}"><b></b></i>`; }
 // Nine crates split on the one thing that changes how an open feels: whether commons are still in the pool.
 const CRATE_GROUPS = [
-  { eyebrow: '01 // EVERY RARITY', name: 'Open stock', note: 'Commons on up. Cheap to chase.', holds: (c) => Boolean(c.weights.common) },
-  { eyebrow: '02 // NO COMMONS', name: 'High grade', note: 'Rare or better, every open.', holds: (c) => !c.weights.common },
+  { eyebrow: '01 // EVERY RARITY', name: 'Open stock', note: 'Commons on up. Cheap to chase.', holds: (c) => !c.knives && Boolean(c.weights.common) },
+  { eyebrow: '02 // NO COMMONS', name: 'High grade', note: 'Rare or better, every open.', holds: (c) => !c.knives && !c.weights.common },
+  { eyebrow: '03 // BLADES', name: 'Knives', note: 'A different knife for your third slot.', holds: (c) => Boolean(c.knives) },
 ];
-const crateChip = (c) => `<button type="button" class="crate-card${crateId === c.id ? ' active' : ''}" data-crate="${c.id}" style="--crate:${c.color}">${crateBox(c)}<b>${c.name}</b><span>${coins(c.cost)}</span><small>${c.blurb}</small></button>`;
+const crateChip = (c) => `<button type="button" class="crate-line${crateId === c.id ? ' active' : ''}" data-crate="${c.id}" style="--crate:${c.color}">${crateBox(c)}<b>${c.name.replace(/ crate$/i, '')}</b><span>${coins(c.cost)}</span></button>`;
 function cratesHtml() {
   const profile = game.profile;
   const chosen = CRATES[crateId];
@@ -576,15 +551,15 @@ function cratesHtml() {
   const pity = chosen.pity ? `Epic or better within ${plural(chosen.pity - since, 'open')}.` : odds.every(([id]) => EPIC_OR_BETTER.includes(id)) ? 'Every drop is Epic or better.' : '';
   const dailyWait = Math.max(0, (profile.dailyCrate || 0) + DAILY_CRATE.hours * 3600e3 - Date.now());
   const spinning = Boolean(crate) && !reveal?.landed;
-  const picker = `<div class="crate-pick">${CRATE_GROUPS.map((group) => {
+  const picker = CRATE_GROUPS.map((group) => {
     const list = Object.values(CRATES).filter(group.holds).sort((a, b) => a.cost - b.cost);
-    return `<section class="mode-block crate-block"><header class="block-head"><small>${group.eyebrow}</small><b>${group.name}</b><span>${group.note}</span></header><div class="crate-row">${list.map(crateChip).join('')}</div></section>`;
-  }).join('')}</div>`;
+    return `<section class="crate-group"><header><b>${group.name}</b><small>${group.note}</small></header>${list.map(crateChip).join('')}</section>`;
+  }).join('');
   const daily = `<button type="button" class="daily-crate${dailyWait ? ' waiting' : ''}" data-daily="1" ${dailyWait || busy || spinning ? 'disabled' : ''}>${crateBox(CRATES[DAILY_CRATE.crate])}<span><b>Daily crate</b><small>${dailyWait ? `Next one in ${Math.ceil(dailyWait / 3600e3)}h` : 'Free. One field crate a day.'}</small></span></button>`;
   let stageHtml;
   if (reveal?.landed) {
-    const shown = reveal.drops[reveal.index], info = finishInfo(shown.finish), rarity = RARITY[shown.rarity];
-    const equipped = equippedFinish() === shown.finish;
+    const shown = reveal.drops[reveal.index], info = dropInfo(shown), rarity = RARITY[shown.rarity];
+    const equipped = shown.knife ? game.look.knife === shown.knife : equippedFinish() === shown.finish;
     const again = reveal.source === 'crate' && !reveal.free ? `<button type="button" data-open-crate="${reveal.crateId}" data-count="${reveal.count}" ${busy ? 'disabled' : ''}>Open again ${coins(CRATES[reveal.crateId].cost * reveal.count)}</button>` : '';
     // The page redraws whenever anything changes, so every animation here starts from `--since`: how long
     // ago the card landed. A redraw mid-reveal picks the sequence up where it was instead of replaying it.
@@ -595,35 +570,37 @@ function cratesHtml() {
     const sparks = Array.from({ length: [0, 8, 14, 22, 32][rank] || 0 }, (_, k) => { const a = (k / ([0, 8, 14, 22, 32][rank])) * Math.PI * 2 + (k % 3) * 0.2, reach = 120 + ((k * 53) % 140); return `<i style="--x:${Math.round(Math.cos(a) * reach)}px;--y:${Math.round(Math.sin(a) * reach)}px;--d:${(tease + ((k * 37) % 25) / 100).toFixed(2)}s"></i>`; }).join('');
     const status = shown.duplicate
       ? `<p class="dupe-line">Duplicate · ${coins(shown.refund)} back</p>`
-      : equipped ? '<p class="good">On every gun.</p>' : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`;
+      : equipped ? `<p class="good">${shown.knife ? 'In your hand.' : 'On every gun.'}</p>` : `<button type="button" class="mini" data-equip-drop="${reveal.index}">Equip</button>`;
     stageHtml = `<div class="reveal rarity-${shown.rarity}${shown.duplicate ? ' is-dupe' : ''}" style="--rarity:${rarity.color};--since:${since.toFixed(2)}s;--tease:${tease}s">
       <i class="reveal-dim"></i><i class="reveal-rays"></i><i class="reveal-burst"></i><i class="reveal-ring"></i><i class="reveal-ring second"></i>
       <div class="reveal-sparks">${sparks}</div>
       <div class="reveal-flip"><div class="reveal-back"><b>${rarity.name}</b><span>?</span></div>
         <div class="reveal-front"><div id="skin-stage" class="skin-stage"></div>${shown.duplicate ? '<em class="dupe-stamp">Duplicate</em>' : ''}</div></div>
-      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>Fits every gun${animatedFinish(shown.finish) ? ' · animated' : ''}</span>
+      <div class="reveal-info"><small>${reveal.source === 'trade' ? 'Trade-up' : rarity.name}${shown.pity ? ' · pity drop' : ''}</small><h3>${info.name}</h3><span>${shown.knife ? escapeHtml(info.blurb || 'A new blade.') : `Fits every gun${animatedFinish(shown.finish) ? ' · animated' : ''}`}</span>
         ${status}</div>
-      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img src="${finishSwatch(drop.finish)}" alt="" /><b>${finishInfo(drop.finish).name}</b><small>${RARITY[drop.rarity].name}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
+      ${reveal.drops.length > 1 ? `<div class="reveal-row">${reveal.drops.map((drop, i) => `<button type="button" class="reveal-card rarity-${drop.rarity}${i === reveal.index ? ' active' : ''}${drop.duplicate ? ' is-dupe' : ''}" style="--rarity:${RARITY[drop.rarity].color};--d:${(tease + 0.5 + i * 0.12).toFixed(2)}s" data-reveal="${i}"><img${drop.knife ? ' class="knife-shot"' : ''} src="${dropImage(drop)}" alt="" /><b>${dropName(drop)}</b><small>${RARITY[drop.rarity].name}${drop.duplicate ? ` · dupe +${drop.refund}` : ''}</small></button>`).join('')}</div>` : ''}
       <div class="button-row">${again}<button type="button" class="ghost-button" data-close-reveal="1">Done</button></div></div>`;
   } else {
     const opening = Boolean(crate) && now() - crate.at < CRATE_OPEN_TIME;
-    let reel = '<div class="reel-idle">Random finish. Random gun.</div>';
+    let reel = `<div class="reel-idle">${chosen.knives ? 'A random knife for your third slot.' : 'Random finish. Random gun.'}</div>`;
     if (crate && !opening) {
       const elapsed = Math.min(CRATE_SPIN, now() - crate.at - CRATE_OPEN_TIME);
       const end = -(REEL_WIN * REEL_ITEM + REEL_ITEM / 2 + crate.offset);
-      reel = `<div class="reel-strip" style="--end:${end}px;animation-delay:-${elapsed}s;animation-duration:${CRATE_SPIN}s">${crate.strip.map((item) => { const info = finishInfo(item.finish); return `<div class="reel-item rarity-${info.rarity}" style="--rarity:${RARITY[info.rarity].color}"><img src="${finishSwatch(item.finish)}" alt="" /><small>${RARITY[info.rarity].name}</small></div>`; }).join('')}</div><i class="reel-mark"></i><small class="reel-skip">Click to skip</small>`;
+      reel = `<div class="reel-strip" style="--end:${end}px;animation-delay:-${elapsed}s;animation-duration:${CRATE_SPIN}s">${crate.strip.map((item) => { const info = dropInfo(item); return `<div class="reel-item rarity-${info.rarity}${item.knife ? ' knife-item' : ''}" style="--rarity:${RARITY[info.rarity].color}"><img src="${dropImage(item)}" alt="" /><small>${RARITY[info.rarity].name}</small></div>`; }).join('')}</div><i class="reel-mark"></i><small class="reel-skip">Click to skip</small>`;
     } else if (opening) reel = '<div class="reel-idle">Opening</div>';
-    stageHtml = `<div id="skin-stage" class="skin-stage crate-stage${opening ? ' opening' : ''}"></div>
+    stageHtml = `<header class="crate-title" style="--crate:${chosen.color}"><small>${chosen.knives ? 'Knife crate' : odds.some(([id]) => id === 'common') ? 'Every rarity' : 'No commons'}</small><h2>${chosen.name}</h2><p>${chosen.blurb}</p></header>
+      <div id="skin-stage" class="skin-stage crate-stage${opening ? ' opening' : ''}"></div>
       ${spinning ? '<button type="button" class="reel spinning" data-skip="1" aria-label="Skip">' : '<div class="reel">'}${reel}${spinning ? '</button>' : '</div>'}
-      <div class="button-row"><button type="button" data-open-crate="${chosen.id}" data-count="1" ${busy || spinning ? 'disabled' : ''}>Open ${coins(chosen.cost)}</button><button type="button" class="secondary-button" data-open-crate="${chosen.id}" data-count="5" ${busy || spinning ? 'disabled' : ''}>Open ×5 ${coins(chosen.cost * 5)}</button>${pity ? `<span class="muted">${pity}</span>` : ''}</div>`;
+      <div class="button-row crate-buy"><button type="button" class="crate-open" data-open-crate="${chosen.id}" data-count="1" ${busy || spinning ? 'disabled' : ''}>Open ${coins(chosen.cost)}</button><button type="button" class="secondary-button" data-open-crate="${chosen.id}" data-count="5" ${busy || spinning ? 'disabled' : ''}>Open ×5 ${coins(chosen.cost * 5)}</button>${pity ? `<span class="muted">${pity}</span>` : ''}</div>`;
   }
-  const contents = Object.keys(RARITY).map((rarity) => { const list = crateFinishes(chosen).filter((finish) => finish.rarity === rarity); return list.length ? `<div class="contents-row" style="--rarity:${RARITY[rarity].color}"><small>${RARITY[rarity].name}</small><div>${list.map((finish) => `<img src="${finishSwatch(finish.id)}" alt="${finish.name}" title="${finish.name}" />`).join('')}</div></div>` : ''; }).join('');
-  const feed = drops.length ? drops.map((drop) => `<div class="drop-row" style="--rarity:${RARITY[drop.rarity].color}"><img src="${finishSwatch(drop.finish)}" alt="" /><span><b>${escapeHtml(drop.name)}</b> ${dropName(drop)}</span><small>${WHEN(drop.at)}</small></div>`).join('') : '<p class="muted">No big drops yet.</p>';
-  return `<div class="shop-crates">
-    <div class="crate-main">${daily}${picker}<div class="panel crate-panel">${stageHtml}</div></div>
-    <div class="crate-side">
-      <div class="panel"><p class="eyebrow">Odds <small>${chosen.name}</small></p><ul class="odds">${oddsHtml}</ul><small class="muted">Duplicates pay back ${Math.round(DUPLICATE_REFUND * 100)}% of the skin’s price.</small></div>
-      <div class="panel"><p class="eyebrow">Inside <small>${crateFinishes(chosen).length} finishes</small></p>${contents}</div>
+  const contents = Object.keys(RARITY).map((rarity) => { const list = crateItems(chosen).filter((item) => item.rarity === rarity); return list.length ? `<div class="contents-row${chosen.knives ? ' knives' : ''}" style="--rarity:${RARITY[rarity].color}"><small>${RARITY[rarity].name}</small><div>${list.map((item) => (chosen.knives ? `<span class="knife-chip${(game.profile.owned || []).includes(`knife:${item.id}`) ? ' owned' : ''}" title="${item.name}"><img src="${knifeArt(item.id)}" alt="" /><b>${item.name}</b></span>` : `<img src="${finishSwatch(item.id)}" alt="${item.name}" title="${item.name}" />`)).join('')}</div></div>` : ''; }).join('');
+  const feed = drops.length ? drops.map((drop) => `<div class="drop-row" style="--rarity:${RARITY[drop.rarity].color}"><img${drop.knife ? ' class="knife-shot"' : ''} src="${dropImage(drop)}" alt="" /><span><b>${escapeHtml(drop.name)}</b> ${dropName(drop)}</span><small>${WHEN(drop.at)}</small></div>`).join('') : '<p class="muted">No big drops yet.</p>';
+  return `<div class="crate-desk">
+    <nav class="crate-list" aria-label="Crates">${daily}${picker}</nav>
+    <div class="panel crate-panel">${stageHtml}</div>
+    <div class="crate-facts">
+      <div class="panel"><p class="eyebrow">Odds <small>${chosen.name}</small></p><ul class="odds">${oddsHtml}</ul><small class="muted">Duplicates pay back ${Math.round(DUPLICATE_REFUND * 100)}% of ${chosen.knives ? 'the knife’s' : 'the skin’s'} value.</small></div>
+      <div class="panel"><p class="eyebrow">Inside <small>${crateItems(chosen).length} ${chosen.knives ? 'knives' : 'finishes'}</small></p>${contents}</div>
       <div class="panel"><p class="eyebrow">Big drops</p><div class="drop-feed">${feed}</div></div>
     </div></div>`;
 }
@@ -677,6 +654,7 @@ const GEAR_KINDS = [
   ['headgear', 'Headgear', 'Helmets, hats and hoods.'], ['face', 'Face', 'Masks, visors and shades.'], ['pack', 'Pack', 'What rides on your back.'],
   ['suit', 'Suit', 'The base colour of the suit.'], ['pattern', 'Pattern', 'Camo printed over the suit.'], ['visor', 'Visor', 'The glow through the mask.'],
   ['tracer', 'Tracer', 'The streak your rounds leave.'], ['title', 'Title', 'The line under your callsign.'],
+  ['knife', 'Knife', 'The blade in your third slot. New ones come out of the Blade crate.'],
 ];
 const LOOK_KEY = { suit: 'color', visor: 'accent' };
 const lookKey = (kind) => LOOK_KEY[kind] || kind;
@@ -689,12 +667,13 @@ function gearStatus(kind, item) {
   return { owned, unlocked, equipped: game.look[lookKey(kind)] === item.id };
 }
 // The line under a card's name: where it comes from, or that it is already yours.
-const gearTag = (kind, item, state) => (item.dev ? devChip : item.shop === 'item' ? (state.owned ? 'Owned' : escapeHtml(seenLine(kind, item.id, shopToday())?.name || 'Item Shop')) : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`);
+const gearTag = (kind, item, state) => (item.dev ? devChip : item.shop === 'item' ? (state.owned ? 'Owned' : escapeHtml(seenLine(kind, item.id, shopToday())?.name || 'Item Shop')) : item.crate ? (state.owned ? `${RARITY[item.rarity].name} · owned` : `${RARITY[item.rarity].name} · Blade crate`) : item.price ? (state.owned ? 'Owned' : 'Coins') : `Level ${item.level}`);
 function gearAction(kind, item, state) {
   const key = `gear:${kind}:${item.id}`;
   if (state.equipped) return '<em class="state on">Equipped</em>';
   if (state.unlocked) return `<button type="button" class="mini" data-gear-equip="${item.id}">Equip</button>`;
   if (item.shop === 'item') return '<em class="state item-only">Item Shop</em>';
+  if (item.crate) return '<button type="button" class="mini" data-shop-goto="blade">Blade crate</button>';
   if (!item.price) return `<em class="state">Level ${item.level}</em>`;
   return `<button type="button" class="mini buy${armed === key ? ' armed' : ''}" data-gear-buy="${item.id}">${armed === key ? 'Confirm' : 'Buy'} ${coins(item.price)}</button>`;
 }
@@ -703,13 +682,14 @@ function gearVisual(kind, item) {
   if (kind === 'suit' || kind === 'visor' || kind === 'tracer') return `<i class="gear-swatch" style="background:${item.id}"></i>`;
   if (kind === 'pattern') return `<i class="gear-swatch" style="background-color:${game.look.color};${item.id === 'solid' ? '' : `background-image:url(${patternSwatch(item.id)})`}"></i>`;
   if (kind === 'title') return `<i class="gear-title${item.dev ? ' dev-title' : ''}">${escapeHtml(item.name)}</i>`;
+  if (kind === 'knife') return `<img class="gear-thumb knife-thumb" src="${knifeArt(item.id, game.look.skins?.knife || null)}" alt="" />`;
   const shot = thumb(`gear:${kind}:${item.id}`);
   return shot ? `<img class="gear-thumb" src="${shot}" alt="" />` : '';
 }
 const wornName = (kind) => COSMETICS[kind].find((item) => item.id === game.look[lookKey(kind)])?.name || 'None';
 // How many of a kind this pilot can actually wear, for the line above its rack.
 const unlockedCount = (kind, items) => items.filter((item) => gearStatus(kind, item).unlocked).length;
-// All nine slots with what is in each, so the loadout reads at a glance. Charms keep their own tab.
+// All ten slots with what is in each, so the loadout reads at a glance. Charms keep their own tab.
 function slotRowHtml() {
   const chip = (id, label, target, on) => `<button type="button" class="size-chip slot-chip${on ? ' active' : ''}" ${target}><b>${label}</b><span>${escapeHtml(wornName(id))}</span></button>`;
   return `<div class="size-row slot-row">${GEAR_KINDS.map(([id, label]) => chip(id, label, `data-gear-kind="${id}"`, gearKind === id)).join('')}${chip('charm', 'Charm', 'data-shop-tab="charms"', false)}</div>`;
@@ -729,7 +709,7 @@ function gearHtml() {
       ${gearKind === 'tracer' ? `<i class="tracer-demo${look.tracer === 'devprism' ? ' dev-prism' : ''}" style="--tracer:${look.tracer === 'devprism' ? '#00ffc6' : look.tracer}"></i>` : ''}</div>
     <div class="gear-side">
       <section class="mode-block slot-block">
-        <header class="block-head"><small>LOADOUT</small><b>Nine slots</b><span>Pick a slot, then click a piece to try it on.</span></header>
+        <header class="block-head"><small>LOADOUT</small><b>Ten slots</b><span>Pick a slot, then click a piece to try it on.</span></header>
         ${slotRowHtml()}
       </section>
       <section class="mode-block rack-block">
@@ -1005,119 +985,6 @@ function gunsmithHtml() {
   </div>`;
 }
 
-// ------------------------------------------------------------------ games
-const GAME_TIME ={ coinflip: 1.6, dice: 1.3, slots: SLOT_TIMES[2], plinko: PLINKO.rows * 0.16 + 0.35, hilo: 0.9 };
-function stakeHtml() {
-  return `<label class="stake">Stake<span class="stake-row"><input id="game-stake" type="number" min="${STAKE.min}" max="${STAKE.max}" step="1" value="${stake}" />${[10, 50, 100].map((n) => `<button type="button" class="mini" data-stake="${n}">${n}</button>`).join('')}<button type="button" class="mini" data-stake="max">Max</button></span></label>`;
-}
-const settled = (state) => state && now() - state.at >= GAME_TIME[state.result.game];
-const outcome = (state) => {
-  if (!settled(state)) return '<p class="game-result">&nbsp;</p>';
-  const diff = state.result.payout - state.result.stake;
-  return `<p class="game-result ${diff > 0 ? 'good' : diff < 0 ? 'bad' : ''}">${diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : 'Even'}</p>`;
-};
-const running = (state) => state && !settled(state);
-const playButton = (id, label, state) => `<button type="button" data-play-game="${id}" ${busy || running(state) ? 'disabled' : ''}>${label}</button>`;
-function crashPanel() {
-  const round = crashGame;
-  const live = round?.phase === 'running';
-  const result = round?.phase === 'done' ? round.result : null;
-  const mult = live ? crashAt(net.time() - round.start) : result ? (result.detail.cashed || result.detail.crash) : 1;
-  const state = live ? 'live' : result ? (result.detail.cashed ? 'cashed' : 'crashed') : '';
-  const label = live ? `Cash out ${coins(Math.floor(round.stake * mult))}` : 'Bet';
-  const note = result ? (result.detail.cashed ? `Cashed at ×${result.detail.cashed}. Crashed at ×${result.detail.crash}.` : `Crashed at ×${result.detail.crash}.`) : 'Cash out before it crashes.';
-  return `<div class="panel game crash-game"><p class="eyebrow">Crash <small>×${CRASH.max} max</small></p>
-    <div class="crash-screen ${state}"><svg viewBox="0 0 300 140" preserveAspectRatio="none"><path id="crash-line" d="M0 140" /></svg><b id="crash-mult">×${mult.toFixed(2)}</b></div>
-    <label class="crash-auto">Auto cash-out <input id="crash-auto" type="number" min="1.01" max="${CRASH.max}" step="0.1" placeholder="Off" value="${escapeHtml(crashAuto)}" ${live ? 'disabled' : ''} /></label>
-    <button type="button" ${live ? 'data-crash-out="1" class="cash-out"' : 'data-crash-start="1"'} ${busy && !live ? 'disabled' : ''}>${label}</button>
-    <p class="game-result ${result ? (result.payout > result.stake ? 'good' : 'bad') : ''}">${result ? (result.payout ? `+${result.payout - result.stake}` : `-${result.stake}`) : '&nbsp;'}</p><small class="muted">${note}</small></div>`;
-}
-function plinkoPanel() {
-  const rows = PLINKO.rows, gap = 22, top = 16, rowH = 18, width = gap * (rows + 2), mid = width / 2;
-  const pegs = [];
-  for (let r = 0; r < rows; r += 1) for (let i = 0; i <= r + 1; i += 1) pegs.push(`<circle cx="${mid + (i - (r + 1) / 2) * gap}" cy="${top + r * rowH}" r="2.2" />`);
-  const slotY = top + rows * rowH + 6;
-  const landed = settled(plinko) ? plinko.result.detail.slot : -1;
-  const slotsSvg = PLINKO.multipliers.map((m, k) => `<g class="plinko-slot${k === landed ? ' hit' : ''}${m >= 2 ? ' hot' : m < 1 ? ' cold' : ''}"><rect x="${mid + (k - rows / 2) * gap - gap / 2 + 1}" y="${slotY}" width="${gap - 2}" height="16" rx="2" /><text x="${mid + (k - rows / 2) * gap}" y="${slotY + 11}">${m}</text></g>`).join('');
-  return `<div class="panel game plinko-game"><p class="eyebrow">Plinko</p>
-    <svg class="plinko-board" viewBox="0 0 ${width} ${slotY + 20}">${pegs.join('')}${slotsSvg}<circle id="plinko-ball" cx="${mid}" cy="${top - 10}" r="5" class="${plinko && !settled(plinko) ? '' : 'hidden'}" /></svg>
-    ${playButton('plinko', 'Drop', plinko)}${outcome(plinko)}</div>`;
-}
-function hiloPanel() {
-  const card = hilo && !settled(hilo) ? hilo.result.detail.card : game.profile.hiloCard || 7;
-  const shownNext = hilo && settled(hilo) ? hilo.result.detail.next : null;
-  const odds = (pickId) => { const m = hiloMultiplier(card, pickId); return m ? `×${m} · ${Math.round(hiloOdds(card, pickId) * 100)}%` : 'no chance'; };
-  const face = (value, extra = '') => `<div class="playing-card${extra}"><b>${CARD_NAMES[value]}</b></div>`;
-  return `<div class="panel game hilo-game"><p class="eyebrow">Higher or lower</p>
-    <div class="card-row">${face(hilo && settled(hilo) ? hilo.result.detail.card : card)}${hilo ? (settled(hilo) ? face(shownNext, ' flip') : '<div class="playing-card back"></div>') : ''}</div>
-    <div class="hilo-picks"><button type="button" data-hilo="higher" ${busy || running(hilo) || !hiloMultiplier(card, 'higher') ? 'disabled' : ''}>Higher <small>${odds('higher')}</small></button><button type="button" data-hilo="lower" ${busy || running(hilo) || !hiloMultiplier(card, 'lower') ? 'disabled' : ''}>Lower <small>${odds('lower')}</small></button></div>
-    ${outcome(hilo)}<small class="muted">A tie loses. The next card stays on the table.</small></div>`;
-}
-function gamesHtml() {
-  const spinning = (state, length) => state && now() - state.at < length;
-  const flipEnd = flip ? (flip.result.detail.side === 'heads' ? 1800 : 1980) : 0;
-  const coin = `<div class="flip-coin${flip ? ' flipping' : ''}" style="${flip ? `--end:${flipEnd}deg;animation-delay:-${Math.min(1.6, now() - flip.at)}s` : ''}"><span class="face heads">H</span><span class="face tails">T</span></div>`;
-  const chance = target - 1;
-  const roll = dice && !spinning(dice, 1.3) ? dice.result.detail.roll : null;
-  const reels = [0, 1, 2].map((index) => {
-    const final = slots?.result.detail.reels[index];
-    if (!final) return `<div class="slot-reel"><div class="slot-strip"><span>${SLOTS.symbols[index + 1].icon}</span></div></div>`;
-    const strip = [...Array.from({ length: 14 }, (_, i) => SLOTS.symbols[(i * 7 + index * 3) % SLOTS.symbols.length].icon), SLOTS.symbols.find((sym) => sym.id === final).icon];
-    return `<div class="slot-reel"><div class="slot-strip spinning" style="--end:${-(strip.length - 1) * SLOT_ROW}px;animation-duration:${SLOT_TIMES[index]}s;animation-delay:-${Math.min(SLOT_TIMES[index], now() - slots.at)}s">${strip.map((icon) => `<span>${icon}</span>`).join('')}</div></div>`;
-  }).join('');
-  const table = SLOTS.symbols.slice().reverse().map((sym) => `<li><b>${sym.icon}${sym.icon}${sym.icon}</b><span>×${sym.three}</span><b>${sym.icon}${sym.icon}</b><span>×${sym.two}</span></li>`).join('');
-  const names = { coinflip: 'Coin flip', dice: 'Dice', slots: 'Slots', plinko: 'Plinko', hilo: 'Higher or lower', crash: 'Crash' };
-  const log = (game.profile.gameLog || []).map((entry) => { const diff = whole(entry.payout) - whole(entry.stake); return `<div class="bet-row"><span>${names[entry.game] || entry.game}</span><small>${escapeHtml(entry.note || '')}</small><em>${entry.stake}</em><b class="${diff > 0 ? 'good' : diff < 0 ? 'bad' : ''}">${diff > 0 ? '+' : ''}${diff}</b><small>${WHEN(entry.at)}</small></div>`; }).join('') || '<p class="muted">No bets yet.</p>';
-  const played = game.profile.gameLog || [];
-  const total = played.reduce((sum, entry) => sum + whole(entry.payout) - whole(entry.stake), 0);
-  return `<div class="shop-games">
-    <div class="panel game-stake">${stakeHtml()}<small class="muted">Every game keeps about 5%. Play for fun.</small></div>
-    <div class="game-grid">
-      ${crashPanel()}${plinkoPanel()}${hiloPanel()}
-      <div class="panel game"><p class="eyebrow">Coin flip <small>pays ×${COINFLIP.payout}</small></p>${coin}
-        <div class="segmented">${['heads', 'tails'].map((side) => `<button type="button" data-pick="${side}" class="${pick === side ? 'active' : ''}">${side === 'heads' ? 'Heads' : 'Tails'}</button>`).join('')}</div>
-        ${playButton('coinflip', 'Flip', flip)}${outcome(flip)}</div>
-      <div class="panel game"><p class="eyebrow">Dice <small>roll under ${target}</small></p><div class="dice-face" id="dice-roll" data-rolling="${dice && spinning(dice, 1.3) ? 1 : ''}">${roll ?? (dice ? '..' : '--')}</div>
-        <label class="dice-target">Target <output>${target}</output><input type="range" id="dice-target" min="${DICE.min}" max="${DICE.max}" step="1" value="${target}" /></label>
-        <p class="dice-odds"><span>${chance}% chance</span><b>×${diceMultiplier(target)}</b></p>
-        ${playButton('dice', 'Roll', dice)}${outcome(dice)}</div>
-      <div class="panel game"><p class="eyebrow">Slots</p><div class="slot-window">${reels}</div><ul class="slot-table">${table}</ul>
-        ${playButton('slots', 'Spin', slots)}${outcome(slots)}</div>
-    </div>
-    <div class="panel bet-history"><p class="eyebrow">Your last ${played.length} bets <small class="${total > 0 ? 'good' : total < 0 ? 'bad' : ''}">${total > 0 ? '+' : ''}${total}</small></p>${log}</div></div>`;
-}
-// The dice face flickers through numbers until the roll lands.
-setInterval(() => { const face = document.querySelector('#dice-roll[data-rolling="1"]'); if (face) face.textContent = String(1 + Math.floor(Math.random() * 100)).padStart(2, '0'); }, 60);
-// Crash and Plinko move every frame; the page itself only redraws when something settles.
-let framing = false;
-function startGameFrame() { if (!framing) { framing = true; requestAnimationFrame(gameFrame); } }
-function gameFrame() {
-  const board = document.querySelector('.shop-games');
-  const active = crashGame?.phase === 'running' || running(plinko);
-  if (!board || !active) { framing = false; if (board && plinko && settled(plinko) && !plinko.shown) { plinko.shown = true; redraw(); } return; }
-  if (crashGame?.phase === 'running') {
-    const t = net.time() - crashGame.start, m = crashAt(t);
-    const label = document.querySelector('#crash-mult'); if (label) label.textContent = `×${m.toFixed(2)}`;
-    const button = document.querySelector('[data-crash-out]'); if (button) button.innerHTML = `Cash out ${coins(Math.floor(crashGame.stake * m))}`;
-    const line = document.querySelector('#crash-line');
-    if (line) { const span = Math.max(6, t), top = Math.max(2, m); const points = Array.from({ length: 40 }, (_, i) => { const at = (t * i) / 39; return `${((at / span) * 300).toFixed(1)} ${(140 - ((crashAt(at) - 1) / (top - 1)) * 130).toFixed(1)}`; }); line.setAttribute('d', `M${points.join(' L')}`); }
-  }
-  if (running(plinko)) {
-    const ball = document.querySelector('#plinko-ball');
-    if (ball) {
-      const { path } = plinko.result.detail, gap = 22, top = 16, rowH = 18, mid = (gap * (PLINKO.rows + 2)) / 2;
-      const step = Math.min(PLINKO.rows, (now() - plinko.at) / 0.16);
-      const row = Math.floor(step), frac = step - row;
-      const rightsAt = (r) => path.slice(0, r).reduce((sum, v) => sum + v, 0);
-      const x0 = mid + (rightsAt(row) - row / 2) * gap, x1 = mid + (rightsAt(Math.min(PLINKO.rows, row + 1)) - (row + 1) / 2) * gap;
-      ball.setAttribute('cx', (x0 + (x1 - x0) * frac).toFixed(1));
-      ball.setAttribute('cy', (top - 8 + (row + frac) * rowH - Math.sin(frac * Math.PI) * 5).toFixed(1));
-      ball.classList.remove('hidden');
-    }
-  }
-  requestAnimationFrame(gameFrame);
-}
-
 // ------------------------------------------------------------------ wallet
 const WHEN = (at) => { const s = (Date.now() - at) / 1000; return s < 60 ? 'now' : s < 3600 ? `${Math.floor(s / 60)}m` : s < 86400 ? `${Math.floor(s / 3600)}h` : `${Math.floor(s / 86400)}d`; };
 const SOURCE_NAMES = { match: 'Matches', wager: 'Wagers', crate: 'Crates', scrap: 'Scrap', game: 'Games', receive: 'Received', send: 'Sent', refund: 'Refunds', starter: 'Starter', shop: 'Shop', trade: 'Trade-ups' };
@@ -1169,7 +1036,7 @@ function openTab(id) {
   tab = id; armed = null; tryOn = null; charmTry = null;
   if (tab === 'crates' && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
   if (tab === 'wallet') net.send({ type: 'friends', action: 'list' });
-  if (tab === 'games' && (crashGame?.phase === 'running' || running(plinko))) setTimeout(startGameFrame, 0);
+  if (tab === 'games') setTimeout(startFrame, 0);
 }
 
 // ---------------------------------------------------------------- item shop
@@ -1258,14 +1125,24 @@ function itemSetsHtml() {
   }).join('');
 }
 
-// Crates and the Item Shop are one menu: the same turntable serves both, so whatever you click is what
-// you are looking at, and the crate you open is the one on the stage.
-function marketHtml() {
-  return `${itemHeadHtml()}${cratesHtml()}
-    <section class="market-sets">
-      <header class="block-head market-head"><small>TODAY'S SETS</small><b>Item Shop</b><span>Gone at midnight. One bundle a day.</span></header>
-      ${itemSetsHtml()}
-    </section>`;
+// The Item Shop tab: the piece in hand on a turntable with its price, and the day's sets beside it.
+// Crates are their own tab. Sharing one page left the sets a screen and a half down, under the crates.
+function itemsHtml() {
+  const pick = itemPick || firstPiece();
+  const set = pick ? shopFor(shopToday()).find((entry) => entry.id === pick.set) : null;
+  let info = '<div class="item-info"><small>Item Shop</small><h3>Nothing out today</h3><span>Come back tomorrow.</span></div>';
+  if (pick && set) {
+    const owned = ownsItem(pick.kind, pick.id, game.profile);
+    const rarity = pick.kind === 'finish' ? RARITY[finishInfo(pick.id)?.rarity || 'epic'] : null;
+    const armedNow = armed === `item:${set.id}:${pick.kind}:${pick.id}`;
+    info = `<div class="item-info"${rarity ? ` style="--rarity:${rarity.color}"` : ''}><small>${escapeHtml(set.name)} · ${pick.kind === 'finish' ? rarity.name : pick.kind}</small><h3>${escapeHtml(itemName(pick.kind, pick.id))}</h3>
+      <span>${pick.kind === 'finish' ? `Fits every gun${animatedFinish(pick.id) ? ' · animated' : ''}` : pick.kind === 'charm' ? 'Hangs off any gun.' : 'Worn in every match.'}</span>
+      ${owned ? '<p class="good item-have">Owned</p>' : `<button type="button" class="item-get${armedNow ? ' armed' : ''}" data-item-set="${set.id}" data-item-kind="${pick.kind}" data-item-id="${escapeHtml(pick.id)}">${armedNow ? 'Confirm' : `Buy ${coins(itemPrice(pick.kind, pick.id))}`}</button>`}</div>`;
+  }
+  return `<div class="item-shop">
+    <aside class="panel item-preview"><div id="skin-stage" class="skin-stage"></div>${info}</aside>
+    <div class="item-sets">${itemHeadHtml()}${itemSetsHtml()}</div>
+  </div>`;
 }
 
 export function shopPageHtml(page = 'shop', lead = '') {
@@ -1275,19 +1152,20 @@ export function shopPageHtml(page = 'shop', lead = '') {
   if (sectionOf(tab) !== page) openTab(lastTab[page] || tabs[0][0]);
   lastTab[page] = tab;
   // The shop opens on crates, so the big-drops list is fetched the first time it is drawn, not only on a tab click.
-  if ((tab === 'crates' || tab === 'market') && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
-  const body = tab === 'market' ? marketHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? gamesHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
+  if (tab === 'crates' && !dropsAsked && net.connected) { dropsAsked = true; net.send({ type: 'drops' }); }
+  const body = tab === 'items' ? itemsHtml() : tab === 'crates' ? cratesHtml() : tab === 'inventory' ? inventoryHtml() : tab === 'gear' ? gearHtml() : tab === 'gunsmith' ? gunsmithHtml() : tab === 'charms' ? charmsHtml() : tab === 'games' ? arcadeHtml() : tab === 'wallet' ? walletHtml() : skinsHtml();
   if (page === 'gunsmith') return `<section class="page-wide shop-page shop-gunsmith-page">${lead}${body}</section>`;
   const tabsHtml = tabs.length > 1 ? `<div class="segmented shop-tabs" role="tablist">${tabs.map(([id, label]) => `<button type="button" role="tab" data-shop-tab="${id}" class="${id === tab ? 'active' : ''}" aria-selected="${id === tab}">${label}</button>`).join('')}</div>` : '';
-  return `<section class="page-wide shop-page shop-${page}${tab === 'market' ? ' shop-market' : ''}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
+  return `<section class="page-wide shop-page shop-${page} tab-${tab}">${lead}<div class="shop-head"><div class="shop-title"><p class="eyebrow">${section.eyebrow}</p><h1 class="page-title">${section.title}</h1></div>${tabsHtml}
       ${section.balance ? `<div class="panel balance"><small>Balance</small><b>${coins(game.profile.coins)}</b><details><summary>How to earn</summary>${earnHtml()}</details></div>` : ''}</div>
     ${body}</section>`;
 }
 // What typed input looks like before a redraw, put back after it.
-export function keepShopInput() { return { to: document.querySelector('#send-to')?.value, amount: document.querySelector('#send-amount')?.value, stake: document.querySelector('#game-stake')?.value, auto: document.querySelector('#crash-auto')?.value, friend: document.querySelector('#friend-name')?.value }; }
+export function keepShopInput() { return { to: document.querySelector('#send-to')?.value, amount: document.querySelector('#send-amount')?.value, friend: document.querySelector('#friend-name')?.value }; }
 
 export function onShopClick(button) {
   const d = button.dataset;
+  if (tab === 'games' && onArcadeClick(button)) return true;
   if (d.shopTab) { openTab(d.shopTab); play('ui'); return true; }
   if (d.itemPick) { const [set, kind, id] = d.itemPick.split(':'); itemPick = { set, kind, id }; armed = null; play('ui'); return true; }
   // Item Shop. The server checks the day and the price again: this only asks.
@@ -1351,21 +1229,6 @@ export function onShopClick(button) {
 
   if (d.charmTry) { charmTry = d.charmTry === game.look.charm ? null : d.charmTry; play('ui'); return true; }
   if (d.charmGun) { charmWeapon = d.charmGun; play('ui'); return true; }
-  // Games.
-  if (d.crashStart) {
-    if (!(stake >= STAKE.min && stake <= STAKE.max && Number.isInteger(stake))) { ctx.toast(`Stake ${STAKE.min} to ${STAKE.max}.`, 'warn'); play('deny'); return true; }
-    if (stake > game.profile.coins) { ctx.toast('Not enough coins.', 'warn'); play('deny'); return true; }
-    const auto = Number(crashAuto);
-    request({ type: 'crash', action: 'start', stake, auto: auto >= CRASH.minAuto ? auto : null });
-    return true;
-  }
-  if (d.crashOut) { net.send({ type: 'crash', action: 'out' }); play('ui'); return true; }
-  if (d.hilo) {
-    if (!(stake >= STAKE.min && stake <= STAKE.max && Number.isInteger(stake)) || stake > game.profile.coins) { ctx.toast(stake > game.profile.coins ? 'Not enough coins.' : `Stake ${STAKE.min} to ${STAKE.max}.`, 'warn'); play('deny'); return true; }
-    request({ type: 'game', game: 'hilo', stake, pick: d.hilo });
-    play('ready');
-    return true;
-  }
   // Friends.
   if (d.friendAdd || d.friendAddInput) {
     const name = d.friendAdd || document.querySelector('#friend-name')?.value.trim();
@@ -1400,7 +1263,9 @@ export function onShopClick(button) {
   if (d.daily) { crateId = DAILY_CRATE.crate; crate = null; reveal = null; request({ type: 'shop', action: 'crate', crate: DAILY_CRATE.crate, count: 1, free: true }); play('ready'); return true; }
   if (d.skip) { land(); return true; }
   if (d.reveal !== undefined && reveal) { reveal.index = Number(d.reveal); reveal.peek = true; play('ui'); return true; }
-  if (d.equipDrop !== undefined && reveal) { equip(reveal.drops[Number(d.equipDrop)].finish); play('ready'); return true; }
+  if (d.equipDrop !== undefined && reveal) { const drop = reveal.drops[Number(d.equipDrop)]; if (drop.knife) { game.look.knife = drop.knife; ctx.saveLook(); } else equip(drop.finish); play('ready'); return true; }
+  // From a locked knife in the Locker straight to the crate it comes out of.
+  if (d.shopGoto && CRATES[d.shopGoto]) { crateId = d.shopGoto; reveal = null; crate = null; tab = 'crates'; lastTab.shop = 'crates'; play('ui'); ctx.goto('shop'); return true; }
   if (d.closeReveal) { reveal = null; crate = null; play('uiBack'); return true; }
   if (d.inv) {
     const finish = d.inv;
@@ -1426,15 +1291,6 @@ export function onShopClick(button) {
   if (d.tradeStart) { tradeMode = true; trade = []; play('ui'); return true; }
   if (d.tradeCancel) { tradeMode = false; trade = []; play('uiBack'); return true; }
   if (d.tradeGo && trade.length === TRADE_UP) { request({ type: 'shop', action: 'tradeup', items: trade }); play('ready'); return true; }
-  if (d.stake) { stake = d.stake === 'max' ? Math.max(STAKE.min, Math.min(STAKE.max, game.profile.coins)) : Number(d.stake); play('ui'); return true; }
-  if (d.pick) { pick = d.pick; play('ui'); return true; }
-  if (d.playGame) {
-    if (!(stake >= STAKE.min && stake <= STAKE.max && Number.isInteger(stake))) { ctx.toast(`Stake ${STAKE.min} to ${STAKE.max}.`, 'warn'); play('deny'); return true; }
-    if (stake > game.profile.coins) { ctx.toast('Not enough coins.', 'warn'); play('deny'); return true; }
-    request({ type: 'game', game: d.playGame, stake, pick, target });
-    play('ready');
-    return true;
-  }
   if (d.send && wallet.pilot) {
     const amount = Number(wallet.amount), key = `send:${wallet.pilot.name}:${amount}`;
     if (armed !== key) { armed = key; play('ui'); return true; }
@@ -1470,18 +1326,8 @@ export function onShopHover(target) {
 }
 
 export function onShopInput(input) {
-  if (input.id === 'game-stake') { stake = Math.floor(Number(input.value) || 0); return false; }
-  if (input.id === 'crash-auto') { crashAuto = input.value; return false; }
+  if (tab === 'games') { onArcadeInput(input); return false; }
   if (input.id === 'friend-name') { friendName = input.value; return false; }
-  if (input.id === 'dice-target') {
-    // Updated in place: redrawing would drop the slider mid-drag.
-    target = Number(input.value);
-    const panel = input.closest('.game');
-    panel.querySelector('output').textContent = target;
-    panel.querySelector('.eyebrow small').textContent = `roll under ${target}`;
-    panel.querySelector('.dice-odds').innerHTML = `<span>${target - 1}% chance</span><b>×${diceMultiplier(target)}</b>`;
-    return false;
-  }
   if (input.id === 'send-amount') { wallet.amount = input.value; armed = null; return 'soft'; }
   if (input.id === 'send-to') {
     wallet.to = input.value; wallet.pilot = undefined; armed = null;
@@ -1493,12 +1339,10 @@ export function onShopInput(input) {
   return false;
 }
 export function restoreShopInput(kept) {
-  const to = document.querySelector('#send-to'), amount = document.querySelector('#send-amount'), stakeInput = document.querySelector('#game-stake');
+  const to = document.querySelector('#send-to'), amount = document.querySelector('#send-amount');
   if (to && kept.to !== undefined) to.value = kept.to;
   if (amount && kept.amount !== undefined) amount.value = kept.amount;
-  if (stakeInput && kept.stake !== undefined) stakeInput.value = kept.stake;
-  const auto = document.querySelector('#crash-auto'), friend = document.querySelector('#friend-name');
-  if (auto && kept.auto !== undefined) auto.value = kept.auto;
+  const friend = document.querySelector('#friend-name');
   if (friend && kept.friend !== undefined) friend.value = kept.friend;
-  if (tab === 'games' && (crashGame?.phase === 'running' || running(plinko))) startGameFrame();
+  if (tab === 'games') startFrame();
 }

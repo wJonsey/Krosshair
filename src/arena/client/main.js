@@ -1,6 +1,8 @@
 // Entry point: boots the renderer, wires server messages to the game systems
 // and runs the frame loop.
 import * as THREE from 'three';
+import { MAP_IDS, ROYALE_MAP } from '../shared/map.js';
+import { Post } from './post.js';
 import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
 import { ATTACHMENTS } from '../shared/attachments.js';
 import { bus, game, graphics, isEnemy, nameOf, saveSettings, heldBuilds } from './state.js';
@@ -20,6 +22,7 @@ import { initDeploy } from './deploy.js';
 import { initDevTools } from './devtools.js';
 import { initTerminal } from './terminal.js';
 import { initGifts } from './gift.js';
+import { initBulletin } from './bulletin.js';
 import { startGuard } from './guard.js';
 import { applyAccountPrefs, attachReport, hideEnd, openFeedback, lobbyChat, openSettings, refreshEnd, renderHome, renderLobby, renderPreview, renderTutorial, showEnd, showScreen, toast, hideLoading, showLoading } from './menu.js';
 
@@ -45,8 +48,9 @@ arena.setGraphics(graphics());
 arena.scene.add(camera);
 const operators = new Operators(arena.scene, () => arena.physics);
 const effects = new Effects(arena.scene);
+effects.setGlow(arena.bloom);
 const viewmodel = new ViewModel();
-viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds());
+viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds(), game.look.knife);
 const player = new LocalPlayer({ camera, arena, viewmodel, effects, operators, canvas: renderer.domElement });
 const hud = new Hud({ player, arena, operators });
 const soundViz = new SoundViz(camera);
@@ -58,14 +62,15 @@ const visible = (element) => !element.classList.contains('hidden');
 // The dev terminal on / (server checks every line) and presents from the devs, full screen.
 const terminal = initTerminal();
 const gifts = initGifts();
+initBulletin();
 player.uiBlocked = () => hud.blocking || visible(pauseCard) || visible(settingsCard) || visible(endCard) || visible(feedbackCard) || terminal.isOpen() || gifts.isOpen();
 const feedbackCard = document.querySelector('#feedback');
 
 let inviteHandled = false;
 let currentVariant = null;
 let pendingEnd = null;
-bus.on('look', () => viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm));
-bus.on('settings', () => { arena.setGraphics(graphics()); fpsBox.classList.toggle('hidden', !game.settings.showFps); });
+bus.on('look', () => viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, viewmodel.builds, game.look.knife));
+bus.on('settings', () => { arena.setGraphics(graphics()); effects.setGlow(arena.bloom); fpsBox.classList.toggle('hidden', !game.settings.showFps); });
 arena.onThunder = (delay) => { hud.flash(); setTimeout(() => play('thunder', { volume: 0.9 }), delay * 1000); };
 addEventListener('pointerdown', unlockAudio, { capture: true });
 addEventListener('keydown', unlockAudio, { capture: true });
@@ -158,6 +163,8 @@ net.on('room', (message) => {
   message.players.forEach((entry) => game.roster.set(entry.id, entry));
   player.gravityScale = message.rules.modifier === 'lowgrav' ? 0.34 : 1;
   applyVariant(message.variant);
+  // While the vote runs, the arenas on it get their shaders built, so whichever wins starts without a freeze.
+  if (message.phase === 'mapvote') arena.warm(message.mapChoices || [], camera, true);
   if (message.phase !== 'mapvote') useMap(message.map);
   if (message.phase === 'lobby' || message.phase === 'mapvote') {
     if (game.screen !== 'lobby') { hud.show(false); hideEnd(); setAmbience(null); document.exitPointerLock?.(); player.mode = 'idle'; }
@@ -185,7 +192,7 @@ net.on('you', (message) => {
   // The build arrives with the you state, and the gun models are cached, so a change has to reach the
   // viewmodel or you keep holding the gun you had before the part went on.
   if (JSON.stringify(previous?.builds) !== JSON.stringify(message.builds)) {
-    viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds());
+    viewmodel.setLook(game.look.color, game.look.accent, game.look.skins, game.look.charm, heldBuilds(), game.look.knife);
   }
   player.onYou(previous);
   if (hud.buyOpen) hud.renderBuy();
@@ -345,7 +352,7 @@ net.on('kill', (message) => {
   const entry = game.roster.get(message.victim);
   if (entry) entry.alive = false;
   if (mine) player.onDeath();
-  else if (message.killer === game.id && game.room?.mode !== 'range') hud.notice(`Killed ${nameOf(message.victim)}${message.zone === 'head' ? ' · headshot' : ''}${message.distance >= 50 ? ` · ${message.distance} m` : ''}`, 'good');
+  else if (message.killer === game.id) hud.killConfirm(message);
   if (player.mode === 'spectate' && message.victim === player.spectateId) player.cycleSpectate(1);
 });
 net.on('killcam', (message) => { player.pendingKillcam = message.replay; });
@@ -418,13 +425,8 @@ net.on('streak', (message) => {
   feed(`${message.name} · ${message.desc}`, 'good');
 });
 net.on('notice', (message) => {
-  // A restart ends the match you are in the middle of, so mid-game it takes the banner rather than a
-  // line in the feed. In the menus the feed is the right place for it.
-  if (message.kind === 'restart' && game.screen === 'game') {
-    hud.banner('SERVER RESTARTING', `Your match ends in ${message.seconds}s.`, 'UPDATE INCOMING', 'danger', Math.min(8000, (message.seconds || 5) * 1000));
-    play('deny', { volume: 0.6 });
-    return;
-  }
+  // A restart takes the whole screen (client/bulletin.js): a line in the feed scrolls past in a firefight.
+  if (message.kind === 'restart') return;
   feed(message.text, message.tone);
   if (message.tone === 'warn') play('deny', { volume: 0.6 });
 });
@@ -500,7 +502,8 @@ let slowTime = 0;
 const STEP_DOWN = { ultra: 'high', high: 'medium', medium: 'low', custom: 'medium' };
 function watchFrameRate(rawDt) {
   if (game.screen !== 'game' || document.hidden || !game.settings.autoQuality || !STEP_DOWN[game.settings.quality]) { slowTime = 0; return; }
-  slowTime = rawDt > 1 / 38 ? slowTime + rawDt : Math.max(0, slowTime - rawDt * 2);
+  // One long frame (a map's shaders compiling, a setting changing) is a hitch, not a slow machine: it counts for little.
+  slowTime = rawDt > 1 / 38 ? slowTime + Math.min(rawDt, 0.2) : Math.max(0, slowTime - rawDt * 2);
   if (slowTime < 4) return;
   slowTime = 0;
   game.settings.quality = STEP_DOWN[game.settings.quality];
@@ -531,11 +534,23 @@ let lastFrameAt = 0;
 // every gun. It halved the frame rate, and the judder that came with it read as the screen shaking.
 // Nice idea, nowhere near worth it.
 const bufferSize = new THREE.Vector2();
+const gunSky = new THREE.Euler();
 function drawViewmodel() {
+  // The gun lives in the eye's own space. The sky it reflects is turned with the head, so a glint on the
+  // receiver stays where the sun is as you look round. (three.js undoes the sign of each angle itself.)
+  if (arena.envTarget) {
+    viewmodel.scene.environment = arena.envTarget.texture;
+    viewmodel.scene.environmentIntensity = 0.5;
+    gunSky.setFromQuaternion(camera.quaternion);
+    viewmodel.scene.environmentRotation.set(-gunSky.x, -gunSky.y, -gunSky.z, gunSky.order);
+  }
+  viewmodel.flash.material.color.setScalar(arena.bloom && post.enabled ? 3.2 : 1);
   renderer.clearDepth();
   viewmodel.camera.layers.enableAll();
   renderer.render(viewmodel.scene, viewmodel.camera);
 }
+const post = new Post(renderer);
+arena.warmTarget = post.world;
 const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
 const scopeTilt = new THREE.Quaternion();
 const royale = initRoyale({ arena, hud, player });
@@ -622,11 +637,30 @@ function frame(now = 0) {
     renderer.setRenderTarget(null);
     if (skyPass) skyPass.value = 0;
   }
-  renderer.clear();
-  renderer.render(arena.scene, camera);
-  if (game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden) drawViewmodel();
+  const gunShown = game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden;
+  if (post.enabled && arena.bloom) {
+    // The world goes into a high-range buffer, the glow is pulled out of it, and the result is tone mapped
+    // onto the screen in one pass (client/post.js). The sky hands over light, not display colours.
+    const skyLinear = arena.sky?.material.uniforms.scopePass;
+    post.begin();
+    if (skyLinear) skyLinear.value = 1;
+    renderer.clear();
+    renderer.render(arena.scene, camera);
+    if (skyLinear) skyLinear.value = 0;
+    // The gun goes into the same picture, so its muzzle flash glows and it shares the grade.
+    if (gunShown) drawViewmodel();
+    post.end();
+  } else {
+    renderer.clear();
+    renderer.render(arena.scene, camera);
+    if (gunShown) drawViewmodel();
+  }
   renderPreview();
-  if (!firstFrame) { firstFrame = true; boot?.ready(); }
+  if (!firstFrame) {
+    firstFrame = true; boot?.ready();
+    // Once the menu is up, every arena's shaders are built in the background, a map at a time.
+    setTimeout(() => arena.warm([...MAP_IDS, ROYALE_MAP], camera), 6000);
+  }
 }
 
 setVolume(game.settings.volume);

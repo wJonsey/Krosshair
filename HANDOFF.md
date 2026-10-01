@@ -22,7 +22,7 @@ Four themed sets a day, swapped at midnight UTC, gone the next day.
 | The catalogue | `server/itemsets.js` | **Server only.** Every set: name, blurb, debut date, contents, and the exclusive skins' and cosmetics' names and rarities. |
 | The rules | `shared/itemshop.js` | Rotation, last seen, prices, bundles, runway. Holds no set data of its own. |
 | Buying | `server/economy.js` `buyItemShop` | Checks the set is out today, the piece is in it, the bundle is today's, and the coins are there. |
-| The menu | `client/shop.js` `marketHtml` | Merged with the crates into one tab. |
+| The menu | `client/shop.js` `itemsHtml` | Its own tab in the Shop, beside Crates and Skins. Sharing one page with the crates left the sets a screen and a half down. |
 
 **Nothing is random at runtime.** The day's line-up is dealt from the date, so every pilot, the server
 and the menus work out the same shop with nothing stored. That is also what makes a set's history

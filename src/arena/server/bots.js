@@ -33,7 +33,8 @@ function rollTraits() {
   return {
     skill,
     reaction: lerp(1.3, 0.78, (skill + 1) / 2) * rand(0.9, 1.12),
-    error: lerp(1.45, 0.7, (skill + 1) / 2) * rand(0.85, 1.18),
+    // Kept close together: two pilots of one level should feel like the same level, not a laser and a potato.
+    error: lerp(1.28, 0.8, (skill + 1) / 2) * rand(0.9, 1.12),
     aimTime: lerp(1.3, 0.8, (skill + 1) / 2) * rand(0.85, 1.15),
     headBias: lerp(0.5, 1.5, (skill + 1) / 2),
     awareness: rand(0.82, 1.12),              // field of view multiplier
@@ -61,7 +62,7 @@ function profile(bot) {
   const k = bot.traits || (bot.traits = rollTraits());
   // Form drifts across a match, so a pilot has a sharp spell and then a scrappy one.
   const form = bot.ai?.form || 0;
-  return { reaction: base.reaction * k.reaction * (1 + form * 0.18), aimTime: base.aimTime * k.aimTime * (1 + form * 0.14), error: base.error * k.error * (1 + form * 0.3), headBias: clamp(base.headBias * k.headBias * (1 - form * 0.25), 0, 0.6), fov: base.fov * k.awareness };
+  return { reaction: base.reaction * k.reaction * (1 + form * 0.18), aimTime: base.aimTime * k.aimTime * (1 + form * 0.14), error: base.error * k.error * (1 + form * 0.2), headBias: clamp(base.headBias * k.headBias * (1 - form * 0.25), 0, 0.6), fov: base.fov * k.awareness };
 }
 
 function freshAi() {
@@ -185,6 +186,13 @@ function botSkins() {
   return skins;
 }
 
+// Veterans and elites sometimes carry a blade out of the crate, so the knives are seen in matches.
+function botKnife(difficulty) {
+  const chance = difficulty === 'elite' ? 0.45 : difficulty === 'veteran' ? 0.2 : 0;
+  const blades = COSMETICS.knife.filter((knife) => knife.crate && knife.rarity !== 'mythic');
+  return Math.random() < chance ? blades[Math.floor(Math.random() * blades.length)].id : 'kestrel';
+}
+
 export function createBot(room, team, difficulty) {
   const taken = new Set([...room.players.values()].map((p) => p.name));
   const pool = BOT_NAMES.filter((name) => !taken.has(name));
@@ -193,7 +201,7 @@ export function createBot(room, team, difficulty) {
     name, team, bot: true, ready: true, difficulty, title: difficulty === 'elite' ? 'Deadeye' : difficulty === 'veteran' ? 'Marksman' : 'Recruit',
     color: lookPick('suit'), accent: lookPick('visor'), tracer: lookPick('tracer'),
     level: difficulty === 'elite' ? 18 : difficulty === 'veteran' ? 9 : 2,
-    headgear: lookPick('headgear'), face: lookPick('face'), pack: lookPick('pack'), pattern: lookPick('pattern'), charm: lookPick('charm'), skins: botSkins(),
+    headgear: lookPick('headgear'), face: lookPick('face'), pack: lookPick('pack'), pattern: lookPick('pattern'), charm: lookPick('charm'), knife: botKnife(difficulty), skins: botSkins(),
   });
   // Temperament: the type bends the rolled traits, so two Rushers still play a little differently.
   bot.botType = pickType();
@@ -273,7 +281,10 @@ export function botOnHurt(room, bot, attacker) {
   }
   ai.lastKnown = { x: attacker.x, y: attacker.y, z: attacker.z, t: room.time };
   if (!ai.visible) {
-    ai.lookYaw = Math.atan2(-(attacker.x - bot.x), -(attacker.z - bot.z));
+    // Nobody knows exactly where a shot came from: they turn roughly the right way, worse from far off,
+    // and have to find the shooter from there.
+    const far = Math.hypot(attacker.x - bot.x, attacker.z - bot.z);
+    ai.lookYaw = Math.atan2(-(attacker.x - bot.x), -(attacker.z - bot.z)) + gauss() * (0.16 + Math.min(0.3, far * 0.004)) * (1.4 - bot.traits.composure * 0.6);
     ai.lookUntil = room.time + 2;
     ai.path = null;
     ai.evadeUntil = room.time + rand(0.5, 1.1);
@@ -294,7 +305,8 @@ export function botOnSound(room, bot, source, loud) {
   const ai = bot.ai;
   const blur = Math.min(8, dist * 0.12);
   ai.lastKnown = { x: source.x + rand(-blur, blur), y: source.y, z: source.z + rand(-blur, blur), t: room.time };
-  if (!ai.visible && Math.random() < 0.7) { ai.lookYaw = Math.atan2(-(source.x - bot.x), -(source.z - bot.z)); ai.lookUntil = room.time + 1.6; }
+  // They look at where they think it was, which is not quite where it was.
+  if (!ai.visible && Math.random() < 0.7) { ai.lookYaw = Math.atan2(-(ai.lastKnown.x - bot.x), -(ai.lastKnown.z - bot.z)); ai.lookUntil = room.time + 1.6; }
 }
 
 // Turning is a damped spring, not a constant sweep: the view accelerates toward the point, tops out at
@@ -350,7 +362,9 @@ function perceive(room, bot, t) {
       ai.settle = 1; ai.acquiredAt = t;
       ai.track = { x: best.x, y: best.y, z: best.z };
       ai.aimHead = Math.random() < diff.headBias * (best.dist > 60 ? 0.4 : 1);
-      ai.errYaw = gauss(); ai.errPitch = gauss();
+      // Where the first shot is out by. Every shot after it is a correction (see the fire below), so the
+      // opening round is the one most likely to miss and a fight is neither all hits nor all air.
+      ai.errYaw = gauss() * 1.15; ai.errPitch = gauss() * 1.15;
       spotCall(room, bot, best, t);
       // A jump-peek round the corner, from the ones who play that way.
       if (best.dist > 8 && best.dist < 34) tryHop(room, bot, t, 0.05 * bot.traits.jumpy);
@@ -607,9 +621,13 @@ function think(room, bot, dt, t) {
     const rattled = t - ai.hurtAt < 1.2 ? 1.5 - k.composure * 0.5 : 1;
     const moving = ai.strafeVel * ai.strafeVel > 4 ? 1.35 : 1;
     const panic = t < ai.panicUntil;
-    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 5) * (weapon.family === 'sniper' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1) * rattled * moving * (panic ? 2.4 : 1);
+    // A moving target is harder, but most of that is already the eyes running behind it (trackLag). Scaling
+    // the error up with speed as well made anyone strafing nearly unhittable and anyone standing a free kill.
+    const errorScale = ((diff.error * Math.PI) / 180) * (1 + dist / 140) * (1 + (current.speed || 0) / 11) * (weapon.family === 'sniper' ? 1 : 1.5) * (room.variant === 'night' || room.variant === 'storm' ? 1.25 : 1) * rattled * moving * (panic ? 2.4 : 1);
     // Aim point = the target, plus this engagement's bias, the unsettled first flick, and the hand's drift.
     const spread = 1 + ai.settle * 1.8;
+    // Holding the sights on someone, the aim creeps in even between shots.
+    const creep = Math.exp(-dt * 0.5); ai.errYaw *= creep; ai.errPitch *= creep;
     const yaw = Math.atan2(-dx, -dz) + (ai.errYaw * spread + ai.noiseYaw * 0.55) * errorScale;
     const pitch = Math.atan2(aimY - eye[1], dist) + (ai.errPitch * spread + ai.noisePitch * 0.55) * errorScale * 0.7;
     const off = turnToward(bot, yaw, pitch, t < ai.reactAt ? 0.55 : 1, dt);
@@ -653,7 +671,9 @@ function think(room, bot, dt, t) {
     else if (!frozen && t >= ai.reactAt && (t >= ai.burstRestUntil || panic) && off < (slow ? 0.04 : 0.07) * (panic ? 2.5 : 1) && settledEnough && t >= bot.nextFire && t >= bot.equipUntil && !bot.reloadEnd && t >= ai.evadeUntil - 0.2) {
       const dir = dirFromAngles(bot.yaw, bot.pitch);
       if (room.fire(bot, eye, dir, t, ++bot.shotSeq)) {
-        ai.errYaw = ai.errYaw * 0.5 + gauss() * 0.75; ai.errPitch = ai.errPitch * 0.5 + gauss() * 0.75;
+        // They see where that one went and bring the next one in: about half the miss is taken out each
+        // shot, with a smaller fresh error on top. Shots walk onto the target instead of rolling new dice.
+        ai.errYaw = ai.errYaw * 0.55 + gauss() * 0.42; ai.errPitch = ai.errPitch * 0.55 + gauss() * 0.42;
         ai.noisePitch -= (weapon.auto ? 0.5 : 1.2) * rand(0.6, 1.2);      // recoil climbs until they pull it back down
         ai.aimHead = Math.random() < diff.headBias;
         if (slow) {

@@ -43,6 +43,21 @@ function shoot(model) {
 }
 const freeModel = (model) => model.traverse((mesh) => { if (mesh.geometry) mesh.geometry.dispose(); });
 
+// One of the knives out of the Blade crate, bare or with a finish on it.
+export function knifeArt(type, finish = null) {
+  const key = `knife-type:${type}:${finish}`;
+  if (cache.has(key)) return cache.get(key);
+  let url = '';
+  try {
+    const model = buildWeapon('knife', '#6ce6d1', finish, { knife: type });
+    stripHands(model);
+    url = shoot(model);
+    freeModel(model);
+  } catch { url = ''; }
+  cache.set(key, url);
+  return url;
+}
+
 // The gun as it looks in hand with a finish on, for the shop.
 export function skinArt(id, finish) {
   const key = `${id}:${finish}`;

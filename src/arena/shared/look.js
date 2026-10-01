@@ -6,7 +6,7 @@ import { DEFAULT_LOOK, WEAPONS, cosmeticUnlocked } from './constants.js';
 import { devFinish, finishInfo } from './economy.js';
 
 // Look keys and the cosmetics list that validates each.
-export const LOOK_KINDS = { color: 'suit', accent: 'visor', tracer: 'tracer', title: 'title', headgear: 'headgear', face: 'face', pack: 'pack', pattern: 'pattern', charm: 'charm' };
+export const LOOK_KINDS = { color: 'suit', accent: 'visor', tracer: 'tracer', title: 'title', headgear: 'headgear', face: 'face', pack: 'pack', pattern: 'pattern', charm: 'charm', knife: 'knife' };
 
 // The second argument is what the account has, as the profile view carries it. Dev items and dev finishes
 // belong to dev accounts and are never taken off them.

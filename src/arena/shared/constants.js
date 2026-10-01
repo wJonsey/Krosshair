@@ -60,21 +60,21 @@ export const BODY = {
 // Penetration: a bullet starts with `pen` power. Every metre of material costs
 // `resist` power. Damage scales with the power that is left.
 export const MATERIALS = {
-  asphalt: { color: '#454b52', rough: 0.95, pattern: 'noise', resist: 99, sound: 'concrete' },
+  asphalt: { color: '#454b52', rough: 0.95, pattern: 'asphalt', resist: 99, sound: 'concrete' },
   paving: { color: '#676b6e', rough: 0.9, pattern: 'tiles', resist: 99, sound: 'concrete' },
-  gravel: { color: '#5d574c', rough: 1, pattern: 'noise', resist: 99, sound: 'gravel' },
-  grass: { color: '#33563c', rough: 1, pattern: 'noise', resist: 99, sound: 'grass' },
+  gravel: { color: '#5d574c', rough: 1, pattern: 'gravel', resist: 99, sound: 'gravel' },
+  grass: { color: '#33563c', rough: 1, pattern: 'grass', resist: 99, sound: 'grass' },
   concrete: { color: '#6d7377', rough: 0.85, pattern: 'panels', resist: 6, sound: 'concrete' },
   wall: { color: '#39424a', rough: 0.8, pattern: 'panels', resist: 99, sound: 'concrete' },
   brick: { color: '#7a4a3a', rough: 0.9, pattern: 'bricks', resist: 3, sound: 'concrete' },
-  plaster: { color: '#8b8678', rough: 0.9, pattern: 'noise', resist: 3, sound: 'concrete' },
-  stone: { color: '#8a8d8c', rough: 0.7, pattern: 'noise', resist: 8, sound: 'concrete' },
+  plaster: { color: '#8b8678', rough: 0.9, pattern: 'plaster', resist: 3, sound: 'concrete' },
+  stone: { color: '#8a8d8c', rough: 0.7, pattern: 'ashlar', resist: 8, sound: 'concrete' },
   tunnel: { color: '#4c5357', rough: 0.9, pattern: 'panels', resist: 99, sound: 'concrete' },
   metal: { color: '#47545e', rough: 0.45, metal: 0.6, pattern: 'ribs', resist: 1.6, sound: 'metal' },
   rust: { color: '#7b4f35', rough: 0.7, metal: 0.4, pattern: 'ribs', resist: 1.6, sound: 'metal' },
   teal: { color: '#2f6c70', rough: 0.55, metal: 0.4, pattern: 'ribs', resist: 1.6, sound: 'metal' },
   wood: { color: '#80603c', rough: 0.85, pattern: 'planks', resist: 0.8, sound: 'wood' },
-  crate: { color: '#9a7a48', rough: 0.85, pattern: 'planks', resist: 0.8, sound: 'wood' },
+  crate: { color: '#9a7a48', rough: 0.85, pattern: 'crate', resist: 0.8, sound: 'wood' },
   cloth: { color: '#c0503e', rough: 1, pattern: 'stripes', resist: 0.1, sound: 'cloth' },
   clothAlt: { color: '#d8b04a', rough: 1, pattern: 'stripes', resist: 0.1, sound: 'cloth' },
   glass: { color: '#9fd8e6', rough: 0.08, resist: 0.4, sound: 'glass', seeThrough: true },
@@ -86,24 +86,24 @@ export const MATERIALS = {
   barrier: { color: '#6ce6d1', rough: 0.2, resist: 99, sound: 'energy', seeThrough: true },
   shield: { color: '#8fd5ff', rough: 0.2, resist: 99, sound: 'energy', seeThrough: true },
   // --- map pack: gallery, old town, arctic, desert ---
-  marble: { color: '#cfcbc0', rough: 0.35, pattern: 'tiles', resist: 8, sound: 'concrete' },
-  marbleDark: { color: '#3b3f45', rough: 0.3, pattern: 'tiles', resist: 8, sound: 'concrete' },
-  plasterWhite: { color: '#dcd8cc', rough: 0.9, pattern: 'noise', resist: 3, sound: 'concrete' },
-  ochre: { color: '#c9994f', rough: 0.95, pattern: 'noise', resist: 3, sound: 'concrete' },
-  rosePlaster: { color: '#c98268', rough: 0.95, pattern: 'noise', resist: 3, sound: 'concrete' },
+  marble: { color: '#cfcbc0', rough: 0.35, pattern: 'marble', resist: 8, sound: 'concrete' },
+  marbleDark: { color: '#3b3f45', rough: 0.3, pattern: 'marble', resist: 8, sound: 'concrete' },
+  plasterWhite: { color: '#dcd8cc', rough: 0.9, pattern: 'plaster', resist: 3, sound: 'concrete' },
+  ochre: { color: '#c9994f', rough: 0.95, pattern: 'plaster', resist: 3, sound: 'concrete' },
+  rosePlaster: { color: '#c98268', rough: 0.95, pattern: 'plaster', resist: 3, sound: 'concrete' },
   terracotta: { color: '#b55f3a', rough: 0.85, pattern: 'bricks', resist: 2, sound: 'concrete' },
-  cobble: { color: '#7d766a', rough: 1, pattern: 'tiles', resist: 99, sound: 'concrete' },
-  water: { color: '#2a6d88', rough: 0.08, metal: 0.3, resist: 99, sound: 'grass' },
-  bronze: { color: '#8a6a3a', rough: 0.4, metal: 0.8, pattern: 'noise', resist: 8, sound: 'metal' },
-  hedge: { color: '#2f5a35', rough: 1, pattern: 'noise', resist: 0.15, sound: 'grass' },
-  sand: { color: '#c4a66e', rough: 1, pattern: 'noise', resist: 99, sound: 'gravel' },
+  cobble: { color: '#7d766a', rough: 1, pattern: 'cobble', resist: 99, sound: 'concrete' },
+  water: { color: '#2a6d88', rough: 0.08, metal: 0.3, pattern: 'water', resist: 99, sound: 'grass' },
+  bronze: { color: '#8a6a3a', rough: 0.4, metal: 0.8, pattern: 'brushed', resist: 8, sound: 'metal' },
+  hedge: { color: '#2f5a35', rough: 1, pattern: 'foliage', resist: 0.15, sound: 'grass' },
+  sand: { color: '#c4a66e', rough: 1, pattern: 'sand', resist: 99, sound: 'gravel' },
   sandstone: { color: '#b88a58', rough: 0.95, pattern: 'strata', resist: 99, sound: 'concrete' },
-  adobe: { color: '#c59c6e', rough: 1, pattern: 'noise', resist: 3, sound: 'concrete' },
-  sandbag: { color: '#9a8960', rough: 1, pattern: 'bricks', resist: 2.5, sound: 'cloth' },
-  snow: { color: '#e4ecf2', rough: 0.9, pattern: 'noise', resist: 99, sound: 'gravel' },
-  snowBerm: { color: '#d3dfe9', rough: 0.95, pattern: 'noise', resist: 0.6, sound: 'gravel' },
-  ice: { color: '#a5d2e6', rough: 0.12, metal: 0.1, pattern: 'noise', resist: 2, sound: 'glass' },
-  hull: { color: '#cfd6db', rough: 0.5, metal: 0.3, pattern: 'panels', resist: 1.6, sound: 'metal' },
+  adobe: { color: '#c59c6e', rough: 1, pattern: 'plaster', resist: 3, sound: 'concrete' },
+  sandbag: { color: '#9a8960', rough: 1, pattern: 'bags', resist: 2.5, sound: 'cloth' },
+  snow: { color: '#e4ecf2', rough: 0.9, pattern: 'snow', resist: 99, sound: 'gravel' },
+  snowBerm: { color: '#d3dfe9', rough: 0.95, pattern: 'snow', resist: 0.6, sound: 'gravel' },
+  ice: { color: '#a5d2e6', rough: 0.12, metal: 0.1, pattern: 'ice', resist: 2, sound: 'glass' },
+  hull: { color: '#cfd6db', rough: 0.5, metal: 0.3, pattern: 'plates', resist: 1.6, sound: 'metal' },
   hazard: { color: '#d8762a', rough: 0.55, metal: 0.4, pattern: 'ribs', resist: 1.6, sound: 'metal' },
   darkMetal: { color: '#23292f', rough: 0.4, metal: 0.7, pattern: 'ribs', resist: 1.6, sound: 'metal' },
   rock: { color: '#6f6a62', rough: 1, pattern: 'strata', resist: 99, sound: 'concrete' },
@@ -364,9 +364,11 @@ export const VARIANT_NAMES = { dusk: 'Dusk', night: 'Night Fog', storm: 'Storm F
 // A level is a centre point, not a spec: every bot rolls its own personality around it (server/bots.js),
 // so three Veterans are three different players. reaction/aimTime in seconds, error in degrees.
 export const BOT_DIFFICULTY = {
-  recruit: { name: 'Recruit', reaction: 1.1, aimTime: 1.15, error: 2.5, headBias: 0.04, fov: 90 },
-  veteran: { name: 'Veteran', reaction: 0.75, aimTime: 0.85, error: 1.4, headBias: 0.12, fov: 105 },
-  elite: { name: 'Elite', reaction: 0.48, aimTime: 0.55, error: 0.85, headBias: 0.25, fov: 118 },
+  // error: degrees the first shot at a new target can be out by. It is not how far every shot is out:
+  // a bot walks its aim on, shot by shot, as a person does (server/bots.js), so this is where it starts.
+  recruit: { name: 'Recruit', reaction: 1.1, aimTime: 1.15, error: 3.5, headBias: 0.04, fov: 90 },
+  veteran: { name: 'Veteran', reaction: 0.75, aimTime: 0.85, error: 2.0, headBias: 0.12, fov: 105 },
+  elite: { name: 'Elite', reaction: 0.48, aimTime: 0.55, error: 1.2, headBias: 0.25, fov: 118 },
 };
 // Bot personalities. Each one bends the bot's own traits and what it buys, so a Rusher really does
 // run at you with a short gun and a Sniper really does sit on a long angle. Skill still comes from the
@@ -628,8 +630,26 @@ export const COSMETICS = {
     { id: 'rocket', name: 'Rocket', price: 2200 }, { id: 'medal', name: 'Medal', price: 2500 }, { id: 'trophy', name: 'Trophy', price: 3500 }, { id: 'emerald', name: 'Emerald', price: 4500 },
     { id: 'devcore', name: 'Dev core', dev: true }, { id: 'devkey', name: 'Root key', dev: true },
   ],
+  // The blade in the third slot. Everyone has the Kestrel; the rest only come out of the Blade crate
+  // (`crate: true`: no price, no level). The models are in client/guns.js, one per id.
+  knife: [
+    { id: 'kestrel', name: 'Kestrel Blade', level: 1, blurb: 'The issue knife.' },
+    { id: 'bayonet', name: 'Bayonet', rarity: 'rare', crate: true, blurb: 'Clip point with a sawback.' },
+    { id: 'tanto', name: 'Tanto', rarity: 'rare', crate: true, blurb: 'A hard-angled point, cord-wrapped.' },
+    { id: 'bowie', name: 'Bowie', rarity: 'rare', crate: true, blurb: 'Deep belly, brass guard, walnut.' },
+    { id: 'dagger', name: 'Dagger', rarity: 'rare', crate: true, blurb: 'Two edges and a ball pommel.' },
+    { id: 'kukri', name: 'Kukri', rarity: 'epic', crate: true, blurb: 'The blade drops forward of the hand.' },
+    { id: 'cleaver', name: 'Cleaver', rarity: 'epic', crate: true, blurb: 'A slab of steel.' },
+    { id: 'trench', name: 'Trench Knife', rarity: 'epic', crate: true, blurb: 'A spike behind brass knuckles.' },
+    { id: 'machete', name: 'Machete', rarity: 'epic', crate: true, blurb: 'Long, and wider at the tip.' },
+    { id: 'karambit', name: 'Karambit', rarity: 'legendary', crate: true, blurb: 'A claw with a finger ring.' },
+    { id: 'butterfly', name: 'Butterfly Knife', rarity: 'legendary', crate: true, blurb: 'A slim blade in skeleton handles.' },
+    { id: 'tomahawk', name: 'Tomahawk', rarity: 'legendary', crate: true, blurb: 'Bearded bit, back spike.' },
+    { id: 'wakizashi', name: 'Wakizashi', rarity: 'mythic', crate: true, blurb: 'A short sword. Curved, single edge.' },
+    { id: 'plasma', name: 'Arc Blade', rarity: 'mythic', crate: true, blurb: 'No steel. A blade of hard light.' },
+  ],
 };
-export const DEFAULT_LOOK = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', skins: {} };
+export const DEFAULT_LOOK = { color: '#ec6a9e', accent: '#6ce6d1', tracer: '#ffc857', title: 'Recruit', headgear: 'helmet', face: 'visor', pack: 'radio', pattern: 'solid', charm: 'none', knife: 'kestrel', skins: {} };
 // owned: the pilot's bought items as 'kind:id' strings.
 export function cosmeticUnlocked(kind, id, level, owned = [], dev = false) {
   const item = COSMETICS[kind]?.find((entry) => entry.id === id);
@@ -638,7 +658,7 @@ export function cosmeticUnlocked(kind, id, level, owned = [], dev = false) {
   // Owned is owned, whichever way it came: bought, or given by a developer ahead of the level.
   if (owned.includes(`${kind}:${id}`)) return true;
   // Item Shop pieces have no price and no level: being there on the day is the only way in.
-  if (item.shop === 'item' || item.price) return false;
+  if (item.shop === 'item' || item.price || item.crate) return false;
   return level >= item.level;
 }
 // The developers' own class. Items in it can't be bought, won or traded.

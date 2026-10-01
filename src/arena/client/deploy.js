@@ -238,7 +238,10 @@ export function initDeploy({ arena, camera, player, viewmodel }) {
 
       // Which stage we are in follows the server: aboard, then off the ramp (a spawn in the sky), then down.
       const aboard = Boolean(game.you?.inPlane) && flight && !game.watching;
-      if (aboard && player.mode !== 'plane' && stage !== 'jump') player.boardPlane(flight.heading);
+      // Never re-board a pilot who is already falling: when the server puts you out at the end of the line
+      // the spawn can arrive a moment before the word that you are no longer aboard, and boarding again on
+      // that stale flag left you riding an aircraft you had already left, for the rest of the match.
+      if (aboard && player.mode !== 'plane' && stage !== 'jump' && !player.drop) player.boardPlane(flight.heading);
       if (aboard && !stage) enter('plane');
       if (stage === 'jump' && aboard && !player.drop && t - jumpAskedAt > 1.8) enter('plane');   // refused: back on the ramp
       if (player.alive && player.drop) {
@@ -322,7 +325,9 @@ export function initDeploy({ arena, camera, player, viewmodel }) {
           if (Math.abs(offset) > spec.ramp.arc) { offset = Math.sign(offset) * spec.ramp.arc; player.yaw = facing + offset; }
           player.pitch = THREE.MathUtils.clamp(player.pitch, spec.ramp.pitchLow, spec.ramp.pitchHigh);
           const p = -player.pitch;
-          const want = v.set(RAMP_FOCUS[0] + Math.sin(-offset) * Math.cos(p) * spec.ramp.distance, RAMP_FOCUS[1] + spec.ramp.height + Math.sin(p) * spec.ramp.distance * 0.6, RAMP_FOCUS[2] + Math.cos(offset) * Math.cos(p) * spec.ramp.distance);
+          // The camera looks back up the ramp at you, so it swings the opposite way to the turn: mouse right
+          // carries it left, and the view turns right, as it does everywhere else.
+          const want = v.set(RAMP_FOCUS[0] + Math.sin(offset) * Math.cos(p) * spec.ramp.distance, RAMP_FOCUS[1] + spec.ramp.height + Math.sin(p) * spec.ramp.distance * 0.6, RAMP_FOCUS[2] + Math.cos(offset) * Math.cos(p) * spec.ramp.distance);
           if (since < dt * 1.5) camLocal.copy(want); else camLocal.lerp(want, Math.min(1, dt * spec.follow));
         }
         const f = frame || planeFrame(t);

@@ -18,7 +18,8 @@ import { WAGER } from '../shared/economy.js';
 import { cleanLook } from '../shared/look.js';
 import { ROYALE } from '../shared/royale.js';
 import { mapRuleOptions, mapRuleSummary, renderMapVote, stopMapVote } from './mapvote.js';
-import { FEATURES, featureName, featureOut, outageReason } from '../shared/outage.js';
+import { DOWNTIME, FEATURES, downtimeLive, featureName, featureOut, outageReason } from '../shared/outage.js';
+import { planDowntime } from './bulletin.js';
 import { initSocial, socialButtonHtml, toggleSocial } from './social.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -318,7 +319,7 @@ const navFor = () => NAV.filter(([label, pages]) => {
   return !feature || !featureOut(game.outages, feature);
 });
 const TOOL_PAGES = [['settings', 'Settings'], ['controls', 'Controls'], ['feedback', 'Feedback']];
-const PAGE_ALIAS = { operator: 'locker' }; // old links
+const PAGE_ALIAS = { operator: 'locker', profile: 'career' }; // old links, and the name on the tab
 // A guest gets the game and the settings. Everything that belongs to an account stays shut until there
 // is an account to hang it on: a locker with nothing saved in it is worse than no locker at all.
 // Rooms is open to guests: a callsign is enough to browse the public list, join a code, or start a
@@ -535,6 +536,23 @@ export function outagesHtml() {
 // what is live, and what is out. A thing only moves between them when the server says it has, so what
 // is on screen is what everyone else is getting, not what this page hoped would happen.
 let serviceReason = '';
+let downtimeDraft = { at: '', minutes: DOWNTIME.defaultMinutes, note: '' };
+// A datetime-local value is local time with no zone: this is "now plus n minutes" in that shape.
+const localStamp = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+function downtimePanelHtml() {
+  const live = downtimeLive(game.downtime) ? game.downtime : null;
+  const when = live ? new Date(live.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  return `<div class="panel service-downtime">
+    <p class="eyebrow">Planned downtime <small>shown to every pilot, on every screen</small></p>
+    ${live ? `<div class="service-row"><div><b>${escapeHtml(when)}</b><small>About ${live.minutes} min</small><span>${escapeHtml(live.note || 'No reason given.')}</span></div><button type="button" class="service-back" data-downtime-clear="1">Take it down</button></div>` : '<p class="muted">Nothing planned.</p>'}
+    <div class="downtime-form">
+      <label class="service-why">Starts<input id="downtime-at" type="datetime-local" value="${escapeHtml(downtimeDraft.at || localStamp(Date.now() + 30 * 60000))}" /></label>
+      <label class="service-why">Lasts<select id="downtime-minutes">${[5, 10, 15, 30, 60, 120, 240].map((n) => `<option value="${n}"${Number(downtimeDraft.minutes) === n ? ' selected' : ''}>${n >= 60 ? `${n / 60} h` : `${n} min`}</option>`).join('')}</select></label>
+      <label class="service-why wide">Why<input id="downtime-note" maxlength="${DOWNTIME.noteMax}" placeholder="Update going in" value="${escapeHtml(downtimeDraft.note)}" /></label>
+      <div class="service-chips">${[[5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 h'], [120, '2 h']].map(([n, label]) => `<button type="button" class="service-chip" data-downtime-in="${n}">In ${label}</button>`).join('')}<button type="button" class="service-chip go" data-downtime-set="1">Schedule for the time above</button></div>
+    </div>
+  </div>`;
+}
 let serviceBusy = null;      // `kind:id` waiting on the server, so a double click cannot fire twice
 function servicePageHtml() {
   if (!game.profile?.dev) return `<section class="page-wide"><p class="eyebrow">Service</p><h1 class="page-title">Not <em>yours.</em></h1><div class="panel"><p class="muted">This page belongs to the developers.</p></div></section>`;
@@ -556,6 +574,7 @@ function servicePageHtml() {
   return `<section class="page-wide service-page">
     <p class="eyebrow">Service · developers</p>
     <h1 class="page-title">Pull <em>something.</em></h1>
+    ${downtimePanelHtml()}
     <div class="service-grid">
       <div class="panel service-out">
         <p class="eyebrow">Currently pulled <small>${pulled.length}</small></p>
@@ -698,7 +717,7 @@ export function renderHome() {
         <div class="menu-tools">${game.profile?.dev ? `<button type="button" id="online-count" class="online-chip" data-dev-online="1" title="Who is playing"><i class="live-dot"></i>${onlineLabel()}</button>` : `<span id="online-count"><i class="live-dot"></i>${onlineLabel()}</span>`}${socialButtonHtml()}${game.username && game.profile ? `<button type="button" class="coin-chip" data-page="wallet" title="Wallet">${coins(game.profile.coins)}</button><button type="button" class="pilot-chip${groupOf(homePage)?.[0] === 'Profile' ? ' active' : ''}" data-page="career" title="Profile">${game.avatar ? `<img class="avatar" src="${escapeHtml(game.avatar)}" alt="" width="24" height="24" referrerpolicy="no-referrer" />` : ''}<b>${escapeHtml(game.username)}</b></button>` : ''}<button type="button" data-page="settings" class="ghost-button gear-button${toolPage ? ' active' : ''}" ${toolPage ? 'aria-current="page"' : ''} title="Settings" aria-label="Settings">${GEAR_MARK}</button></div>
       </header>
       <main class="menu-page page-${homePage}${pageEntering ? ' entering' : ''}">${pageHtml}</main>
-      <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}</nav></footer>
+      <footer class="menu-foot"><div class="socials">${socialHtml()}</div><nav aria-label="Help">${TOOL_PAGES.map(([id, label]) => `<button type="button" data-page="${id}" class="${id === homePage ? 'active' : ''}">${label}</button>`).join('')}<button type="button" data-open-notes="1">Patch notes</button></nav></footer>
     </div>`;
   pageEntering = false;
   if (keep.name !== undefined && $('#name-input')) $('#name-input').value = keep.name;
@@ -874,6 +893,20 @@ home.addEventListener('click', (event) => {
   if (target.dataset.wagerSize) { wagerDraft.size = Number(target.dataset.wagerSize); play('ui'); renderHome(); return; }
   if (target.id === 'create-wager') { const stake = Math.floor(Number($('#wager-stake').value)); play_({ action: 'wager', size: wagerDraft.size, stake, isPublic: $('#wager-public').checked }); return; }
   if (target.dataset.board) { boardTab = target.dataset.board; play('ui'); renderHome(); return; }
+  if (target.dataset.openNotes) { bus.emit('open-notes'); return; }
+  // Planned downtime: one of the quick offsets, the time in the box, or take it down.
+  if (target.dataset.downtimeIn || target.dataset.downtimeSet || target.dataset.downtimeClear) {
+    downtimeDraft = { at: document.querySelector('#downtime-at')?.value || '', minutes: Number(document.querySelector('#downtime-minutes')?.value) || DOWNTIME.defaultMinutes, note: document.querySelector('#downtime-note')?.value || '' };
+    if (target.dataset.downtimeClear) planDowntime(null);
+    else {
+      const at = target.dataset.downtimeIn ? Date.now() + Number(target.dataset.downtimeIn) * 60000 : new Date(downtimeDraft.at).getTime();
+      if (!Number.isFinite(at)) { toast('Pick a time.', 'warn'); return; }
+      planDowntime({ at, minutes: downtimeDraft.minutes, note: downtimeDraft.note });
+      downtimeDraft.at = '';
+    }
+    play('ready');
+    return;
+  }
   // Pull or restore. Nothing changes on screen until the server sends the new list back, so what is
   // shown is always what everyone else is getting.
   if (target.dataset.pull || target.dataset.restore) {
@@ -936,6 +969,7 @@ function showDiscordPrompt() {
 bus.on('config', () => { if (game.screen === 'home') renderHome(); });
 // The answer landed, so the page stops waiting on it.
 bus.on('outage-done', () => { serviceBusy = null; if (game.screen === 'home') renderHome(); });
+bus.on('downtime', () => { if (game.screen === 'home' && homePage === 'service') renderHome(); });
 initPadMenu();
 bus.on('signed-in', () => {
   // Set by the Discord callback page on its way back to the menu.
@@ -1118,7 +1152,7 @@ let listening = null; // { action, slot } while a bind button waits for a key
 let padListening = null; // the action waiting for a controller button
 let padWatch = 0;
 const FORMATS = { x2: (v) => Number(v).toFixed(2), x1: (v) => Number(v).toFixed(1), deg: (v) => `${v}°`, pct: (v) => `${Math.round(v * 100)}%`, px: (v) => `${v} px`, int: (v) => String(v) };
-const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights', 'viewDistance'];
+const GRAPHICS_KEYS = ['renderScale', 'shadows', 'streetLights', 'viewDistance', 'detail', 'bloom'];
 
 function settingsBodyHtml(tab) {
   const s = game.settings, g = graphics();
@@ -1134,6 +1168,8 @@ function settingsBodyHtml(tab) {
         ${slider('renderScale', 'Render scale', 0.5, 2, 0.05, 'pct', g.renderScale, 'Biggest effect on frame rate.')}
         ${select('shadows', 'Shadows', [['off', 'Off'], ['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']], g.shadows)}
         ${select('viewDistance', 'View distance', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], g.viewDistance, 'Battle royale. Ultra shows the whole island.')}
+        ${select('detail', 'Surface detail', [['low', 'Low'], ['high', 'High']], g.detail, 'Relief and wear on walls and floors.')}
+        ${toggle('bloom', 'Bloom and film look', 'Neon, lamps and the sun glow. Soft corners and grain.', g.bloom)}
         ${toggle('streetLights', 'Street and interior lights', '', g.streetLights)}</div>
       <div class="panel"><p class="eyebrow">View</p>
         ${slider('fov', 'Field of view', 60, 105, 1, 'deg')}

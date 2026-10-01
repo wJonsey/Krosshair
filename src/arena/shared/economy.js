@@ -1,6 +1,7 @@
 // Coins: the account currency. Earned slowly in matches, spent on gun skins, operator gear, crates and
 // the minigames, sent between pilots, and staked in wager matches. Shared so the menus show the same
 // prices and odds the server enforces. Coins are never bought with money.
+import { COSMETICS } from './constants.js';
 
 // Roughly a cheap crate every couple of good matches. Matches take minutes, so paying 12 coins for a
 // hard-fought loss made the crates feel out of reach and the dailies not worth reading.
@@ -158,10 +159,18 @@ export const CRATES = {
   cosmic: { id: 'cosmic', name: 'Cosmic crate', cost: 950, color: '#8a5cff', blurb: 'Epic or better. Best Mythic odds.', weights: { epic: 70, legendary: 22, mythic: 8 },
     pool: ['stained', 'vaporwave', 'tide', 'abyss', 'pearl', 'blueprint', 'void', 'nebula', 'aurora', 'prism', 'hologram', 'plasma', 'synthwave', 'glitch'] },
 };
+// Knife crates drop a blade, not a finish: a different knife model for the third slot.
+CRATES.blade = { id: 'blade', name: 'Blade crate', cost: 480, color: '#e9eef2', blurb: 'A new knife. Thirteen blades.', knives: true, pity: 12, weights: { rare: 62, epic: 27, legendary: 9.5, mythic: 1.5 } };
+export const KNIVES = COSMETICS.knife.filter((knife) => knife.crate);
+export const knifeInfo = (id) => COSMETICS.knife.find((knife) => knife.id === id) || null;
+// What a crate can drop, whichever kind it is: [{ id, name, rarity }].
+export const crateItems = (crate) => (crate.knives ? KNIVES.filter((knife) => crate.weights[knife.rarity]) : crateFinishes(crate));
+// A duplicate knife pays back more than a duplicate finish: the crate costs more and there are fewer to miss.
+export const knifeValue = (id) => (RARITY[knifeInfo(id)?.rarity]?.value || 0) * 2;
 export const crateFinishes = (crate) => FINISHES.filter((finish) => !shopOnly(finish.id) && (!crate.pool || crate.pool.includes(finish.id)) && crate.weights[finish.rarity]);
 // Rarities that can actually drop, with their weights.
 export function crateOdds(crate) {
-  const present = new Set(crateFinishes(crate).map((finish) => finish.rarity));
+  const present = new Set(crateItems(crate).map((item) => item.rarity));
   return Object.entries(crate.weights).filter(([rarity]) => present.has(rarity));
 }
 export const DAILY_CRATE = { crate: 'field', hours: 20 };
@@ -211,6 +220,17 @@ export const crashTime = (multiplier) => Math.log(multiplier) / CRASH.rate;
 // used to need the crash to be strictly past it, so auto at x5 and a crash at x5 lost the whole stake
 // with x5.00 on the screen.
 export const autoCashOut = (auto, crash) => (auto && auto <= crash ? auto : null);
+// Wheel: forty segments, one spin. The multipliers add up to 38, so it pays back 95%.
+export const WHEEL = { segments: [0, 1.5, 0, 2, 0, 1.5, 0, 0, 3, 0, 1.5, 0, 2, 0, 0, 1.5, 0, 2, 0, 0, 10, 0, 1.5, 0, 2, 0, 0, 1.5, 0, 3, 0, 1.5, 0, 0, 2, 0, 1.5, 0, 0, 0] };
+// Mines: a 5 by 5 field with some of it mined. Every safe tile turned over raises the multiplier; a mine
+// loses the stake. The fair price of k safe picks with m mines is the chance of getting that far turned
+// upside down, and the game keeps 5% of it. Capped, and the round cashes itself out at the cap.
+export const MINES = { cells: 25, counts: [1, 3, 5, 8, 12], max: 100 };
+export function minesMultiplier(mines, picks) {
+  let fair = 1;
+  for (let i = 0; i < picks; i += 1) fair *= (MINES.cells - i) / (MINES.cells - mines - i);
+  return picks ? Math.min(MINES.max, Math.floor(0.95 * fair * 100) / 100) : 1;
+}
 
 export const WAGER = { sizes: [1, 2, 3], minStake: 10, maxStake: 5000 };
 export const TRANSFER = { min: 1, max: 100000 };

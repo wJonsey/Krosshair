@@ -48,7 +48,7 @@ export class Hud {
       weaponName: $('#weapon-name'), weaponTag: $('#weapon-tag'), ammo: $('#ammo'), reserve: $('#reserve'), slots: $('#weapon-slots'), gadgets: $('#gadget-slots'),
       clock: $('#clock'), phase: $('#phase-label'), round: $('#round-label'), scoreMine: $('#score-mine'), scoreTheirs: $('#score-theirs'), pipsMine: $('#pips-mine'), pipsTheirs: $('#pips-theirs'),
       labelMine: $('#label-mine'), labelTheirs: $('#label-theirs'), zone: $('#zone-name'), variant: $('#variant-name'), minimap: $('#minimap'),
-      killfeed: $('#killfeed'), feed: $('#event-feed'), chatLog: $('#chat-log'), chatInput: $('#chat-input'), crosshair: $('#crosshair'), hitmarker: $('#hitmarker'), arcs: $('#damage-arcs'),
+      killfeed: $('#killfeed'), killConfirm: $('#kill-confirm'), feed: $('#event-feed'), chatLog: $('#chat-log'), chatInput: $('#chat-input'), crosshair: $('#crosshair'), hitmarker: $('#hitmarker'), arcs: $('#damage-arcs'),
       scope: $('#scope-overlay'), sight: $('#sight-overlay'), sightLabel: $('#sight-label'), scopeZoom: $('#scope-zoom'), breath: $('#breath-meter'), fxDamage: $('#fx-damage'), fxLow: $('#fx-low'), fxSuppress: $('#fx-suppress'), fxFlash: $('#fx-flash'),
       banner: $('#banner'), bannerEyebrow: $('#banner-eyebrow'), bannerTitle: $('#banner-title'), bannerSub: $('#banner-sub'), prompt: $('#prompt'),
       spectate: $('#spectate-bar'), spectateName: $('#spectate-name'), reactions: $('#reactions'), spectateWeapon: $('#spectate-weapon'),
@@ -242,6 +242,28 @@ export class Hud {
     this.dom.killfeed.prepend(line);
     while (this.dom.killfeed.children.length > 6) this.dom.killfeed.lastChild.remove();
     setTimeout(() => line.remove(), 7000);
+  }
+
+  // You got one: said plainly at the bottom of the screen, where the eye already is. Kills close
+  // together stack into a double, a triple and on.
+  killConfirm(event) {
+    const box = this.dom.killConfirm;
+    const at = performance.now();
+    this.killChain = at - (this.lastKillAt || -1e9) < 4500 ? (this.killChain || 1) + 1 : 1;
+    this.lastKillAt = at;
+    const tags = [];
+    if (event.zone === 'head') tags.push('<i class="hs">Headshot</i>');
+    if (event.wallbang) tags.push('<i>Wallbang</i>');
+    if (event.backstab) tags.push('<i>Backstab</i>');
+    if (event.distance >= 50) tags.push(`<i>${event.distance} m</i>`);
+    if (WEAPONS[event.weapon]) tags.push(`<i class="with">${escapeHtml(WEAPON_SHORT[event.weapon] || WEAPONS[event.weapon].name)}</i>`);
+    const chain = ['', '', 'Double kill', 'Triple kill', 'Quad kill', 'Rampage'][Math.min(5, this.killChain)];
+    box.innerHTML = `<span class="kc-mark" aria-hidden="true"></span><div class="kc-text"><small>${chain || 'You killed'}</small><b>${escapeHtml(nameOf(event.victim))}</b><span class="kc-tags">${tags.join('')}</span></div>`;
+    box.className = `kill-confirm${event.zone === 'head' ? ' head' : ''}${chain ? ' chain' : ''}`;
+    void box.offsetWidth;   // restart the animation when one kill follows another
+    box.classList.add('show');
+    clearTimeout(this.killTimer);
+    this.killTimer = setTimeout(() => box.classList.remove('show'), 3400);
   }
 
   banner(title, sub = '', eyebrow = '', tone = 'neutral', duration = 2600) {

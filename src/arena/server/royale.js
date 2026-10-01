@@ -149,7 +149,7 @@ export class RoyaleRoom extends Room {
       const gap = Math.hypot(aim.x - ramp.x, aim.z - ramp.z), reach = (ramp.y / DEPLOY.bot.chuteFall) * DEPLOY.bot.glide * 0.9, k = gap > reach ? reach / gap : 1;
       player.dropping = true;
       player.landAt = this.landingPoint({ x: ramp.x + (aim.x - ramp.x) * k, z: ramp.z + (aim.z - ramp.z) * k }, []);
-    } else player.inDrop = true;
+    } else { player.inDrop = true; this.pushYou(player); }   // told at once that they are out, with the spawn
   }
   // The pilot asked to go. Only from aboard, only once, only with the ramp open.
   jump(player) {

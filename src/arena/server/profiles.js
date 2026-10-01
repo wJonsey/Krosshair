@@ -1,6 +1,7 @@
 // Tiny JSON-file profile store. Profiles are keyed by a secret profile token that only
 // the server knows; accounts (server/accounts.js) map a login to one of these tokens.
 import { cleanBuild, isEmptyBuild } from '../shared/attachments.js';
+import { latestNoteId } from '../shared/patchnotes.js';
 import { clampXp, levelledGun, unlocksBetween, usableBuild, weaponLevel } from '../shared/gunlevels.js';
 import { runway } from '../shared/itemshop.js';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
@@ -63,7 +64,7 @@ const SETTING_RULES = {
   quality: ['ultra', 'high', 'medium', 'low', 'custom'], renderScale: [0.4, 2], shadows: ['off', 'low', 'high', 'ultra'], streetLights: 'bool', brightness: [0.5, 2], fpsCap: [0, 360], autoQuality: 'bool', showFps: 'bool',
   // Anything the browser can set has to be listed here or it is dropped on the way in, and the pilot
   // sets it again every session wondering why it never sticks.
-  viewDistance: ['low', 'medium', 'high', 'ultra'],
+  viewDistance: ['low', 'medium', 'high', 'ultra'], detail: ['low', 'high'], bloom: 'bool',
   announcer: 'bool', invertY: 'bool', toggleScope: 'bool', toggleCrouch: 'bool', toggleSprint: 'bool', speedFov: 'bool', moveDebug: 'bool', visualizeSound: 'bool', aimAssist: 'bool', padLayout: ['', 'xbox', 'playstation', 'nintendo', 'steam', 'generic'],
 };
 
@@ -263,7 +264,7 @@ export class ProfileStore {
       coins: guest ? 0 : profile.coins, dev: Boolean(profile.dev), owned: profile.owned || [], finishes: profile.finishes || [], pity: profile.pity || {}, dailyCrate: profile.dailyCrate || 0,
       gameLog: profile.gameLog || [], hiloCard: profile.hiloCard || 7, coinStats: profile.coinStats || { in: {}, out: {} }, coinDays: profile.coinDays || {}, friends: profile.friends || [], requestsIn: profile.requestsIn || [], requestsOut: profile.requestsOut || [], blocked: profile.blocked || [], coinLog: guest ? [] : (profile.coinLog || []).slice(0, 15),
       name: profile.name, xp: profile.xp, level, rating: Math.round(profile.rating), rankedMatches: profile.rankedMatches,
-      look: profile.look ? this.sanitizeCosmetics(token, profile.look) : null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone),
+      look: profile.look ? this.sanitizeCosmetics(token, profile.look) : null, settings: profile.settings || null, tutorialDone: Boolean(profile.tutorialDone), notesSeen: profile.notesSeen || 0,
       // Only what each gun's level allows: a saved build is a wish, the level decides what is on it.
       builds: this.usableBuilds(token),
       gunXp: { ...(profile.gunXp || {}) },
@@ -325,7 +326,7 @@ export class ProfileStore {
     return out;
   }
 
-  savePrefs(token, { look, settings, tutorialDone } = {}) {
+  savePrefs(token, { look, settings, tutorialDone, notesSeen } = {}) {
     const profile = this.get(token);
     if (look && typeof look === 'object') profile.look = this.sanitizeCosmetics(token, look);
     if (settings && typeof settings === 'object') {
@@ -340,6 +341,8 @@ export class ProfileStore {
       profile.settings = clean;
     }
     if (tutorialDone === true) profile.tutorialDone = true;
+    // The last patch note this pilot closed. It only ever goes up, and never past what has shipped.
+    if (Number.isInteger(notesSeen) && notesSeen > 0) profile.notesSeen = Math.max(profile.notesSeen || 0, Math.min(notesSeen, latestNoteId()));
     this.scheduleSave();
   }
 

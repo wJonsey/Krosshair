@@ -53,6 +53,13 @@ export class Effects {
     // Fixed pool: adding or removing lights at runtime would force shader recompiles mid-fight.
     this.lightPool = Array.from({ length: 3 }, () => { const light = new THREE.PointLight('#ffb45e', 0, 16, 1.8); scene.add(light); return { light, life: 0 }; });
     this.lightCursor = 0;
+    this.glow = 1;
+  }
+
+  // Bloom on: fire and tracers are handed over brighter than white, so the glow pass picks them up.
+  setGlow(on) {
+    this.glow = on ? 2.8 : 1;
+    this.flameMaterial.color.set('#ffb45e').multiplyScalar(this.glow);
   }
 
   emit(point, count, { color = '#ffffff', speed = 2, spread = 1, up = 1, life = 0.5, gravity = 9, size = 0.06, normal = null }) {
@@ -96,8 +103,8 @@ export class Effects {
   // a new one. Anything past the cap is let go properly rather than held forever.
   takeBeam(tint, opacity) {
     const material = this.beamPool.pop();
-    if (!material) return new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
-    material.color.set(tint);
+    if (!material) { const fresh = new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }); fresh.color.multiplyScalar(this.glow); return fresh; }
+    material.color.set(tint).multiplyScalar(this.glow);
     material.opacity = opacity;
     return material;
   }
@@ -176,6 +183,7 @@ export class Effects {
       return false;
     });
     const shell = new THREE.MeshBasicMaterial({ color: '#ffd08a', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, toneMapped: false });
+    shell.color.multiplyScalar(this.glow);
     const mesh = new THREE.Mesh(this.blastGeometry, shell);
     mesh.position.set(x, y, z);
     mesh.scale.setScalar(radius * 0.25);

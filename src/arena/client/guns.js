@@ -10,8 +10,53 @@ import { ATTACHMENTS } from '../shared/attachments.js';
 import { skinMaterial } from './skins.js';
 
 const M = (color, rough = 0.4, metal = 0.5, emissive = null) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, emissive: emissive || '#000000', emissiveIntensity: emissive ? 1.3 : 0 });
+// Up close a gun is never one flat colour: wood has grain running down its length, steel is parkerised to
+// a fine speckle with faint machining lines, polymer is stippled. Worked out in the shader from where the
+// pixel is on the gun, and faded before it gets fine enough to shimmer.
+const GRAIN = { wood: 1, steel: 2, polymer: 3 };
+function grainShader(shader) {
+  shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vGrain;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGrain = position;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `#include <common>
+      varying vec3 vGrain;
+      float gh21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
+      float gnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(gh21(i), gh21(i + vec2(1, 0)), f.x), mix(gh21(i + vec2(0, 1)), gh21(i + vec2(1, 1)), f.x), f.y); }`)
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      float grainRough = 0.0;
+      float gpx = length(fwidth(vGrain));
+      float gFine = 1.0 - smoothstep(0.0005, 0.002, gpx), gBroad = 1.0 - smoothstep(0.003, 0.012, gpx);
+      #if GRAIN == 1
+        float rings = sin(vGrain.y * 130.0 + vGrain.x * 60.0 + gnoise(vGrain.zy * vec2(7.0, 30.0)) * 6.0 + gnoise(vGrain.zx * vec2(5.0, 40.0)) * 4.0);
+        float fibre = gnoise(vec2(vGrain.z * 22.0, (vGrain.x * 0.6 + vGrain.y) * 700.0));
+        diffuseColor.rgb *= 1.0 + (0.13 * rings * gBroad + 0.2 * (fibre - 0.5) * gFine);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.62, 0.52, 0.45), smoothstep(0.6, 0.95, gnoise(vGrain.zy * vec2(3.0, 9.0))) * 0.5 * gBroad);
+        grainRough = (fibre - 0.5) * 0.22 * gFine;
+      #elif GRAIN == 2
+        float speck = gh21(floor(vGrain.xy * 1100.0) + floor(vGrain.z * 1100.0) * 7.31);
+        float line = gnoise(vec2((vGrain.x + vGrain.y) * 1300.0, vGrain.z * 11.0));
+        float cloud = gnoise(vGrain.zy * 26.0 + vGrain.x * 19.0);
+        diffuseColor.rgb *= 1.0 + ((speck - 0.5) * 0.07 + (line - 0.5) * 0.1) * gFine + (cloud - 0.5) * 0.12 * gBroad;
+        grainRough = ((speck - 0.5) * 0.05 + (line - 0.5) * 0.1) * gFine + (cloud - 0.5) * 0.12 * gBroad;
+      #else
+        float stipple = gh21(floor(vGrain.zy * 800.0) + floor(vGrain.x * 800.0) * 3.7);
+        float mould = gnoise(vGrain.zy * 18.0 + vGrain.x * 23.0);
+        diffuseColor.rgb *= 1.0 + (stipple - 0.5) * 0.2 * gFine + (mould - 0.5) * 0.1 * gBroad;
+        grainRough = (stipple - 0.5) * 0.24 * gFine;
+      #endif`)
+    .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(roughnessFactor + grainRough, 0.06, 1.0);');
+}
+function grained(material, kind) {
+  material.defines = { ...(material.defines || {}), GRAIN: GRAIN[kind] };
+  material.onBeforeCompile = grainShader;
+  material.customProgramCacheKey = () => `grain-${kind}`;
+  return material;
+}
 const LENS = new THREE.MeshBasicMaterial({ color: '#8fd8ff', transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide });
-const GLASS = new THREE.MeshStandardMaterial({ color: '#0b1a26', roughness: 0.08, metalness: 0.9, emissive: '#1d4a66', emissiveIntensity: 0.5 });
+const GLASS = new THREE.MeshStandardMaterial({ color: '#0b1a26', roughness: 0.08, metalness: 0.9, emissive: '#1d4a66', emissiveIntensity: 0.3, envMapIntensity: 0.6 });
+// The coating on a front lens: a violet sheen over the dark glass.
+const COAT = new THREE.MeshBasicMaterial({ color: '#7a45d8', transparent: true, opacity: 0.1, blending: THREE.AdditiveBlending, depthWrite: false });
+const BORE = new THREE.MeshBasicMaterial({ color: '#020304' });
 const ALONG = [Math.PI / 2, 0, 0];
 // Eye relief when aimed through an open optic: the back of the housing ends up a hand's width from the camera.
 const OPTIC_ADS_Z = -0.055;
@@ -132,38 +177,41 @@ function magazine(k, m, kind, h, top, z, width = 0.03, tape = false) {
 }
 // Whatever is screwed on the end of the barrel. Returns the new muzzle z, which the flash follows.
 function muzzleDevice(k, m, y, from, bore, device) {
-  let end = from;
+  let end = from, face = from;   // face: the very front, where the hole the bullet leaves by is drawn
   if (device === 'brake') {
     k.box(m.black, 0.044, 0.036, 0.095, [0, y, end - 0.03]);
     for (const z of [-0.008, -0.034, -0.06]) k.box(m.grey, 0.048, 0.016, 0.012, [0, y, end + z]);
-    end -= 0.078;
+    end -= 0.078; face = end;
   } else if (device === 'hider') {
     k.tube(m.black, bore * 1.5, 0.06, [0, y, end - 0.02], 12);
     for (let i = 0; i < 4; i += 1) { const a = (i / 4) * Math.PI * 2 + 0.78; k.box(m.grey, 0.004, 0.004, 0.034, [Math.cos(a) * bore * 1.5, y + Math.sin(a) * bore * 1.5, end - 0.03]); }
-    end -= 0.05;
+    end -= 0.05; face = end;
   } else if (device === 'suppressor') {
     k.tube(m.black, 0.026, 0.22, [0, y, end - 0.1], 16);
     for (const z of [0, -0.07, -0.14, -0.2]) k.ring(m.grey, 0.0262, 0.0022, [0, y, end + z]);
-    end -= 0.21;
+    end -= 0.21; face = end;
   } else if (device === 'comp') {
     // Compensator: a slotted block, cuts open across the top.
     k.box(m.dark, 0.038, 0.032, 0.074, [0, y, end - 0.035]);
     for (const z of [-0.014, -0.034, -0.054]) { k.box(m.black, 0.042, 0.012, 0.009, [0, y + 0.013, end + z]); k.box(m.black, 0.042, 0.009, 0.009, [0, y - 0.014, end + z]); }
     k.tube(m.black, bore * 0.92, 0.006, [0, y, end - 0.069], 12);
-    end -= 0.07;
+    face = end - 0.072; end -= 0.07;
   } else if (device === 'ported') {
     // Muzzle brake: a short cap with ports blown out either side.
     k.tube(m.grey, bore * 1.75, 0.05, [0, y, end - 0.024], 14);
     for (let i = 0; i < 6; i += 1) { const a = (i / 6) * Math.PI * 2 + 0.5; k.box(m.black, 0.007, 0.007, 0.026, [Math.cos(a) * bore * 1.7, y + Math.sin(a) * bore * 1.7, end - 0.024]); }
     k.ring(m.black, bore * 1.72, 0.003, [0, y, end - 0.047]);
-    end -= 0.048;
-  } else if (device === 'crown') { k.tube(m.black, bore * 1.25, 0.03, [0, y, end + 0.004], 12); }
+    face = end - 0.049; end -= 0.048;
+  } else if (device === 'crown') { k.tube(m.black, bore * 1.25, 0.03, [0, y, end + 0.004], 12); face = end - 0.011; }
+  k.disc(BORE, bore * (device === 'suppressor' ? 0.5 : 0.62), [0, y, face - 0.0007], [0, Math.PI, 0]);
   return end;
 }
 // Barrel with a collar at the receiver, optional flutes, and a muzzle device. Returns the muzzle's z.
 function barrel(k, m, y, zStart, length, bore, device, fluted = false) {
   k.tube(m.grey, bore * 1.35, 0.05, [0, y, zStart - 0.025], 14);
   k.tube(m.grey, bore, length, [0, y, zStart - length / 2], 14);
+  // A barrel is thickest at the chamber and steps down toward the muzzle.
+  if (!fluted) { k.tube(m.grey, bore * 1.16, length * 0.3, [0, y, zStart - length * 0.15], 14); k.tube(m.grey, bore * 1.16, 0.012, [0, y, zStart - length * 0.3 - 0.006], 14, ALONG, bore); }
   // Flutes on a heavy barrel: the cuts that let it shed the weight it just put on.
   if (fluted) for (let i = 0; i < 6; i += 1) { const a = (i / 6) * Math.PI * 2; k.box(m.black, 0.005, 0.005, length * 0.74, [Math.cos(a) * bore, y + Math.sin(a) * bore, zStart - length * 0.52]); }
   return muzzleDevice(k, m, y, zStart - length, bore, device);
@@ -174,17 +222,43 @@ function barrel(k, m, y, zStart, length, bore, device, fluted = false) {
 // rings), it gets a base bar under the tube and posts down to the gun. The scope itself does not move, so
 // neither does the sight line or where the eye sits when aiming.
 function scope(k, m, y, z, length, r, mount = null) {
-  k.tube(m.black, r * 0.72, length, [0, y, z], 16);
-  k.tube(m.black, r, length * 0.3, [0, y, z - length * 0.4], 16, ALONG, r * 0.74);
-  k.tube(m.black, r * 1.34, length * 0.2, [0, y, z + length * 0.42], 24, ALONG, r * 0.78);
-  k.put(m.black, new THREE.RingGeometry(r * 0.985, r * 1.34, 32), [0, y, z + length * 0.52 + 0.0012]);
-  k.ring(m.grey, r * 1.3, 0.003, [0, y, z + length * 0.47]);
-  k.tube(m.black, r * 1.04, 0.012, [0, y, z - length * 0.55 + 0.004], 16);
-  k.tube(m.grey, r * 0.5, 0.03, [0, y + r * 0.95, z], 12, null);
-  k.tube(m.grey, r * 0.5, 0.03, [r * 0.95, y, z], 12, [0, 0, Math.PI / 2]);
-  k.disc(GLASS, r * 0.9, [0, y, z - length * 0.553], [0, Math.PI, 0]);
-  const rings = [z - length * 0.2, z + length * 0.22];
-  for (const rz of rings) { k.ring(m.grey, r * 0.78, 0.005, [0, y, rz]); if (!mount) k.box(m.grey, 0.022, r * 0.9, 0.022, [0, y - r * 0.9, rz]); }
+  // The body is turned on a lathe, as the real thing is: a hooded objective bell, the main tube, the
+  // power ring and an eyepiece that flares out to the ocular lens. Radius, then how far back from the middle.
+  const L = length;
+  const body = [[r * 1.06, -0.56], [r * 1.06, -0.5], [r, -0.492], [r, -0.39], [r * 0.74, -0.26], [r * 0.72, -0.24], [r * 0.72, 0.2], [r * 0.88, 0.212], [r * 0.88, 0.275], [r * 0.8, 0.285], [r * 0.8, 0.3], [r * 1.16, 0.37], [r * 1.3, 0.4], [r * 1.34, 0.42], [r * 1.34, 0.52]];
+  k.put(m.black, new THREE.LatheGeometry(body.map(([radius, along]) => new THREE.Vector2(radius, along * L)), 28), [0, y, z], ALONG);
+  // Knurling round the power ring and the rubber of the eyecup.
+  for (let i = 0; i < 14; i += 1) { const a = (i / 14) * Math.PI * 2; k.box(m.grey, 0.004, 0.003, L * 0.05, [Math.cos(a) * r * 0.885, y + Math.sin(a) * r * 0.885, z + L * 0.244], [0, 0, a + Math.PI / 2]); }
+  k.ring(m.grey, r * 1.34, 0.0026, [0, y, z + L * 0.43]);
+  k.ring(m.grey, r * 1.06, 0.0022, [0, y, z - L * 0.5]);
+  k.put(m.black, new THREE.RingGeometry(r * 0.985, r * 1.34, 32), [0, y, z + L * 0.52 + 0.0012]);
+  // Front glass, set back inside its hood: the dark inside of the tube, the lens, the coating on it.
+  k.put(BORE, new THREE.CylinderGeometry(r * 1.02, r * 1.02, L * 0.035, 24, 1, true), [0, y, z - L * 0.5425], ALONG, [-1, 1, 1]);
+  k.disc(GLASS, r * 1.02, [0, y, z - L * 0.527], [0, Math.PI, 0]);
+  k.disc(COAT, r * 0.98, [0, y, z - L * 0.529], [0, Math.PI, 0]);
+  // Turret saddle: elevation on top, windage on the right, focus on the left. Each a base, a knurled cap, a lid.
+  k.tube(m.black, r * 0.86, 0.05, [0, y, z], 20);
+  const turret = (dir, tall) => {
+    const rotation = dir[1] ? null : [0, 0, Math.PI / 2];
+    const at = (d) => [dir[0] * (r * 0.8 + d), y + dir[1] * (r * 0.8 + d), z];
+    k.tube(m.black, r * 0.46, 0.012, at(0.006), 14, rotation);
+    k.tube(m.grey, r * 0.5, tall, at(0.012 + tall / 2), 14, rotation);
+    k.tube(m.black, r * 0.42, 0.004, at(0.014 + tall), 14, rotation);
+    for (let i = 0; i < 10; i += 1) { const a = (i / 10) * Math.PI * 2, c = Math.cos(a) * r * 0.5, sn = Math.sin(a) * r * 0.5; const p = at(0.012 + tall / 2); k.box(m.black, dir[1] ? 0.0025 : tall * 0.8, dir[1] ? tall * 0.8 : 0.0025, 0.0025, dir[1] ? [p[0] + c, p[1], p[2] + sn] : [p[0], p[1] + c, p[2] + sn]); }
+  };
+  turret([0, 1], 0.018); turret([1, 0], 0.016); turret([-1, 0], 0.01);
+  // Rings: a clamp round the tube with a cap screwed down on top, standing on a foot that grips the rail.
+  const rings = [z - L * 0.2, z + L * 0.22];
+  for (const rz of rings) {
+    k.tube(m.grey, r * 0.8, 0.018, [0, y, rz], 18);
+    for (const side of [-1, 1]) { k.box(m.grey, 0.008, 0.008, 0.018, [side * r * 0.84, y, rz]); k.tube(m.black, 0.0028, 0.011, [side * r * 0.84, y + 0.003, rz], 6, null); }
+    if (!mount) k.box(m.grey, 0.022, r * 0.9, 0.022, [0, y - r * 0.9, rz]);
+    if (!mount) {
+      k.box(m.grey, 0.034, 0.011, 0.024, [0, y - r * 1.34 + 0.0055, rz]);
+      k.tube(m.black, 0.004, 0.044, [0, y - r * 1.34 + 0.005, rz], 6, [0, 0, Math.PI / 2]);
+      k.tube(m.grey, 0.0075, 0.007, [0.024, y - r * 1.34 + 0.005, rz], 6, [0, 0, Math.PI / 2]);
+    }
+  }
   if (mount) {
     const posts = mount.posts || rings, barY = y - r * 0.98;
     const front = Math.min(...rings, ...posts) - 0.01, back = Math.max(...rings, ...posts) + 0.01;
@@ -199,6 +273,10 @@ function redDot(k, m, railY, z) {
   const r = 0.03, centre = railY + 0.016 + r;
   const shell = new THREE.MeshStandardMaterial({ color: '#1b222a', roughness: 0.45, metalness: 0.4, side: THREE.DoubleSide });
   k.box(m.black, 0.044, 0.016, 0.085, [0, railY + 0.008, z]);
+  // The clamp that holds it to the rail: a cross bolt with a thumb nut.
+  k.tube(m.grey, 0.0045, 0.056, [0, railY + 0.007, z + 0.02], 8, [0, 0, Math.PI / 2]);
+  k.tube(m.grey, 0.0095, 0.008, [0.03, railY + 0.007, z + 0.02], 6, [0, 0, Math.PI / 2]);
+  k.box(m.black, 0.03, 0.012, 0.05, [0, railY + 0.021, z]);
   k.put(shell, new THREE.CylinderGeometry(r, r, 0.075, 20, 1, true), [0, centre, z], ALONG);
   k.ring(m.black, r, 0.0045, [0, centre, z - 0.0375]);
   k.ring(m.black, r, 0.0045, [0, centre, z + 0.0375]);
@@ -211,6 +289,9 @@ function redDot(k, m, railY, z) {
 function holoSight(k, m, railY, z) {
   const w = 0.058, h = 0.046, centre = railY + 0.018 + h / 2;
   k.box(m.black, w + 0.012, 0.018, 0.11, [0, railY + 0.009, z]);
+  k.tube(m.grey, 0.0045, w + 0.026, [0, railY + 0.007, z + 0.035], 8, [0, 0, Math.PI / 2]);
+  k.tube(m.grey, 0.0095, 0.008, [w / 2 + 0.014, railY + 0.007, z + 0.035], 6, [0, 0, Math.PI / 2]);
+  for (const dz of [0.012, 0.03]) k.box(m.grey, 0.012, 0.004, 0.012, [dz - 0.021, railY + 0.019, z + 0.05]);
   k.box(m.black, 0.006, h, 0.05, [w / 2 + 0.003, centre, z - 0.025]);
   k.box(m.black, 0.006, h, 0.05, [-w / 2 - 0.003, centre, z - 0.025]);
   k.box(m.black, w + 0.012, 0.007, 0.06, [0, centre + h / 2 + 0.0035, z - 0.025]);
@@ -221,11 +302,22 @@ function holoSight(k, m, railY, z) {
   k.lastWindow = { kind: 'holo', y: centre, w: w / 2 - 0.002, h: h / 2 - 0.002 };
   return centre;
 }
-function ironSights(k, m, y, zFront, zRear) {
-  k.box(m.black, 0.02, 0.008, 0.02, [0, y + 0.004, zFront]);
+// Iron sights. The rear leaf sits on the receiver. The front post stands on what is under it: the top of the
+// gun where there is one, or a tower clamped round the barrel (`barrelAt`) where the fore-end sits lower.
+function ironSights(k, m, y, zFront, zRear, barrelAt = null) {
+  if (barrelAt) {
+    const foot = barrelAt.y + barrelAt.r * 0.5;
+    k.tube(m.black, barrelAt.r * 1.7, 0.036, [0, barrelAt.y, zFront], 12);
+    k.profile(m.black, [[-0.018, foot], [0.018, foot], [0.011, y + 0.002], [-0.011, y + 0.002]], 0.016, [0, 0, zFront], null, 0.002);
+  }
+  k.box(m.black, 0.038, 0.008, 0.022, [0, y + 0.004, zFront]);
   k.box(m.grey, 0.004, 0.022, 0.006, [0, y + 0.017, zFront]);
-  for (const x of [-0.011, 0.011]) { k.box(m.black, 0.004, 0.026, 0.014, [x * 1.5, y + 0.015, zFront]); k.box(m.grey, 0.008, 0.022, 0.012, [x, y + 0.017, zRear]); }
-  k.box(m.black, 0.034, 0.008, 0.02, [0, y + 0.004, zRear]);
+  for (const side of [-1, 1]) k.box(m.black, 0.004, 0.024, 0.014, [side * 0.0165, y + 0.018, zFront], [0, 0, -side * 0.14]);
+  // Rear: a notch between two ears, on a leaf that ramps up from the receiver.
+  k.box(m.black, 0.034, 0.008, 0.024, [0, y + 0.004, zRear]);
+  k.box(m.black, 0.02, 0.005, 0.05, [0, y + 0.005, zRear - 0.032], [0.07, 0, 0]);
+  for (const side of [-1, 1]) k.box(m.grey, 0.008, 0.022, 0.012, [side * 0.011, y + 0.017, zRear]);
+  k.box(m.grey, 0.03, 0.012, 0.012, [0, y + 0.012, zRear]);
   return y + 0.028;
 }
 function bipod(k, m, y, z, folded = false) {
@@ -291,6 +383,10 @@ function longGun(root, o, m) {
   k.box(m.grey, 0.003, h * 0.22, o.len * 0.16, [w / 2 + 0.002, top * 0.35, front + o.len * 0.53]);            // bolt carrier seen through it
   pins(k, m, w, [[back - 0.05, bottom + 0.03], [front + 0.06, bottom + 0.02], [front + o.len * 0.5, bottom + 0.022, 0.0035]]);
   k.box(m.grey, w + 0.008, 0.012, 0.022, [0, bottom + 0.04, back - 0.075]);                                    // safety lever
+  k.box(m.black, w + 0.0014, 0.0018, o.len * 0.9, [0, -0.025, front + o.len * 0.5]);                           // where the two halves of the receiver meet
+  k.profile(m.steel, [[0, 0], [0.022, 0], [0.004, 0.012]], 0.006, [w / 2 + 0.001, top * 0.3, front + o.len * 0.4], null, 0.001);   // brass deflector
+  k.box(m.grey, 0.006, 0.012, 0.016, [w / 2 + 0.002, bottom + 0.034, front + o.len * 0.36]);                    // magazine release
+  k.box(m.grey, 0.005, 0.02, 0.012, [-w / 2 - 0.002, bottom + 0.044, front + o.len * 0.47]);                    // bolt release
   // Fore-end.
   let foreEnd = front;
   if (o.fore) {
@@ -299,6 +395,8 @@ function longGun(root, o, m) {
     if (style === 'none') { /* a bare magazine tube and barrel: the pump rides on them */ } else if (style === 'wood') {
       k.profile(m.wood, [[0, top - 0.03], [length, top - 0.034], [length, bottom + 0.02], [length - 0.03, bottom + 0.004], [0, bottom - 0.004]], w + 0.01, [0, 0, front + 0.0], null, 0.006);
       for (let i = 0; i < 3; i += 1) k.box(m.black, w + 0.014, 0.006, 0.03, [0, -0.012, front - length * (0.3 + i * 0.22)]);
+      // Barrel band: the steel strap that holds the hand guard to the barrel.
+      k.box(m.grey, w + 0.014, h * 0.6, 0.012, [0, (top - 0.034 + bottom + 0.012) / 2, foreEnd + 0.022]);
     } else if (style === 'round') {
       k.put(m.dark, new THREE.CylinderGeometry(0.036, 0.036, length, 10), [0, 0.004, front - length / 2], ALONG, [1, 1, 0.9]);
       for (let i = 0; i < 5; i += 1) for (const side of [-1, 1]) k.box(m.black, 0.005, 0.014, 0.022, [side * 0.035, 0.006, front - length * (0.16 + i * 0.17)]);
@@ -323,7 +421,8 @@ function longGun(root, o, m) {
     stockL = L;
     k.profile(m.wood, [[0.02, top - 0.034], [-0.04, top - 0.036], [-0.1, top - 0.02], [-L, top - (shot ? 0.03 : 0.012)], [-L, bottom - 0.05], [-L + 0.04, bottom - 0.052], [-0.13, bottom - 0.012], [-0.06, bottom - 0.03], [-0.035, bottom - 0.062], [0.0, bottom - 0.06], [0.012, bottom - 0.01], [0.02, bottom + 0.004]], w - 0.004, [0, 0, s0], null, 0.007);
     k.box(m.black, w + 0.002, 0.125, 0.016, [0, -0.028, s0 + L + 0.006]);
-    if (!shot) k.profile(m.wood, [[-0.12, top - 0.014], [-L + 0.03, top + 0.008], [-L + 0.03, top - 0.02], [-0.12, top - 0.026]], w - 0.014, [0, 0, s0], null, 0.004);
+    // The raised comb brings the eye up to a scope. Over iron sights it would stand in the sight line, so it is left off.
+    if (!shot && o.optic !== 'iron' && o.optic !== 'bead') k.profile(m.wood, [[-0.12, top - 0.014], [-L + 0.03, top + 0.008], [-L + 0.03, top - 0.02], [-0.12, top - 0.026]], w - 0.014, [0, 0, s0], null, 0.004);
   } else if (stockKind === 'fixed') {
     const L = o.stockLen || 0.27;
     stockL = L;
@@ -395,7 +494,12 @@ function longGun(root, o, m) {
   else if (o.optic === 'holo') sightLine = holoSight(k, m, railTop, -0.15);
   else if (o.optic === 'dot') sightLine = redDot(k, m, railTop, -0.15);
   else if (o.optic === 'bead') { const beadY = Math.max(top + 0.006, barrelY + (o.bore || 0.02) + 0.004); k.tube(m.grey, 0.002, beadY - barrelY, [0, (beadY + barrelY) / 2, muzzle + 0.03], 6, null); k.ball(m.brass, 0.0055, [0, beadY, muzzle + 0.03]); k.box(m.black, 0.018, 0.004, o.len * 0.7, [0, top + 0.002, front + o.len * 0.45]); sightLine = beadY + 0.004; }
-  else sightLine = ironSights(k, m, top, o.fore ? foreEnd + 0.04 : front + 0.03, 0.03);
+  else {
+    // A wooden or round hand guard sits below the receiver's top, so there the front sight goes on the barrel.
+    const onBarrel = Boolean(o.fore) && (o.fore[1] === 'wood' || o.fore[1] === 'round');
+    const barrelEnd = foreEnd + 0.01 - o.barrel;
+    sightLine = ironSights(k, m, top, onBarrel ? Math.min(foreEnd - 0.024, barrelEnd + 0.05) : o.fore ? foreEnd + 0.04 : front + 0.03, 0.03, onBarrel ? { y: barrelY, r: o.bore || 0.0125 } : null);
+  }
   // A carry handle sits where an open sight's eye line runs, so a gun wearing a dot or a holo loses it:
   // the handle was drawn straight through the Anvil's red dot and blocked half the sight picture.
   if (o.carry && o.optic !== 'dot' && o.optic !== 'holo') { k.box(m.dark, 0.016, 0.012, 0.16, [0, top + 0.05, front + o.len * 0.5]); for (const dz of [-0.07, 0.07]) k.box(m.dark, 0.016, 0.044, 0.014, [0, top + 0.026, front + o.len * 0.5 + dz]); }
@@ -524,10 +628,11 @@ function pistol(root, id, m, build) {
   const nose = -L - 0.012 - stretch, shown = -L + 0.019 - nose;
   k.tube(m.grey, bore, shown, [0, y + 0.012, nose + shown / 2], 10);
   if (build?.barrel === 'heavybarrel') k.ring(m.grey, bore + 0.003, 0.0028, [0, y + 0.012, nose + 0.008]);
+  k.disc(BORE, bore * 0.62, [0, y + 0.012, nose - 0.0007], [0, Math.PI, 0]);
   let muzzle = nose;
   const device = build?.muzzle ? DEVICE_KIND[build.muzzle] : spec.comp ? 'own-comp' : spec.can ? 'own-can' : null;
   if (device === 'own-comp') { k.profile(m.black, [[L - 0.004, 0.05], [L + 0.05, 0.05], [L + 0.05, 0.004], [L - 0.004, 0.0]], 0.034, [0, 0, -stretch], null, 0.003); for (const z of [0.014, 0.032]) k.box(m.grey, 0.036, 0.006, 0.008, [0, 0.052, -L - z - stretch]); muzzle = -L - 0.055 - stretch; }
-  else if (device === 'own-can') { k.tube(m.black, 0.019, 0.17, [0, y + 0.012, -L - 0.085 - stretch], 14); for (const z of [0.02, 0.085, 0.15]) k.ring(m.grey, 0.0192, 0.002, [0, y + 0.012, -L - z - stretch]); muzzle = -L - 0.175 - stretch; }
+  else if (device === 'own-can') { k.tube(m.black, 0.019, 0.17, [0, y + 0.012, -L - 0.085 - stretch], 14); for (const z of [0.02, 0.085, 0.15]) k.ring(m.grey, 0.0192, 0.002, [0, y + 0.012, -L - z - stretch]); muzzle = -L - 0.175 - stretch; k.disc(BORE, 0.0075, [0, y + 0.012, -L - 0.1707 - stretch], [0, Math.PI, 0]); }
   else if (device) muzzle = muzzleDevice(k, m, y + 0.012, nose, bore, device);
   // Optics bridge the frame rather than ride the slide: the sight line has to stay where the maths put it.
   const optic = build?.optic && build.optic !== 'irons' ? build.optic : null;
@@ -559,8 +664,12 @@ function revolver(root, m, build) {
   k.tube(m.brass, 0.008, 0.04, [0, y - 0.085, 0.036], 10, [0, 0, Math.PI / 2]);
   trigger(k, m, y - 0.03, -0.034, 0.05);
   k.box(m.grey, 0.01, 0.026, 0.014, [0, y + 0.03, 0.05], [0.7, 0, 0]);                                              // hammer spur
-  k.box(m.glow, 0.008, 0.014, 0.01, [0, y + 0.04, -end + 0.012]);
-  for (const side of [-1, 1]) k.box(m.black, 0.006, 0.022, 0.01, [side * 0.009, y + 0.036, 0.036]);
+  // Front sight: a ramp up off the rib with the bright blade set in its back face. Rear: a notch on the top strap.
+  k.profile(m.steel, [[end - 0.034, y + 0.027], [end - 0.004, y + 0.027], [end - 0.007, y + 0.047], [end - 0.016, y + 0.047]], 0.008, [0, 0, 0], null, 0.001);
+  k.box(m.glow, 0.0084, 0.009, 0.003, [0, y + 0.042, -end + 0.0165]);
+  k.box(m.black, 0.028, 0.008, 0.016, [0, y + 0.021, 0.036]);
+  for (const side of [-1, 1]) k.box(m.black, 0.006, 0.026, 0.01, [side * 0.009, y + 0.034, 0.036]);
+  k.disc(BORE, bore * 0.6, [0, y + 0.006, -end - 0.0007], [0, Math.PI, 0]);
   const cylinder = k.part([0, y + 0.004, -0.06]);
   cylinder.tube(m.grey, 0.031, 0.075, [0, 0, 0], 18);
   for (let i = 0; i < 6; i += 1) { const a = (i / 6) * Math.PI * 2; cylinder.tube(m.black, 0.007, 0.05, [Math.cos(a) * 0.029, Math.sin(a) * 0.029, -0.014], 8); cylinder.disc(m.brass, 0.0075, [Math.cos(a + 0.52) * 0.019, Math.sin(a + 0.52) * 0.019, 0.0378]); }
@@ -658,23 +767,22 @@ function launcher(root, m, build) {
   return { muzzle: front - 0.008, muzzleY: y, sightLine, glass, window: k.lastWindow || null, rocket: rocket.group, gripZ, charmAt: [stud[0] - 0.002, stud[1] - 0.006, stud[2]] };
 }
 
-// Kestrel Blade: a drop-point fighting knife. The blade is a real profile (belly, clip point, ground edge),
-// with a fuller carrying the accent glow, jimping on the spine, a two-quillon guard, a contoured grip with
-// scales and a steel pommel with a lanyard ring. Blade along -z, edge down. A finish covers blade and scales.
-function knife(root, m) {
-  const k = kit(root);
+// ------------------------------------------------------------------ knives
+// Every blade is gripped at the origin with the blade toward -z and the edge down, so one fist and one set
+// of animations fits them all. A blade is a real side profile, extruded thin and ground to an edge.
+// path: [forward, up] points from the guard face; ['c', c1f, c1u, c2f, c2u, f, u] is a curve.
+function bladeGeometry(path, thick = 0.0022, grind = 0.0085) {
   const shape = new THREE.Shape();
-  shape.moveTo(0, -0.019); shape.lineTo(0.018, -0.021);
-  shape.bezierCurveTo(0.09, -0.024, 0.165, -0.02, 0.232, 0.009);
-  shape.lineTo(0.17, 0.0205); shape.lineTo(0.0, 0.0205); shape.closePath();
-  const blade = new THREE.ExtrudeGeometry(shape, { depth: 0.0022, bevelEnabled: true, bevelThickness: 0.0016, bevelSize: 0.0085, bevelSegments: 1, steps: 1, curveSegments: 10 });
-  blade.translate(0, 0, -0.0011); blade.rotateY(Math.PI / 2);
-  k.put(m.blade, blade, [0, 0, -0.05]);
-  for (const side of [-1, 1]) { k.box(m.glow, 0.0012, 0.006, 0.13, [side * 0.0034, 0.009, -0.125]); k.box(m.grip, 0.0016, 0.012, 0.03, [side * 0.0032, -0.004, -0.068]); }
-  for (let notch = 0; notch < 6; notch += 1) k.box(m.fittings, 0.0062, 0.004, 0.0045, [0, 0.03, -0.06 - notch * 0.0085]);
-  k.box(m.fittings, 0.017, 0.03, 0.013, [0, 0.028, -0.046], [0.3, 0, 0]);
-  k.box(m.fittings, 0.017, 0.034, 0.013, [0, -0.03, -0.047], [-0.35, 0, 0]);
-  k.box(m.fittings, 0.02, 0.05, 0.012, [0, 0, -0.043]);
+  path.forEach((p, index) => { if (p[0] === 'c') shape.bezierCurveTo(p[1], p[2], p[3], p[4], p[5], p[6]); else if (index) shape.lineTo(p[0], p[1]); else shape.moveTo(p[0], p[1]); });
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thick, bevelEnabled: true, bevelThickness: thick * 0.73, bevelSize: grind, bevelSegments: 1, steps: 1, curveSegments: 12 });
+  geometry.translate(0, 0, -thick / 2); geometry.rotateY(Math.PI / 2);
+  return geometry;
+}
+const GUARD_Z = -0.05;
+const blade = (k, material, path, thick, grind, z = GUARD_Z) => k.put(material, bladeGeometry(path, thick, grind), [0, 0, z]);
+// Handles.
+function tacticalGrip(k, m) {
   k.put(m.grip, new THREE.CapsuleGeometry(0.0155, 0.088, 4, 12), [0, -0.002, 0.014], ALONG, [0.82, 1, 1.25]);
   for (const side of [-1, 1]) {
     k.put(m.scales, new THREE.CapsuleGeometry(0.012, 0.074, 4, 10), [side * 0.0105, -0.002, 0.014], ALONG, [0.45, 1, 1.45]);
@@ -683,6 +791,175 @@ function knife(root, m) {
   for (const z of [-0.024, -0.004, 0.016, 0.036]) k.put(m.grip, new THREE.TorusGeometry(0.0178, 0.0022, 6, 14), [0, -0.002, z], null, [0.84, 1.24, 1]);
   k.tube(m.fittings, 0.0165, 0.016, [0, -0.003, 0.076], 12);
   k.ring(m.fittings, 0.0085, 0.0022, [0, -0.003, 0.094], [0, Math.PI / 2, 0]);
+}
+// Two riveted slabs on a full tang, swelling toward the butt.
+function slabGrip(k, m, material, length = 0.115, flare = 0.006) {
+  k.box(m.fittings, 0.004, 0.026, length, [0, -0.002, -0.036 + length / 2]);
+  k.profile(material, [[0.036, 0.014], [0.036, -0.016], [-0.02, -0.019], [0.036 - length + 0.012, -0.018 - flare], [0.036 - length, -0.012 - flare], [0.036 - length, 0.012], [0.036 - length + 0.01, 0.016]], 0.024, [0, -0.002, 0], null, 0.005);
+  for (const z of [-0.018, 0.012, 0.042]) k.tube(m.brass, 0.0034, 0.027, [0, -0.003, z], 8, [0, 0, Math.PI / 2]);
+}
+// Cord over ray skin: a core with a tight spiral of wraps.
+function cordGrip(k, m, length = 0.12, material = m.grip) {
+  k.put(m.scales, new THREE.CapsuleGeometry(0.0135, length - 0.03, 4, 10), [0, -0.002, -0.036 + length / 2], ALONG, [0.8, 1, 1.2]);
+  for (let z = -0.03; z < -0.036 + length - 0.008; z += 0.0085) k.put(material, new THREE.TorusGeometry(0.0152, 0.0024, 5, 12), [0, -0.002, z], [0, 0.25, 0], [0.82, 1.22, 1]);
+  k.tube(m.fittings, 0.0145, 0.01, [0, -0.002, -0.036 + length], 10);
+}
+const crossGuard = (k, material, width, height = 0.012, z = -0.043) => { k.box(material, 0.018, width, height, [0, 0, z]); k.box(material, 0.022, 0.02, height + 0.004, [0, 0, z]); };
+const fuller = (k, m, from, length, y = 0.008, half = 0.0034) => { for (const side of [-1, 1]) k.box(m.glow, 0.0012, 0.005, length, [side * half, y, GUARD_Z - from - length / 2]); };
+
+const KNIVES = {
+  // Kestrel Blade: the issue knife. Drop point, glowing fuller, jimping, two quillons, a contoured grip.
+  kestrel(k, m) {
+    blade(k, m.blade, [[0, -0.019], [0.018, -0.021], ['c', 0.09, -0.024, 0.165, -0.02, 0.232, 0.009], [0.17, 0.0205], [0, 0.0205]]);
+    for (const side of [-1, 1]) { k.box(m.glow, 0.0012, 0.006, 0.13, [side * 0.0034, 0.009, -0.125]); k.box(m.grip, 0.0016, 0.012, 0.03, [side * 0.0032, -0.004, -0.068]); }
+    for (let notch = 0; notch < 6; notch += 1) k.box(m.fittings, 0.0062, 0.004, 0.0045, [0, 0.03, -0.06 - notch * 0.0085]);
+    k.box(m.fittings, 0.017, 0.03, 0.013, [0, 0.028, -0.046], [0.3, 0, 0]);
+    k.box(m.fittings, 0.017, 0.034, 0.013, [0, -0.03, -0.047], [-0.35, 0, 0]);
+    k.box(m.fittings, 0.02, 0.05, 0.012, [0, 0, -0.043]);
+    tacticalGrip(k, m);
+  },
+  // Bayonet: long clip point with a sawback and a muzzle ring on the guard.
+  bayonet(k, m) {
+    blade(k, m.blade, [[0, -0.016], [0.2, -0.017], ['c', 0.235, -0.016, 0.262, -0.004, 0.275, 0.012], [0.2, 0.019], [0, 0.019]], 0.0026, 0.008);
+    for (let tooth = 0; tooth < 9; tooth += 1) k.box(m.fittings, 0.006, 0.006, 0.006, [0, 0.0285, -0.075 - tooth * 0.012], [0.6, 0, 0]);
+    fuller(k, m, 0.02, 0.17, 0.006, 0.0038);
+    crossGuard(k, m.fittings, 0.062);
+    k.ring(m.fittings, 0.012, 0.0035, [0, 0.042, -0.043]);
+    k.put(m.scales, new THREE.CapsuleGeometry(0.0148, 0.086, 4, 10), [0, -0.002, 0.014], ALONG, [0.85, 1, 1.2]);
+    for (let groove = 0; groove < 7; groove += 1) k.put(m.grip, new THREE.TorusGeometry(0.0158, 0.0016, 5, 12), [0, -0.002, -0.024 + groove * 0.0125], null, [0.86, 1.2, 1]);
+    k.box(m.fittings, 0.022, 0.032, 0.018, [0, -0.002, 0.078]);
+    k.box(m.black, 0.008, 0.012, 0.02, [0, 0.016, 0.078]);
+  },
+  // Tanto: an armour-piercing point, two flat grinds meeting at a hard angle, cord-wrapped.
+  tanto(k, m) {
+    blade(k, m.blade, [[0, -0.018], [0.185, -0.018], [0.245, 0.0195], [0, 0.0195]], 0.0028, 0.0075);
+    k.box(m.black, 0.0066, 0.03, 0.0016, [0, -0.001, GUARD_Z - 0.176], [0.62, 0, 0]);
+    fuller(k, m, 0.03, 0.12, 0.01, 0.0042);
+    k.box(m.brass, 0.03, 0.044, 0.006, [0, 0, -0.045]);
+    k.box(m.fittings, 0.018, 0.03, 0.008, [0, 0, -0.052]);
+    cordGrip(k, m, 0.125);
+  },
+  // Bowie: a deep belly and a concave clip, brass guard, walnut slabs.
+  bowie(k, m) {
+    blade(k, m.blade, [[0, -0.024], [0.04, -0.03], ['c', 0.13, -0.036, 0.23, -0.022, 0.285, 0.014], ['c', 0.24, 0.016, 0.2, 0.022, 0.165, 0.032], [0, 0.03]], 0.003, 0.009);
+    fuller(k, m, 0.02, 0.13, 0.016, 0.0044);
+    k.box(m.brass, 0.02, 0.084, 0.01, [0, 0, -0.044]);
+    k.ball(m.brass, 0.008, [0, 0.044, -0.046]); k.ball(m.brass, 0.008, [0, -0.044, -0.042]);
+    slabGrip(k, m, m.wood, 0.12, 0.008);
+    k.box(m.brass, 0.026, 0.034, 0.01, [0, -0.006, 0.084]);
+  },
+  // Dagger: double-edged and symmetrical, a spine of light down the middle, a ball pommel.
+  dagger(k, m) {
+    blade(k, m.blade, [[0, -0.015], ['c', 0.11, -0.017, 0.2, -0.009, 0.262, 0], ['c', 0.2, 0.009, 0.11, 0.017, 0, 0.015]], 0.003, 0.007);
+    fuller(k, m, 0.012, 0.19, 0, 0.0046);
+    k.profile(m.fittings, [[0.004, 0.05], [0.012, 0.044], [0.008, 0.012], [0.008, -0.012], [0.012, -0.044], [0.004, -0.05], [-0.006, -0.04], [-0.006, 0.04]], 0.016, [0, 0, -0.044], null, 0.003);
+    cordGrip(k, m, 0.105, m.scales);
+    k.ball(m.fittings, 0.016, [0, -0.002, 0.082]);
+  },
+  // Kukri: the blade drops forward of the hand and the weight sits out by the belly.
+  kukri(k, m) {
+    blade(k, m.blade, [[0, -0.014], [0.06, -0.017], ['c', 0.1, -0.03, 0.15, -0.072, 0.21, -0.082], ['c', 0.245, -0.084, 0.272, -0.07, 0.29, -0.046], ['c', 0.24, -0.04, 0.18, -0.012, 0.12, 0.014], ['c', 0.09, 0.022, 0.05, 0.022, 0, 0.02]], 0.003, 0.009);
+    k.box(m.black, 0.007, 0.01, 0.008, [0, -0.022, GUARD_Z - 0.03]);
+    fuller(k, m, 0.02, 0.07, 0.008, 0.0044);
+    k.box(m.brass, 0.022, 0.046, 0.008, [0, 0, -0.045]);
+    slabGrip(k, m, m.wood, 0.115, 0.012);
+    k.box(m.brass, 0.026, 0.044, 0.008, [0, -0.01, 0.08]);
+  },
+  // Cleaver: a slab of steel with a hanging hole, riveted handle.
+  cleaver(k, m) {
+    blade(k, m.blade, [[0, -0.02], [0.02, -0.066], [0.2, -0.07], [0.212, -0.058], [0.212, 0.024], [0, 0.024]], 0.0034, 0.007);
+    for (const side of [-1, 1]) k.disc(m.black, 0.009, [side * 0.0048, 0.004, GUARD_Z - 0.185], [0, side * Math.PI / 2, 0]);
+    for (const side of [-1, 1]) k.box(m.glow, 0.0012, 0.004, 0.15, [side * 0.005, 0.012, GUARD_Z - 0.09]);
+    k.box(m.fittings, 0.02, 0.05, 0.012, [0, 0.002, -0.044]);
+    slabGrip(k, m, m.wood, 0.115, 0.004);
+  },
+  // Trench knife: a spike of a blade behind a knuckle bow, with a skull-crusher on the butt.
+  trench(k, m) {
+    blade(k, m.blade, [[0, -0.011], ['c', 0.1, -0.013, 0.18, -0.008, 0.235, 0], ['c', 0.18, 0.008, 0.1, 0.013, 0, 0.011]], 0.004, 0.005);
+    fuller(k, m, 0.01, 0.16, 0, 0.005);
+    k.put(m.scales, new THREE.CapsuleGeometry(0.014, 0.084, 4, 10), [0, 0.004, 0.014], ALONG, [0.85, 1, 1.15]);
+    // The bow: four finger rings in a row under the grip, tied into the guard and the pommel.
+    for (let ring = 0; ring < 4; ring += 1) k.put(m.brass, new THREE.TorusGeometry(0.0145, 0.0042, 6, 14), [0, -0.026, -0.022 + ring * 0.026], [0, Math.PI / 2, 0], [1, 1.15, 1]);
+    for (let spike = 0; spike < 4; spike += 1) k.put(m.brass, new THREE.ConeGeometry(0.006, 0.012, 6), [0, -0.048, -0.022 + spike * 0.026], [Math.PI, 0, 0]);
+    k.box(m.brass, 0.02, 0.05, 0.01, [0, -0.006, -0.044]);
+    k.box(m.brass, 0.02, 0.04, 0.01, [0, -0.008, 0.07]);
+    k.put(m.brass, new THREE.ConeGeometry(0.014, 0.03, 8), [0, 0.004, 0.092], [Math.PI / 2, 0, 0]);
+  },
+  // Machete: a long working blade that widens toward the tip.
+  machete(k, m) {
+    blade(k, m.blade, [[0, -0.015], [0.26, -0.034], ['c', 0.33, -0.036, 0.365, -0.016, 0.375, 0.008], [0.35, 0.022], [0, 0.018]], 0.0026, 0.008);
+    for (const side of [-1, 1]) k.box(m.black, 0.0012, 0.02, 0.3, [side * 0.0036, 0.008, GUARD_Z - 0.17]);
+    fuller(k, m, 0.03, 0.28, 0.012, 0.0044);
+    slabGrip(k, m, m.scales, 0.125, 0.01);
+    k.ring(m.fittings, 0.008, 0.002, [0, -0.012, 0.086], [0, Math.PI / 2, 0]);
+  },
+  // Karambit: a claw. Edge on the inside of the curve, a finger ring on the butt.
+  karambit(k, m) {
+    blade(k, m.blade, [[0, -0.013], ['c', 0.05, -0.016, 0.1, -0.04, 0.128, -0.108], ['c', 0.16, -0.06, 0.15, 0.0, 0.1, 0.022], ['c', 0.07, 0.03, 0.03, 0.026, 0, 0.02]], 0.003, 0.0075);
+    for (const side of [-1, 1]) k.box(m.glow, 0.0012, 0.005, 0.07, [side * 0.0046, 0.006, GUARD_Z - 0.05], [0.25, 0, 0]);
+    for (let notch = 0; notch < 5; notch += 1) k.box(m.fittings, 0.0066, 0.004, 0.0045, [0, 0.03 - notch * 0.001, -0.06 - notch * 0.0085]);
+    // A curved handle: three segments bending down toward the ring.
+    k.put(m.scales, new THREE.CapsuleGeometry(0.0145, 0.04, 4, 10), [0, -0.002, -0.012], ALONG, [0.8, 1, 1.25]);
+    k.put(m.scales, new THREE.CapsuleGeometry(0.0142, 0.04, 4, 10), [0, -0.008, 0.03], [Math.PI / 2 + 0.3, 0, 0], [0.8, 1, 1.25]);
+    for (const z of [-0.022, 0.0, 0.024, 0.046]) k.put(m.grip, new THREE.TorusGeometry(0.0168, 0.0022, 6, 14), [0, -0.003 - Math.max(0, z) * 0.2, z], null, [0.82, 1.24, 1]);
+    for (const side of [-1, 1]) for (const z of [-0.012, 0.02]) k.tube(m.fittings, 0.003, 0.0035, [side * 0.0125, -0.004, z], 8, [0, 0, Math.PI / 2]);
+    k.ring(m.fittings, 0.0165, 0.0045, [0, -0.022, 0.078], [0, Math.PI / 2, 0]);
+  },
+  // Butterfly knife: a slim blade between two skeleton handles, latch on the end.
+  butterfly(k, m) {
+    blade(k, m.blade, [[0, -0.009], [0.13, -0.01], ['c', 0.17, -0.01, 0.195, -0.004, 0.21, 0.006], [0.17, 0.011], [0, 0.011]], 0.0022, 0.006, -0.04);
+    fuller(k, m, 0.0, 0.12, 0.002, 0.0032);
+    for (const y of [0.009, -0.011]) {
+      k.box(m.scales, 0.012, 0.011, 0.125, [0, y, 0.022]);
+      for (let hole = 0; hole < 5; hole += 1) for (const side of [-1, 1]) k.disc(m.black, 0.0034, [side * 0.0062, y, -0.022 + hole * 0.022], [0, side * Math.PI / 2, 0]);
+      k.box(m.fittings, 0.013, 0.012, 0.01, [0, y, -0.036]);
+    }
+    for (const z of [-0.034, -0.026]) k.tube(m.brass, 0.0032, 0.016, [0, z === -0.034 ? 0.009 : -0.011, z], 8, [0, 0, Math.PI / 2]);
+    k.box(m.fittings, 0.004, 0.03, 0.006, [0, -0.001, 0.088]);
+    k.ball(m.brass, 0.005, [0, 0.014, 0.09]);
+  },
+  // Tomahawk: a bearded bit and a back spike on a wrapped shaft. Held near the head.
+  tomahawk(k, m) {
+    k.tube(m.wood, 0.0115, 0.3, [0, 0, 0.0], 10);
+    for (let wrap = 0; wrap < 7; wrap += 1) k.put(m.grip, new THREE.TorusGeometry(0.0125, 0.002, 5, 12), [0, 0, -0.03 + wrap * 0.012]);
+    k.tube(m.fittings, 0.013, 0.014, [0, 0, 0.15], 10);
+    // The head: its profile is drawn looking at the flat of the bit.
+    k.put(m.blade, bladeGeometry([[0.024, 0.016], [0.03, -0.014], ['c', 0.05, -0.04, 0.062, -0.07, 0.058, -0.1], ['c', 0.02, -0.108, -0.03, -0.1, -0.05, -0.088], ['c', -0.035, -0.06, -0.03, -0.03, -0.026, -0.014], [-0.024, 0.016]], 0.006, 0.006), [0, 0, -0.118]);
+    k.put(m.blade, bladeGeometry([[0.014, 0.014], [0.006, 0.07], [-0.006, 0.07], [-0.014, 0.014]], 0.006, 0.004), [0, 0, -0.118]);
+    k.box(m.fittings, 0.03, 0.036, 0.05, [0, 0, -0.118]);
+    for (const side of [-1, 1]) k.box(m.glow, 0.0012, 0.05, 0.004, [side * 0.0066, -0.055, -0.118]);
+  },
+  // Wakizashi: a short sword. Curved single edge, brass habaki, round guard, diamond-wrapped hilt.
+  wakizashi(k, m) {
+    blade(k, m.blade, [[0, -0.012], ['c', 0.15, -0.02, 0.32, -0.014, 0.425, 0.03], [0.4, 0.036], ['c', 0.3, 0.012, 0.15, 0.006, 0, 0.011]], 0.003, 0.0055);
+    for (const side of [-1, 1]) k.box(m.glow, 0.001, 0.0035, 0.3, [side * 0.004, 0.0, GUARD_Z - 0.16], [0.055, 0, 0]);
+    k.box(m.brass, 0.012, 0.03, 0.022, [0, 0, GUARD_Z + 0.004]);
+    k.tube(m.fittings, 0.034, 0.005, [0, 0, -0.04], 20);
+    k.tube(m.brass, 0.036, 0.002, [0, 0, -0.037], 20);
+    k.put(m.scales, new THREE.CapsuleGeometry(0.0135, 0.11, 4, 10), [0, -0.001, 0.03], ALONG, [0.78, 1, 1.25]);
+    for (let wrap = 0; wrap < 9; wrap += 1) for (const side of [-1, 1]) k.box(m.grip, 0.004, 0.007, 0.018, [side * 0.0098, -0.001 + (wrap % 2 ? 0.006 : -0.006), -0.026 + wrap * 0.0135], [side * (wrap % 2 ? 0.7 : -0.7), 0, 0]);
+    for (let wrap = 0; wrap < 10; wrap += 1) k.put(m.grip, new THREE.TorusGeometry(0.0158, 0.0014, 4, 10), [0, -0.001, -0.03 + wrap * 0.0135], [0, wrap % 2 ? 0.5 : -0.5, 0], [0.8, 1.24, 1]);
+    k.tube(m.brass, 0.014, 0.012, [0, -0.001, 0.104], 10);
+  },
+  // Arc blade: no steel at all. An emitter hilt and a blade of hard light.
+  plasma(k, m) {
+    const light = new THREE.MeshBasicMaterial({ color: m.glow.color, transparent: true, opacity: 0.78, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const core = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.9, depthWrite: false, toneMapped: false });
+    k.put(light, bladeGeometry([[0, -0.012], ['c', 0.12, -0.016, 0.2, -0.01, 0.27, 0], ['c', 0.2, 0.01, 0.12, 0.016, 0, 0.012]], 0.004, 0.006), [0, 0, GUARD_Z]);
+    k.put(core, bladeGeometry([[0, -0.003], [0.255, -0.0008], [0.255, 0.0008], [0, 0.003]], 0.002, 0.0015), [0, 0, GUARD_Z]);
+    k.tube(m.scales, 0.0155, 0.1, [0, -0.001, 0.016], 12);
+    for (const z of [-0.026, -0.006, 0.014, 0.034, 0.054]) k.ring(m.fittings, 0.0162, 0.0018, [0, -0.001, z]);
+    for (let vent = 0; vent < 4; vent += 1) for (const side of [-1, 1]) k.box(m.glow, 0.0016, 0.012, 0.006, [side * 0.0156, -0.001, -0.02 + vent * 0.02]);
+    k.tube(m.fittings, 0.02, 0.014, [0, -0.001, -0.042], 12, ALONG, 0.0165);
+    k.tube(m.glow, 0.011, 0.004, [0, -0.001, -0.05], 12);
+    k.tube(m.fittings, 0.0175, 0.012, [0, -0.001, 0.072], 12);
+    k.box(m.glow, 0.008, 0.008, 0.004, [0, -0.001, 0.08]);
+  },
+};
+export const KNIFE_TYPES = Object.keys(KNIVES);
+function knife(root, m, type) {
+  const k = kit(root);
+  (KNIVES[type] || KNIVES.kestrel)(k, m);
   k.bake();
 }
 
@@ -703,8 +980,8 @@ export function buildWeapon(id, accent, finish = null, build = null) {
   const g = new THREE.Group();
   const skin = skinMaterial(finish);
   const m = {
-    steel: skin || M('#39424c', 0.38, 0.55), dark: skin || M('#222931', 0.6, 0.3), wood: skin || M('#6e4a2b', 0.7, 0.05),
-    grey: M('#5b6671', 0.32, 0.75), black: M('#0c0f12', 0.7, 0.2), brass: M('#b8923a', 0.3, 0.8), glow: M(accent, 0.3, 0.2, accent),
+    steel: skin || grained(M('#39424c', 0.38, 0.55), 'steel'), dark: skin || grained(M('#222931', 0.6, 0.3), 'polymer'), wood: skin || grained(M('#6e4a2b', 0.62, 0.05), 'wood'),
+    grey: grained(M('#5b6671', 0.32, 0.75), 'steel'), black: grained(M('#0c0f12', 0.7, 0.2), 'polymer'), brass: M('#b8923a', 0.3, 0.8), glow: M(accent, 0.3, 0.2, accent),
   };
   const data = { muzzle: new THREE.Vector3(0, 0.01, -0.9), mag: null, bolt: null, pump: null, slide: null, cylinder: null, hinge: null, hip: [0.15, -0.155, -0.4], ads: [0, -0.115, -0.3], adsHide: false, kind: 'long' };
   let reach = null, gripY = -0.085;
@@ -757,8 +1034,9 @@ export function buildWeapon(id, accent, finish = null, build = null) {
     data.muzzle.set(0, 0.034, built.muzzle); gripY = -0.07;
     if (built.glass) fitGlass(data, built.glass, g, build?.optic === 'prism');
   } else {
-    knife(g, { blade: skin || M('#aeb9c4', 0.22, 0.75), scales: skin || M('#1a1f25', 0.75, 0.1), fittings: m.grey, grip: M('#0e1114', 0.9, 0.05), glow: m.glow });
-    Object.assign(data, { knife: true, kind: 'knife', hip: [0.16, -0.17, -0.42] });
+    // build.knife picks the blade (shared/constants.js COSMETICS.knife); the finish covers blade and scales.
+    knife(g, { blade: skin || M('#aeb9c4', 0.22, 0.75), scales: skin || grained(M('#1a1f25', 0.75, 0.1), 'polymer'), wood: skin || grained(M('#6a4526', 0.62, 0.05), 'wood'), fittings: m.grey, black: m.black, brass: m.brass, grip: M('#0e1114', 0.9, 0.05), glow: m.glow }, build?.knife);
+    Object.assign(data, { knife: true, knifeType: KNIVES[build?.knife] ? build.knife : 'kestrel', kind: 'knife', hip: [0.16, -0.17, -0.42] });
     data.ads = data.hip;
     data.muzzle.set(0, 0.01, -0.3);
   }

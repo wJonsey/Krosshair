@@ -3,9 +3,11 @@
 // The menu brings its own styles and markup so it touches nothing else in the game.
 import * as THREE from 'three';
 import { DEV_ACTIONS, DEV_FLY_LIFT, DEV_TOOLS } from '../shared/devtools.js';
-import { game, isEnemy } from './state.js';
+import { bus, game, isEnemy } from './state.js';
 import { net } from './net.js';
 import { play } from './audio.js';
+import { planDowntime } from './bulletin.js';
+import { downtimeLive } from '../shared/outage.js';
 
 // Read by client/player.js for the tools that change how you move and aim.
 export const devState = { fly: false, speed: false, esp: false, aimbot: false, nospread: false, lift: 0 };
@@ -27,6 +29,14 @@ const CSS = `
 .dev-row.on i::after { background: #00ffc6; transform: translateX(16px); }
 .dev-row.act i { border: 0; }
 .dev-row.act i::after { content: 'RUN'; position: static; display: block; width: auto; background: none; color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .12em; }
+.dev-down { padding: 10px 12px; border-top: 1px solid rgba(0, 255, 198, .25); }
+.dev-down b { display: block; font: 700 10px var(--mono); letter-spacing: .2em; color: #00ffc6; }
+.dev-down small { display: block; margin: 4px 0 8px; color: var(--haze); font-size: 10px; line-height: 1.35; }
+.dev-down input { width: 100%; margin-bottom: 7px; padding: 6px 8px; background: rgba(0, 0, 0, .35); border: 1px solid rgba(230, 237, 241, .2); color: var(--frost); font: 500 11px var(--mono); }
+.dev-down div { display: flex; flex-wrap: wrap; gap: 5px; }
+.dev-down button { padding: 5px 8px; background: none; border: 1px solid rgba(0, 255, 198, .4); color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .08em; cursor: pointer; }
+.dev-down button:hover { background: rgba(0, 255, 198, .12); }
+.dev-down button.off { border-color: rgba(255, 90, 78, .5); color: #ff8a80; }
 .dev-panel footer { padding: 8px 12px; color: var(--graphite); font-size: 10px; letter-spacing: .08em; border-top: 1px solid rgba(0, 255, 198, .25); }
 .dev-esp { position: fixed; inset: 0; z-index: 12; pointer-events: none; }
 .dev-flag { position: fixed; left: 50%; transform: translateX(-50%); bottom: 152px; z-index: 12; max-width: 92vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #00ffc6; font: 700 10px var(--mono); letter-spacing: .2em; text-shadow: 0 0 8px rgba(0, 255, 198, .6); pointer-events: none; }
@@ -42,7 +52,14 @@ export function initDevTools({ player, operators, camera }) {
     ...DEV_TOOLS.map((tool) => `<button type="button" class="dev-row" data-tool="${tool.id}"><b>${tool.name}</b><i></i><small>${tool.desc}</small></button>`),
     ...DEV_ACTIONS.map((action) => `<button type="button" class="dev-row act" data-act="${action.id}"><b>${action.name}</b><i></i><small>${action.desc}</small></button>`),
   ].join('');
-  panel.innerHTML = `<header><b>DEV TOOLS</b><small>K to close</small></header><div class="dev-list">${rows}</div><footer>Your account only. Bots never get these.</footer>`;
+  // Planned downtime: every pilot gets a tab on the right of every screen until it is over.
+  const down = `<div class="dev-down"><b>PLANNED DOWNTIME</b><small data-down-now>Nothing planned.</small><input data-down-note maxlength="90" placeholder="Why (optional)" />
+    <div>${[[5, '5m'], [15, '15m'], [30, '30m'], [60, '1h'], [120, '2h']].map(([n, label]) => `<button type="button" data-down-in="${n}">IN ${label}</button>`).join('')}<button type="button" class="off" data-down-clear="1">CLEAR</button></div></div>`;
+  panel.innerHTML = `<header><b>DEV TOOLS</b><small>K to close</small></header><div class="dev-list">${rows}</div>${down}<footer>Your account only. Bots never get these.</footer>`;
+  const downNow = panel.querySelector('[data-down-now]');
+  const paintDown = () => { const d = downtimeLive(game.downtime) ? game.downtime : null; downNow.textContent = d ? `${new Date(d.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · about ${d.minutes} min${d.note ? ` · ${d.note}` : ''}` : 'Nothing planned. Other times are on the Service page.'; };
+  bus.on('downtime', paintDown);
+  paintDown();
   const esp = document.createElement('canvas');
   esp.className = 'dev-esp';
   const flag = document.createElement('div');
@@ -77,6 +94,8 @@ export function initDevTools({ player, operators, camera }) {
   panel.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button || !allowed()) return;
+    if (button.dataset.downIn) { planDowntime({ at: Date.now() + Number(button.dataset.downIn) * 60000, note: panel.querySelector('[data-down-note]').value }); play('ready'); return; }
+    if (button.dataset.downClear) { planDowntime(null); play('uiBack'); return; }
     if (button.dataset.tool) { set(button.dataset.tool, !on[button.dataset.tool]); play('ui'); return; }
     if (button.dataset.act === 'teleport') {
       // Where you are looking, a step back from whatever it hits.
