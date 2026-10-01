@@ -7,7 +7,9 @@
 // Like the present and the dev tools it brings its own markup and styles, so it works over the menus,
 // the lobby, a match and the end screen without any of them knowing about it.
 import { PATCH_NOTES, latestNoteId, notesSince } from '../shared/patchnotes.js';
-import { DOWNTIME, downtimeEnd, downtimeLive, untilLabel } from '../shared/outage.js';
+import { DOWNTIME, downtimeEnd, downtimeLive, featureName, outageReason, untilLabel } from '../shared/outage.js';
+import { MAP_INFO, ROYALE_MAP } from '../shared/map.js';
+import { WEAPONS } from '../shared/constants.js';
 import { bus, game, store, stored } from './state.js';
 import { net } from './net.js';
 import { play } from './audio.js';
@@ -16,6 +18,12 @@ const CSS = `
 .downtime-tab { position: fixed; right: 0; top: 38%; z-index: 70; width: 214px; padding: 12px 14px 12px 20px; pointer-events: none; color: var(--frost); background: linear-gradient(90deg, rgba(10, 14, 18, .94), rgba(14, 19, 25, .9)); border: 1px solid rgba(255, 181, 71, .38); border-right: 0; box-shadow: -12px 0 40px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(255, 255, 255, .05); transform: translateX(105%); transition: transform .5s var(--ease), opacity .3s; }
 .downtime-tab.on { transform: none; }
 .downtime-tab::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: repeating-linear-gradient(-45deg, var(--signal) 0 6px, #14100a 6px 12px); }
+.dt-pulled:empty { display: none; }
+.dt-plan + .dt-pulled { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--hairline); }
+.downtime-tab.only-pulled .dt-pulled { margin-top: 0; padding-top: 0; border-top: 0; }
+.dt-pulled p { margin: 6px 0 0; font: 400 11px/1.4 var(--body); color: var(--haze); }
+.downtime-tab .dt-pulled b { display: block; margin: 0; font: 400 12px/1.2 var(--display); letter-spacing: .02em; color: var(--frost); text-transform: uppercase; animation: none; }
+body[data-screen='game'] .dt-pulled p { font-size: 10px; }
 .downtime-tab small { display: block; font: 600 9px/1 var(--mono); letter-spacing: .22em; color: var(--signal); text-transform: uppercase; }
 .downtime-tab b { display: block; margin-top: 7px; font: 400 21px/1 var(--display); letter-spacing: .02em; }
 .downtime-tab em { display: block; margin-top: 6px; font: 500 11px/1.2 var(--mono); font-style: normal; letter-spacing: .1em; color: var(--frost); }
@@ -120,16 +128,37 @@ export function initBulletin() {
   const tab = document.createElement('aside');
   tab.className = 'downtime-tab';
   tab.setAttribute('aria-live', 'polite');
-  tab.innerHTML = '<small></small><b></b><em></em><span></span>';
+  tab.innerHTML = '<div class="dt-plan"><small></small><b></b><em></em><span></span></div><div class="dt-pulled"></div>';
   document.body.append(tab);
-  const [tabKicker, tabTime, tabCount, tabNote] = tab.children;
+  const [tabKicker, tabTime, tabCount, tabNote] = tab.firstChild.children;
+  const planBox = tab.firstChild, pulledBox = tab.lastChild;
+  // What a developer has pulled from the game, and why: the same tab, under any planned downtime.
+  let pulledKey = null;
+  function paintPulled() {
+    const out = game.outages || {};
+    const mapName = (id) => (id === ROYALE_MAP ? 'Kestrel Island' : MAP_INFO.find((info) => info.id === id)?.title || id);
+    const rows = [
+      ...Object.entries(out.feature || {}).map(([id, entry]) => [featureName(id), entry]),
+      ...Object.entries(out.map || {}).map(([id, entry]) => [mapName(id), entry]),
+      ...Object.entries(out.weapon || {}).map(([id, entry]) => [WEAPONS[id]?.name || id, entry]),
+    ];
+    const key = JSON.stringify(rows);
+    if (key !== pulledKey) {
+      pulledKey = key;
+      pulledBox.innerHTML = rows.length ? `<small>Disabled right now</small>${rows.map(([name, entry]) => `<p><b>${esc(name)}</b>${esc(outageReason(entry))}</p>`).join('')}` : '';
+    }
+    return rows.length;
+  }
   const write = (node, text) => { if (node.textContent !== text) node.textContent = text; };
   function paintDowntime() {
     const downtime = game.downtime;
     const now = Date.now();
-    if (!downtimeLive(downtime, now)) { tab.classList.remove('on'); return; }
+    const pulled = paintPulled(), planned = downtimeLive(downtime, now);
+    planBox.style.display = planned ? '' : 'none';
+    tab.classList.toggle('on', planned || pulled > 0);
+    tab.classList.toggle('only-pulled', !planned && pulled > 0);
+    if (!planned) { tab.classList.remove('soon'); return; }
     const started = now >= downtime.at;
-    tab.classList.add('on');
     tab.classList.toggle('soon', started || downtime.at - now < 5 * 60 * 1000);
     write(tabKicker, started ? 'Downtime now' : 'Planned downtime');
     write(tabTime, started ? 'Offline' : `${dayLabel(downtime.at) === 'Today' ? '' : `${dayLabel(downtime.at)} `}${clockTime(downtime.at)}`);
@@ -139,6 +168,7 @@ export function initBulletin() {
   }
   net.on('downtime', (message) => { game.downtime = message.downtime || null; bus.emit('downtime'); });
   bus.on('downtime', paintDowntime);
+  bus.on('outages', paintDowntime);
   setInterval(paintDowntime, 1000);
   paintDowntime();
 

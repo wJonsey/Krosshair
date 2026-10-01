@@ -10,6 +10,12 @@
 // written the way the rest of the game talks. Lead with what the player can now do or see.
 export const PATCH_NOTES = [
   {
+    id: 3, date: '2026-10-01', tag: 'Update', title: 'What is switched off',
+    notes: [
+      'Anything pulled from the game, and why, now shows in the tab on the right of every screen.',
+    ],
+  },
+  {
     id: 2, date: '2026-10-01', tag: 'Update', title: 'New paint, new pilot',
     notes: [
       'Every menu repainted. The Shop is three clear tabs: Item Shop, Crates, Skins.',
