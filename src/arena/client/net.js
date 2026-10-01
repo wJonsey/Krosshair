@@ -126,6 +126,7 @@ function connect() {
       // nothing unreleased is ever written into these pages.
       if (message.itemShop) installShopCatalogue(message.itemShop);
       if (message.outages) { game.outages = message.outages; bus.emit('outages'); }
+      if (Number.isFinite(message.clock)) game.clockSkew = message.clock - Date.now();
       game.downtime = message.downtime || null; bus.emit('downtime');
       bus.emit('config');
     }

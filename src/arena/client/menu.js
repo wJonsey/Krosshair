@@ -540,8 +540,8 @@ let downtimeDraft = { at: '', minutes: DOWNTIME.defaultMinutes, note: '' };
 // A datetime-local value is local time with no zone: this is "now plus n minutes" in that shape.
 const localStamp = (ms) => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
 function downtimePanelHtml() {
-  const live = downtimeLive(game.downtime) ? game.downtime : null;
-  const when = live ? new Date(live.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  const live = downtimeLive(game.downtime, Date.now() + (game.clockSkew || 0)) ? game.downtime : null;
+  const when = live ? new Date(live.at - (game.clockSkew || 0)).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
   return `<div class="panel service-downtime">
     <p class="eyebrow">Planned downtime <small>shown to every pilot, on every screen</small></p>
     ${live ? `<div class="service-row"><div><b>${escapeHtml(when)}</b><small>About ${live.minutes} min</small><span>${escapeHtml(live.note || 'No reason given.')}</span></div><button type="button" class="service-back" data-downtime-clear="1">Take it down</button></div>` : '<p class="muted">Nothing planned.</p>'}
@@ -899,9 +899,10 @@ home.addEventListener('click', (event) => {
     downtimeDraft = { at: document.querySelector('#downtime-at')?.value || '', minutes: Number(document.querySelector('#downtime-minutes')?.value) || DOWNTIME.defaultMinutes, note: document.querySelector('#downtime-note')?.value || '' };
     if (target.dataset.downtimeClear) planDowntime(null);
     else {
-      const at = target.dataset.downtimeIn ? Date.now() + Number(target.dataset.downtimeIn) * 60000 : new Date(downtimeDraft.at).getTime();
+      // A typed time is this machine's; the server keeps its own clock, so it is moved onto that.
+      const at = target.dataset.downtimeIn ? Date.now() : new Date(downtimeDraft.at).getTime() + (game.clockSkew || 0);
       if (!Number.isFinite(at)) { toast('Pick a time.', 'warn'); return; }
-      planDowntime({ at, minutes: downtimeDraft.minutes, note: downtimeDraft.note });
+      planDowntime({ at, in: Number(target.dataset.downtimeIn) || undefined, minutes: downtimeDraft.minutes, note: downtimeDraft.note });
       downtimeDraft.at = '';
     }
     play('ready');

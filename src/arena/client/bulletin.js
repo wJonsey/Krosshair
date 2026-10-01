@@ -152,7 +152,8 @@ export function initBulletin() {
   const write = (node, text) => { if (node.textContent !== text) node.textContent = text; };
   function paintDowntime() {
     const downtime = game.downtime;
-    const now = Date.now();
+    // On the server's clock, shown in this machine's time: a PC whose clock is out still counts down right.
+    const skew = game.clockSkew || 0, now = Date.now() + skew;
     const pulled = paintPulled(), planned = downtimeLive(downtime, now);
     planBox.style.display = planned ? '' : 'none';
     tab.classList.toggle('on', planned || pulled > 0);
@@ -161,12 +162,12 @@ export function initBulletin() {
     const started = now >= downtime.at;
     tab.classList.toggle('soon', started || downtime.at - now < 5 * 60 * 1000);
     write(tabKicker, started ? 'Downtime now' : 'Planned downtime');
-    write(tabTime, started ? 'Offline' : `${dayLabel(downtime.at) === 'Today' ? '' : `${dayLabel(downtime.at)} `}${clockTime(downtime.at)}`);
-    write(tabCount, started ? `Back about ${clockTime(downtimeEnd(downtime))}` : `In ${untilLabel(downtime.at - now)}`);
+    write(tabTime, started ? 'Offline' : `${dayLabel(downtime.at - skew) === 'Today' ? '' : `${dayLabel(downtime.at - skew)} `}${clockTime(downtime.at - skew)}`);
+    write(tabCount, started ? `Back about ${clockTime(downtimeEnd(downtime) - skew)}` : `In ${untilLabel(downtime.at - now)}`);
     const why = downtime.note ? `${downtime.note}${/[.!?]$/.test(downtime.note) ? '' : '.'} ` : '';
     write(tabNote, `${why}About ${downtime.minutes >= 60 ? `${Math.round(downtime.minutes / 6) / 10} h` : `${downtime.minutes} min`}.`);
   }
-  net.on('downtime', (message) => { game.downtime = message.downtime || null; bus.emit('downtime'); });
+  net.on('downtime', (message) => { if (Number.isFinite(message.clock)) game.clockSkew = message.clock - Date.now(); game.downtime = message.downtime || null; bus.emit('downtime'); });
   bus.on('downtime', paintDowntime);
   bus.on('outages', paintDowntime);
   setInterval(paintDowntime, 1000);
@@ -317,5 +318,5 @@ export function initBulletin() {
 // What a developer's form sends: { at, minutes, note }, or null to take the plan down. The server checks
 // the account, so calling this from anyone else's page does nothing.
 export function planDowntime(plan) {
-  net.send(plan ? { type: 'downtime', at: plan.at, minutes: plan.minutes ?? DOWNTIME.defaultMinutes, note: plan.note || '' } : { type: 'downtime', clear: true });
+  net.send(plan ? { type: 'downtime', at: plan.at, in: plan.in, minutes: plan.minutes ?? DOWNTIME.defaultMinutes, note: plan.note || '' } : { type: 'downtime', clear: true });
 }

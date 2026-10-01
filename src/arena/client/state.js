@@ -55,6 +55,7 @@ export const GRAPHICS_PRESETS = {
 export function graphics(settings = game.settings) { return { renderScale: settings.renderScale, shadows: settings.shadows, streetLights: settings.streetLights, viewDistance: settings.viewDistance || 'high', detail: settings.detail || 'high', bloom: settings.bloom !== false, brightness: settings.brightness, ...(GRAPHICS_PRESETS[settings.quality] || {}) }; }
 
 export const game = {
+  clockSkew: 0,                       // the server's clock minus this machine's, in ms: downtime is timed on the server's
   downtime: null,                     // planned downtime: { at, minutes, note }, or null
   outages: { map: {}, weapon: {} },   // what a developer has pulled from the game, with why
   watching: null,                     // a developer watching someone else's match: its name, or null

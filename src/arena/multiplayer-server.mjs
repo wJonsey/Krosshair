@@ -871,7 +871,7 @@ wss.on('connection', (socket, request) => {
   socket.on('close', () => { const left = (perAddress.get(socket.address) || 1) - 1; if (left > 0) perAddress.set(socket.address, left); else perAddress.delete(socket.address); });
   sockets.add(socket);
   // Only the sets that have already been out. A set still to come is not described to anyone.
-  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: shopCatalogue(), outages: outages.view(), downtime: outages.downtime() });
+  send(socket, { type: 'config', build: BUILD, discord: discord.enabled, loginRequired: LOGIN_REQUIRED, invite: DISCORD_INVITE, itemShop: shopCatalogue(), outages: outages.view(), downtime: outages.downtime(), clock: Date.now() });
   socket.identified = false;
   socket.room = null;
   socket.player = null;
@@ -960,11 +960,16 @@ wss.on('connection', (socket, request) => {
       // Planned downtime: a developer says when and for how long, and everyone is shown it on every screen.
       if (message.type === 'downtime') {
         if (!socket.identified || !profiles.get(socket.token).dev) return;
-        const ok = outages.plan(message.clear === true ? null : { at: message.at, minutes: message.minutes, note: message.note }, socket.name);
+        // `in` is minutes from now on this machine's clock: a developer's own clock can be minutes out, and a
+        // time worked out on it was landing in the past here, or being drawn as already over on other pages.
+        const inMinutes = Number(message.in);
+        const at = Number.isFinite(inMinutes) && inMinutes > 0 ? Date.now() + Math.min(inMinutes, 14 * 24 * 60) * 60000 : message.at;
+        const ok = outages.plan(message.clear === true ? null : { at, minutes: message.minutes, note: message.note }, socket.name);
         if (!ok) return send(socket, { type: 'error', message: 'Pick a time in the next two weeks.' });
         const downtime = outages.downtime();
         console.log(`downtime: ${socket.name} ${downtime ? `planned ${new Date(downtime.at).toISOString()} for ${downtime.minutes} min` : 'cleared it'}`);
-        for (const other of sockets) send(other, { type: 'downtime', downtime });
+        for (const other of sockets) send(other, { type: 'downtime', downtime, clock: Date.now() });
+        send(socket, { type: 'notice', tone: 'good', text: downtime ? `Downtime planned. ${[...sockets].filter((other) => other.identified).length} online have been told.` : 'Downtime cleared.' });
         return;
       }
       // Pull a map or a gun, or put it back. Developers only, checked here on every call.

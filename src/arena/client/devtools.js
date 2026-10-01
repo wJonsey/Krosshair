@@ -57,7 +57,7 @@ export function initDevTools({ player, operators, camera }) {
     <div>${[[5, '5m'], [15, '15m'], [30, '30m'], [60, '1h'], [120, '2h']].map(([n, label]) => `<button type="button" data-down-in="${n}">IN ${label}</button>`).join('')}<button type="button" class="off" data-down-clear="1">CLEAR</button></div></div>`;
   panel.innerHTML = `<header><b>DEV TOOLS</b><small>K to close</small></header><div class="dev-list">${rows}</div>${down}<footer>Your account only. Bots never get these.</footer>`;
   const downNow = panel.querySelector('[data-down-now]');
-  const paintDown = () => { const d = downtimeLive(game.downtime) ? game.downtime : null; downNow.textContent = d ? `${new Date(d.at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · about ${d.minutes} min${d.note ? ` · ${d.note}` : ''}` : 'Nothing planned. Other times are on the Service page.'; };
+  const paintDown = () => { const d = downtimeLive(game.downtime, Date.now() + (game.clockSkew || 0)) ? game.downtime : null; downNow.textContent = d ? `${new Date(d.at - (game.clockSkew || 0)).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })} · about ${d.minutes} min${d.note ? ` · ${d.note}` : ''}` : 'Nothing planned. Other times are on the Service page.'; };
   bus.on('downtime', paintDown);
   paintDown();
   const esp = document.createElement('canvas');
@@ -94,7 +94,7 @@ export function initDevTools({ player, operators, camera }) {
   panel.addEventListener('click', (event) => {
     const button = event.target.closest('button');
     if (!button || !allowed()) return;
-    if (button.dataset.downIn) { planDowntime({ at: Date.now() + Number(button.dataset.downIn) * 60000, note: panel.querySelector('[data-down-note]').value }); play('ready'); return; }
+    if (button.dataset.downIn) { planDowntime({ at: Date.now(), in: Number(button.dataset.downIn), note: panel.querySelector('[data-down-note]').value }); play('ready'); return; }
     if (button.dataset.downClear) { planDowntime(null); play('uiBack'); return; }
     if (button.dataset.tool) { set(button.dataset.tool, !on[button.dataset.tool]); play('ui'); return; }
     if (button.dataset.act === 'teleport') {
