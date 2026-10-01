@@ -34,7 +34,6 @@ if ($old) {
 }
 
 if ($graceful) {
-  Start-Sleep -Seconds 8
   Add-Content $log "$(Get-Date -Format s) graceful restart: players were warned"
 } else {
   Add-Content $log "$(Get-Date -Format s) forced restart: no warning sent"
@@ -53,8 +52,16 @@ if ($graceful) {
 }
 
 if ((nssm status krosshair) -notmatch 'RUNNING') { nssm start krosshair 2>&1 | Out-Null }
-# Prove it came back: a game process that started after this deploy began, or try once more.
-Start-Sleep -Seconds 8
-$fresh = Get-Game | Select-Object -First 1
-if (-not $fresh) { Add-Content $log "$(Get-Date -Format s) no game process after restart, restarting the service"; nssm restart krosshair 2>&1 | Out-Null; Start-Sleep -Seconds 8 }
+# Prove it came back. run-game.cmd starts the game again a few seconds after it exits, so give it time
+# before stepping in.
+$until = (Get-Date).AddSeconds(45)
+while (-not (Get-Game) -and (Get-Date) -lt $until) { Start-Sleep -Seconds 2 }
+if (-not (Get-Game)) {
+  Add-Content $log "$(Get-Date -Format s) no game process after restart, restarting the service by force"
+  $svcPid = ((sc.exe queryex krosshair | Select-String 'PID').ToString() -replace '\D', '')
+  if ($svcPid -and $svcPid -ne '0') { taskkill /F /PID $svcPid | Out-Null }
+  Start-Sleep -Seconds 3
+  nssm start krosshair 2>&1 | Out-Null
+  Start-Sleep -Seconds 10
+}
 Add-Content $log "$(Get-Date -Format s) deploy complete $want, service $(nssm status krosshair), game pid $((Get-Game | Select-Object -First 1).ProcessId)"
