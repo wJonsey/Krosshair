@@ -3,7 +3,8 @@
 # A copy is used, not this file, so the script is never overwritten while it is running.
 Set-Location C:\krosshair
 $log = 'C:\krosshair-logs\deploy.log'
-git fetch origin main 2>&1 | Out-Null
+$fetched = git fetch origin main 2>&1
+if ($LASTEXITCODE -ne 0) { Add-Content $log "$(Get-Date -Format s) git fetch failed, nothing deployed: $fetched"; exit 1 }
 $have = (git rev-parse HEAD).Trim()
 $want = (git rev-parse origin/main).Trim()
 if ($have -eq $want) { exit 0 }
