@@ -1,7 +1,7 @@
 // Entry point: boots the renderer, wires server messages to the game systems
 // and runs the frame loop.
 import * as THREE from 'three';
-import { MAP_IDS, ROYALE_MAP } from '../shared/map.js';
+import { ROYALE_MAP } from '../shared/map.js';
 import { Post } from './post.js';
 import { BODY, GADGETS, VARIANT_NAMES, WEAPONS } from '../shared/constants.js';
 import { ATTACHMENTS } from '../shared/attachments.js';
@@ -520,7 +520,11 @@ function countFrame(rawDt) {
   fpsWindow.frames += 1; fpsWindow.time += rawDt; fpsWindow.worst = Math.max(fpsWindow.worst, rawDt);
   if (fpsWindow.time < 0.5) return;
   const fps = Math.round(fpsWindow.frames / fpsWindow.time);
-  fpsBox.innerHTML = `<b>${fps}</b> FPS <i>${(fpsWindow.worst * 1000).toFixed(1)} ms max</i>${net.connected ? ` <i>${net.rtt} ms ping</i>` : ''}`;
+  // Shader programs, and a flag while new programs are being built: when the frame rate
+  // sags, this says whether it is the scene or the compiler.
+  const programs = renderer.info.programs?.length || 0, building = programs !== fpsWindow.programs;
+  fpsWindow.programs = programs;
+  fpsBox.innerHTML = `<b>${fps}</b> FPS <i>${(fpsWindow.worst * 1000).toFixed(1)} ms max</i>${net.connected ? ` <i>${net.rtt} ms ping</i>` : ''} <i>${programs} shaders${building ? ' · building' : ''}</i>`;
   fpsBox.dataset.tone = fps >= 55 ? 'good' : fps >= 30 ? 'ok' : 'bad';
   fpsWindow.frames = 0; fpsWindow.time = 0; fpsWindow.worst = 0;
 }
@@ -637,6 +641,7 @@ function frame(now = 0) {
     const nearScenery = arena.hideNear(true);
     renderer.setRenderTarget(viewmodel.scopeTarget);
     renderer.clear();
+    arena.prepass(scopeCamera);
     renderer.render(arena.scene, scopeCamera);
     renderer.setRenderTarget(null);
     arena.hideNear(false, nearScenery);
@@ -658,6 +663,7 @@ function frame(now = 0) {
     post.begin();
     if (skyLinear) skyLinear.value = 1;
     renderer.clear();
+    arena.prepass(camera);
     renderer.render(arena.scene, camera);
     if (skyLinear) skyLinear.value = 0;
     // The gun goes into the same picture, so its muzzle flash glows and it shares the grade.
@@ -665,6 +671,7 @@ function frame(now = 0) {
     post.end();
   } else {
     renderer.clear();
+    arena.prepass(camera);
     renderer.render(arena.scene, camera);
     if (gunShown) drawViewmodel();
   }
@@ -673,7 +680,10 @@ function frame(now = 0) {
   if (!firstFrame) {
     firstFrame = true; boot?.ready();
     // Once the menu is up, every arena's shaders are built in the background, a map at a time.
-    setTimeout(() => arena.warm([...MAP_IDS, ROYALE_MAP], camera), 6000);
+    // Only the island is warmed ahead of time (it is one fixed map). Warming every arena meant a few
+    // hundred shader programs compiling in the background for minutes after the page opened, and on
+    // Windows, where each one is translated for Direct3D, that dragged the frame rate down the whole time.
+    setTimeout(() => arena.warm([ROYALE_MAP], camera), 6000);
   }
 }
 
@@ -686,5 +696,5 @@ net.connect();
 frame();
 // debugCam stays writable for the screenshot harness; the anti-cheat seals the
 // handle so nothing can bolt extra entry points onto it.
-window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, deploy, audio: { meter, play, playShot, music: musicState }, debugCam: null };
+window.__arena = { game, net, player, hud, arena, operators, effects, renderer, camera, viewmodel, deploy, frame, audio: { meter, play, playShot, music: musicState }, debugCam: null };
 startGuard({ player, api: window.__arena, notify: feed });

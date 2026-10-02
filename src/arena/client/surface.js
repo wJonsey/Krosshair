@@ -81,7 +81,7 @@ float aaFade(float px, float freq) { return 1.0 - smoothstep(0.3, 0.9, px * freq
 float lineAt(float v, float w) { return 1.0 - smoothstep(0.0, w, abs(v - 0.5)); }
 `;
 
-const VERTEX_HEAD = '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\nvarying vec3 vBox;\nvarying vec3 vHalf;';
+const VERTEX_HEAD = '#include <common>\ninvariant gl_Position;\nvarying vec3 vWPos;\nvarying vec3 vWNrm;\nvarying vec3 vBox;\nvarying vec3 vHalf;';
 const VERTEX_BODY = `#include <begin_vertex>
   vec4 wpos = vec4(transformed, 1.0);
   #ifdef USE_INSTANCING

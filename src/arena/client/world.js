@@ -70,6 +70,14 @@ function peakMaterial(line) {
   return material;
 }
 
+// Drawn first, depth only: the arena's boxes with the cheapest shader there is.
+function depthOnly() {
+  const material = new THREE.MeshBasicMaterial({ colorWrite: false, fog: false });
+  material.onBeforeCompile = (shader) => { shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\ninvariant gl_Position;'); };
+  material.customProgramCacheKey = () => 'depth-only';
+  return material;
+}
+
 export class Arena {
   constructor(renderer) {
     this.renderer = renderer;
@@ -146,7 +154,8 @@ export class Arena {
           if (scopePass > 0.5) color = toLight(min(color, vec3(0.93))) + sunColor * disc * 5.0 * (1.0 - cloud);
           gl_FragColor = vec4(color, 1.0); }`,
     }));
-    this.sky.renderOrder = -10;
+    // After the walls, not before: only the sky that shows is worked out, not a whole screen of cloud under the map.
+    this.sky.renderOrder = 1;
     this.sky.frustumCulled = false;
     this.scene.add(this.sky);
 
@@ -179,6 +188,26 @@ export class Arena {
     this.grass = new Grass();
     this.motes = new Motes();
     this.scene.add(this.grass.mesh, this.motes.points);
+    // The depth pass (see prepass): the same boxes and the same grass, in a scene of their own.
+    this.depthScene = new THREE.Scene();
+    this.depthScene.matrixWorldAutoUpdate = false;
+    this.depthMaterial = depthOnly();
+    this.depthGroup = new THREE.Group();
+    this.depthScene.add(this.depthGroup, this.grass.depthMesh);
+  }
+
+  // Before the world is drawn, its walls, floors and grass are drawn with no colour at all, only depth.
+  // The real pass then shades each pixel once, for the surface that is actually seen. Without this a
+  // desktop graphics card runs the full surface shader for every wall behind a wall and every blade of
+  // grass behind a blade, which on the island was most of the frame. (Phones and Apple chips sort this
+  // out in hardware, which is why it never showed on those.)
+  prepass(camera) {
+    this.depthGroup.visible = this.mapGroup ? this.mapGroup.visible : false;
+    this.grass.depthMesh.visible = this.grass.mesh.visible;
+    const shadows = this.renderer.shadowMap, auto = shadows.autoUpdate, due = shadows.needsUpdate;
+    shadows.autoUpdate = false; shadows.needsUpdate = false;
+    this.renderer.render(this.depthScene, camera);
+    shadows.autoUpdate = auto; shadows.needsUpdate = due;
   }
 
   material(key) {
@@ -245,6 +274,7 @@ export class Arena {
     this.glass.clear(); this.shields.clear(); this.barrierMeshes = []; this.lamps = []; this.glows = []; this.signs = [];
     const group = new THREE.Group();
     this.mapGroup = group;
+    this.depthGroup.clear();
     const unit = new THREE.BoxGeometry(1, 1, 1);
     const buckets = new Map();
     for (const box of this.map.boxes) {
@@ -265,6 +295,14 @@ export class Arena {
       mesh.castShadow = shadow === '1'; mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       group.add(mesh);
+      // Its twin for the depth pass: the same boxes, by reference. Only for surfaces drawn by the
+      // surface shader, whose positions are worked out the same way to the last bit.
+      if (mesh.material.defines?.PATTERN !== undefined) {
+        const twin = new THREE.InstancedMesh(unit, this.depthMaterial, boxes.length);
+        twin.instanceMatrix = mesh.instanceMatrix;
+        twin.frustumCulled = false; twin.matrixAutoUpdate = false;
+        this.depthGroup.add(twin);
+      }
     }
     const glassMaterial = new THREE.MeshStandardMaterial({ color: '#9fd8e6', roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.16, emissive: '#3d6b78', emissiveIntensity: 0.12, side: THREE.DoubleSide, depthWrite: false });
     for (const box of this.map.boxes.filter((entry) => entry.glass)) {

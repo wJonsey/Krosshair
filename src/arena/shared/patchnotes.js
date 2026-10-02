@@ -10,6 +10,16 @@
 // written the way the rest of the game talks. Lead with what the player can now do or see.
 export const PATCH_NOTES = [
   {
+    id: 6, date: '2026-10-03', tag: 'Fix', title: 'Frame rate on the island',
+    notes: [
+      'Walls behind walls and grass behind grass are no longer drawn in full. Same picture, far less work on PC graphics cards.',
+      'Scopes get the same saving in the picture through the glass.',
+      'The sky is only worked out where you can see it.',
+      'The game no longer builds shaders for every arena in the background after it loads.',
+      'The FPS readout shows how many shaders are loaded and when more are being built.',
+    ],
+  },
+  {
     id: 5, date: '2026-10-02', tag: 'Fix', title: 'Frame rate',
     notes: [
       'Aiming down a scope no longer draws every shadow twice, or grass you cannot see through it.',

@@ -44,10 +44,13 @@ export class Grass {
   constructor() {
     this.uniforms = { uNoiseTex: NOISE_TEX, uEye: { value: new THREE.Vector3() }, uTime: SURFACE_TIME, uMask: { value: null }, uArea: { value: new THREE.Vector4(0, 0, 1, 1) } };
     const material = new THREE.MeshLambertMaterial({ color: MATERIALS.grass.color, side: THREE.DoubleSide });
-    material.onBeforeCompile = (shader) => {
+    // Where a blade stands is worked out in the vertex shader, and the depth pass (world.js, prepass) has to
+    // put every blade in exactly the same place, so both materials are given the same code.
+    const stand = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', `#include <common>
+          invariant gl_Position;
           attribute vec4 spot; attribute float tall; uniform vec3 uEye; uniform float uTime; uniform sampler2D uMask; uniform vec4 uArea;
           varying float vTall; varying vec3 vTone;
           ${NOISE_GLSL}`)
@@ -68,6 +71,9 @@ export class Grass {
           transformed += vec3(at.x, lawn.g * ${MASK_STEP.toFixed(1)}, at.y);
           vTall = tall;
           vTone = mix(vec3(0.82, 1.06, 0.78), vec3(1.3, 1.18, 0.7), dry) * (0.85 + 0.3 * fract(spot.z * 7.31));`);
+    };
+    material.onBeforeCompile = (shader) => {
+      stand(shader);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vTall; varying vec3 vTone;')
         .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vTone * mix(0.5, 1.28, vTall);')
@@ -75,6 +81,11 @@ export class Grass {
         .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize(vNormal);');
     };
     this.mesh = new THREE.Mesh(tuftGeometry(), material);
+    const depth = new THREE.MeshBasicMaterial({ colorWrite: false, fog: false, side: THREE.DoubleSide });
+    depth.onBeforeCompile = stand;
+    depth.customProgramCacheKey = () => 'grass-depth';
+    this.depthMesh = new THREE.Mesh(this.mesh.geometry, depth);
+    this.depthMesh.frustumCulled = false;
     this.mesh.frustumCulled = false;
     this.mesh.receiveShadow = true;
     this.mesh.visible = false;
