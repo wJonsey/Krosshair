@@ -49,10 +49,26 @@ vec3 toShown(vec3 c) {
 }
 `;
 
+// Smooth noise is read from a small tiling texture of random values rather than worked out: the same
+// eased blend between the four corners, done by the sampler in one fetch instead of four hashes and
+// three mixes. A surface asks for a dozen or more of these a pixel, so this is most of what it costs.
+// Anything that uses NOISE_GLSL has to hand its shader `uNoiseTex: NOISE_TEX`.
+const NOISE_SIZE = 256;
+export const NOISE_TEX = { value: (() => {
+  const data = new Uint16Array(NOISE_SIZE * NOISE_SIZE);
+  let seed = 1234567;
+  for (let i = 0; i < data.length; i += 1) { seed = (seed * 1664525 + 1013904223) >>> 0; data[i] = THREE.DataUtils.toHalfFloat(seed / 4294967296); }
+  const texture = new THREE.DataTexture(data, NOISE_SIZE, NOISE_SIZE, THREE.RedFormat, THREE.HalfFloatType);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.magFilter = texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return texture;
+})() };
 export const NOISE_GLSL = `
+uniform sampler2D uNoiseTex;
 float h21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
 float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+  return texture2D(uNoiseTex, (i + f + 0.5) / ${NOISE_SIZE}.0).r; }
 float fbm(vec2 p) { return vnoise(p) * 0.55 + vnoise(p * 2.03 + 7.1) * 0.3 + vnoise(p * 4.1 + 3.7) * 0.15; }
 // A scatter of points, one per grid cell: x is the distance to the nearest, y is a number that belongs to it.
 vec2 cells(vec2 p) { vec2 i = floor(p), f = fract(p); float best = 9.0, id = 0.0;
@@ -440,6 +456,7 @@ export function surfaceMaterial(key, detail = 1, as = null) {
   if (pattern < 0) return material;
   const wear = WEAR[spec.pattern] || WEAR.default;
   material.userData.uniforms = {
+    uNoiseTex: NOISE_TEX,
     uWindowGlow: { value: 0.5 }, uHaze: { value: 0 }, uHazeColor: { value: new THREE.Color() }, uTime: SURFACE_TIME, uLinearOut: LINEAR_OUT, uExposure: EXPOSURE,
     uEdge: { value: wear.edge }, uGrime: { value: wear.grime }, uBevel: { value: wear.bevel },
   };

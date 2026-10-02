@@ -10,6 +10,15 @@
 // written the way the rest of the game talks. Lead with what the player can now do or see.
 export const PATCH_NOTES = [
   {
+    id: 5, date: '2026-10-02', tag: 'Fix', title: 'Frame rate',
+    notes: [
+      'Aiming down a scope no longer draws every shadow twice, or grass you cannot see through it.',
+      'The first look down a scope on a new map no longer freezes the game.',
+      'Walls, floors and sky cost far less to draw, with the same picture.',
+      'Lighter on high-resolution screens.',
+    ],
+  },
+  {
     id: 4, date: '2026-10-01', tag: 'Fix', title: 'Downtime on the right clock',
     notes: [
       'Planned downtime is timed on the server, so it shows and counts down correctly whatever your PC clock says.',

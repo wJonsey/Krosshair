@@ -63,6 +63,10 @@ export class Post {
     renderer.getDrawingBufferSize(this.size);
     const w = this.size.x, h = this.size.y;
     if (this.world.width !== w || this.world.height !== h) {
+      // Four samples a pixel on a dense screen is a great deal of memory to move for edges already that
+      // fine: past about three million pixels two samples look the same and cost half.
+      const samples = w * h > 3.2e6 ? 2 : 4;
+      if (this.world.samples !== samples) { this.world.samples = samples; this.world.dispose(); }
       this.world.setSize(w, h);
       for (const target of this.tight) target.setSize(Math.max(2, w >> 2), Math.max(2, h >> 2));
       for (const target of this.wide) target.setSize(Math.max(2, w >> 3), Math.max(2, h >> 3));

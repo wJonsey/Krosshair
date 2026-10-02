@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { MATERIALS } from '../shared/constants.js';
 import { getMap } from '../shared/map.js';
 import { World } from '../shared/physics.js';
-import { EXPOSURE, LINEAR_OUT, NOISE_GLSL, SURFACE_TIME, TO_LIGHT, surfaceMaterial } from './surface.js';
+import { EXPOSURE, LINEAR_OUT, NOISE_GLSL, NOISE_TEX, SURFACE_TIME, TO_LIGHT, surfaceMaterial } from './surface.js';
 import { Grass, Motes } from './scenery.js';
 
 // Battle royale view distance: a multiple of the weather's own fog. Ultra shows the island end to end.
@@ -53,6 +53,7 @@ const hazeTint = new THREE.Color();
 function peakMaterial(line) {
   const material = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1, flatShading: true });
   material.onBeforeCompile = (shader) => {
+    shader.uniforms.uNoiseTex = NOISE_TEX;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPeak;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPeak = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;');
@@ -104,7 +105,7 @@ export class Arena {
     this.sky = new THREE.Mesh(new THREE.SphereGeometry(900, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
       uniforms: {
-        top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 }, scopePass: LINEAR_OUT, uExposure: EXPOSURE,
+        top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() }, sunDir: { value: new THREE.Vector3(0, 1, 0) }, sunColor: { value: new THREE.Color() }, stars: { value: 0 }, flash: { value: 0 }, scopePass: LINEAR_OUT, uExposure: EXPOSURE, uNoiseTex: NOISE_TEX,
         uTime: SURFACE_TIME, cloudCover: { value: 0.4 }, cloudLight: { value: new THREE.Color('#ffffff') }, cloudShade: { value: new THREE.Color('#a9b7c6') },
       },
       vertexShader: 'varying vec3 dir; void main() { dir = normalize(position); vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
@@ -115,8 +116,8 @@ export class Arena {
         ${TO_LIGHT}
         float h31(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         float h21(vec2 p) { p = fract(p * vec2(123.34, 345.45)); p += dot(p, p + 34.345); return fract(p.x * p.y); }
-        float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
+        uniform sampler2D uNoiseTex;
+        float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return texture2D(uNoiseTex, (i + f + 0.5) / 256.0).r; }
         float fbm(vec2 p) { float a = 0.5, sum = 0.0; for (int i = 0; i < 5; i++) { sum += a * vnoise(p); p = p * 2.03 + vec2(11.3, 7.7); a *= 0.5; } return sum; }
         void main() { vec3 d = normalize(dir); float h = max(d.y, 0.0);
           vec3 sd = normalize(sunDir); float s = max(dot(d, sd), 0.0);
@@ -221,16 +222,21 @@ export class Arena {
     if (this.mapGroup) this.mapGroup.visible = false;
     let done;
     // With bloom on the world is drawn into a linear buffer, which is a different set of programs.
-    const target = this.bloom && this.warmTarget ? this.warmTarget : null;
-    if (target) this.renderer.setRenderTarget(target);
-    try { done = this.renderer.compileAsync(group, camera, this.scene); } catch { done = Promise.resolve(); }
-    if (target) this.renderer.setRenderTarget(null);
+    // The scope's picture is a linear buffer too, bloom or no bloom, so those programs are always wanted:
+    // without them the first look down a scope on a new map stopped the game while they compiled.
+    const jobs = [];
+    try {
+      if (this.warmTarget) { this.renderer.setRenderTarget(this.warmTarget); jobs.push(this.renderer.compileAsync(group, camera, this.scene)); this.renderer.setRenderTarget(null); }
+      if (!this.bloom || !this.warmTarget) jobs.push(this.renderer.compileAsync(group, camera, this.scene));
+    } catch { this.renderer.setRenderTarget(null); }
+    done = Promise.allSettled(jobs);
     if (this.mapGroup) this.mapGroup.visible = shown;
     const next = () => { unit.dispose(); setTimeout(() => this.warmNext(camera), 150); };
     done.then(next, next);
   }
 
   loadMap(id) {
+    this.shadowsStale = true;
     if (this.map?.id === id) { this.resetRound(); return; }
     if (this.mapGroup) { this.scene.remove(this.mapGroup); this.mapGroup.traverse((o) => o.geometry?.dispose()); }
     this.map = getMap(id);
@@ -463,6 +469,12 @@ export class Arena {
     this.scene.environment = target.texture;
     this.scene.environmentIntensity = this.variant?.env ?? 0.42;
   }
+  // Takes the close-range scenery out of a picture (the scope's) and puts it back as it was.
+  hideNear(hide, was = null) {
+    if (hide) { const before = [this.grass.mesh.visible, this.motes.points.visible]; this.grass.mesh.visible = false; this.motes.points.visible = false; return before; }
+    if (was) { this.grass.mesh.visible = was[0]; this.motes.points.visible = was[1]; }
+    return null;
+  }
   setGraphics(g) {
     const bloom = g.bloom !== false;
     if (bloom !== this.bloom) { this.bloom = bloom; this.applyGlow(); }
@@ -475,6 +487,7 @@ export class Arena {
       this.motes.points.visible = detail === 1 && !this.variant?.precip;
       for (const material of this.materials.values()) if (material.defines) { material.defines.DETAIL = detail; material.customProgramCacheKey = () => `surface-${material.defines.PATTERN}-${detail}`; material.needsUpdate = true; }
     }
+    this.shadowsStale = true;
     const size = { low: 1024, high: 2048, ultra: 4096 }[g.shadows] || 0;
     this.sun.castShadow = size > 0;
     if (size && this.sun.shadow.mapSize.x !== size) { this.sun.shadow.mapSize.set(size, size); this.sun.shadow.map?.dispose(); this.sun.shadow.map = null; }
@@ -534,7 +547,10 @@ export class Arena {
     this.grass.update(camera); this.motes.update(camera, this.renderer);
     const v = this.variant;
     // Keep the shadow frustum centred near the player for crisper shadows.
-    this.sun.target.position.set(Math.round(camera.position.x / 8) * 8, 0, Math.round(camera.position.z / 8) * 8);
+    const sunX = Math.round(camera.position.x / 8) * 8, sunZ = Math.round(camera.position.z / 8) * 8;
+    // The shadow frame has moved: this frame must redraw it, not reuse the last one.
+    if (sunX !== this.sun.target.position.x || sunZ !== this.sun.target.position.z) this.shadowsStale = true;
+    this.sun.target.position.set(sunX, 0, sunZ);
     this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 130);
     this.barrierMeshes.forEach((mesh) => { if (mesh.visible) mesh.material.opacity = 0.18 + Math.sin(this.time * 3) * 0.06; });
     this.shields.forEach((mesh) => {

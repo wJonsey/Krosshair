@@ -549,6 +549,7 @@ function drawViewmodel() {
   viewmodel.camera.layers.enableAll();
   renderer.render(viewmodel.scene, viewmodel.camera);
 }
+let shadowTick = 0;
 const post = new Post(renderer);
 arena.warmTarget = post.world;
 const scopeCamera = new THREE.PerspectiveCamera(12, 1, 0.3, 1500);
@@ -631,13 +632,25 @@ function frame(now = 0) {
     if (viewmodel.scopeTarget.width !== need) viewmodel.scopeTarget.setSize(need, need);
     const skyPass = arena.sky?.material.uniforms.scopePass;
     if (skyPass) skyPass.value = 1;
+    // Grass and dust live within a few metres of the eye: through a magnified scope none of it is in the
+    // picture, but all of it was still being drawn into it.
+    const nearScenery = arena.hideNear(true);
     renderer.setRenderTarget(viewmodel.scopeTarget);
     renderer.clear();
     renderer.render(arena.scene, scopeCamera);
     renderer.setRenderTarget(null);
+    arena.hideNear(false, nearScenery);
     if (skyPass) skyPass.value = 0;
+    // The sun's shadows were drawn for that picture and do not change within a frame. Drawing the whole
+    // map into the shadow map a second time for the main view was most of what aiming cost.
+    renderer.shadowMap.autoUpdate = false;
   }
   const gunShown = game.screen === 'game' && (player.mode === 'play' || player.pov) && !viewmodel.hidden;
+  // The sun does not move and most of what casts a shadow is the map. Shadows are redrawn every other
+  // frame: a running pilot's shadow is one frame behind, which cannot be seen, for half the cost.
+  shadowTick = (shadowTick + 1) % 2;
+  if (shadowTick && !arena.shadowsStale) renderer.shadowMap.autoUpdate = false;
+  arena.shadowsStale = false;
   if (post.enabled && arena.bloom) {
     // The world goes into a high-range buffer, the glow is pulled out of it, and the result is tone mapped
     // onto the screen in one pass (client/post.js). The sky hands over light, not display colours.
@@ -655,6 +668,7 @@ function frame(now = 0) {
     renderer.render(arena.scene, camera);
     if (gunShown) drawViewmodel();
   }
+  renderer.shadowMap.autoUpdate = true;
   renderPreview();
   if (!firstFrame) {
     firstFrame = true; boot?.ready();

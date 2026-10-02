@@ -3,7 +3,7 @@
 // entirely on the GPU, so they cost the same on a street corner as on the whole island.
 import * as THREE from 'three';
 import { MATERIALS } from '../shared/constants.js';
-import { NOISE_GLSL, SURFACE_TIME } from './surface.js';
+import { NOISE_GLSL, NOISE_TEX, SURFACE_TIME } from './surface.js';
 
 const SPAN = 46;          // metres of grass kept around the eye
 const TUFTS = 15000;
@@ -42,7 +42,7 @@ function tuftGeometry() {
 
 export class Grass {
   constructor() {
-    this.uniforms = { uEye: { value: new THREE.Vector3() }, uTime: SURFACE_TIME, uMask: { value: null }, uArea: { value: new THREE.Vector4(0, 0, 1, 1) } };
+    this.uniforms = { uNoiseTex: NOISE_TEX, uEye: { value: new THREE.Vector3() }, uTime: SURFACE_TIME, uMask: { value: null }, uArea: { value: new THREE.Vector4(0, 0, 1, 1) } };
     const material = new THREE.MeshLambertMaterial({ color: MATERIALS.grass.color, side: THREE.DoubleSide });
     material.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, this.uniforms);
@@ -59,7 +59,7 @@ export class Grass {
           vec4 lawn = texture2D(uMask, (at - uArea.xy) * uArea.zw);
           // The lawn's own patches (surface.js, grass): thin where it is worn to earth, yellower where it is dry.
           float worn = smoothstep(0.3, 0.16, fbm(at * 0.33 + 12.0));
-          float dry = smoothstep(0.42, 0.78, fbm(at * 0.2));
+          float dry = smoothstep(0.42, 0.78, vnoise(at * 0.2) * 0.55 + vnoise(at * 0.406 + 7.1) * 0.3 + 0.075);
           float grow = step(0.5, lawn.r) * (1.0 - smoothstep(${(SPAN * 0.3).toFixed(1)}, ${(SPAN * 0.47).toFixed(1)}, distance(at, uEye.xz))) * spot.w * (1.0 - worn * 0.85);
           float cs = cos(spot.z * 6.2832), sn = sin(spot.z * 6.2832);
           vec3 transformed = vec3(position.x * cs - position.z * sn, position.y, position.x * sn + position.z * cs) * grow;
